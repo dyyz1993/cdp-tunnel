@@ -16,6 +16,7 @@
             min-height: 100vh;
             color: #fff;
             padding: 40px 20px;
+            line-height: 1.8;
         }
         .container {
             max-width: 800px;
@@ -29,6 +30,14 @@
             width: 80px;
             height: 80px;
             margin-bottom: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: auto;
+            margin-right: auto;
+            font-size: 40px;
         }
         h1 {
             font-size: 28px;
@@ -72,8 +81,8 @@
         .step {
             display: flex;
             gap: 20px;
-            margin-bottom: 25px;
-            padding-bottom: 25px;
+            margin-bottom: 30px;
+            padding-bottom: 30px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
         .step:last-child {
@@ -82,8 +91,8 @@
             border-bottom: none;
         }
         .step-number {
-            width: 36px;
-            height: 36px;
+            width: 40px;
+            height: 40px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border-radius: 50%;
             display: flex;
@@ -91,31 +100,43 @@
             justify-content: center;
             font-weight: bold;
             flex-shrink: 0;
+            font-size: 18px;
         }
         .step-content h4 {
-            margin-bottom: 8px;
-            font-size: 16px;
+            margin-bottom: 12px;
+            font-size: 18px;
+            color: #fff;
         }
         .step-content p {
             color: #aaa;
-            font-size: 14px;
-            line-height: 1.6;
+            font-size: 15px;
+            line-height: 1.8;
+            margin-bottom: 12px;
         }
-        .step-content img {
-            max-width: 100%;
-            border-radius: 8px;
-            margin-top: 10px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+        .step-content ul {
+            margin-left: 20px;
+            color: #aaa;
+            font-size: 15px;
+        }
+        .step-content li {
+            margin-bottom: 8px;
+        }
+        .highlight {
+            background: rgba(102, 126, 234, 0.2);
+            padding: 2px 8px;
+            border-radius: 4px;
+            color: #a5b4fc;
         }
         .code-block {
             background: rgba(0, 0, 0, 0.3);
             border-radius: 8px;
             padding: 12px 16px;
             font-family: 'Monaco', 'Menlo', monospace;
-            font-size: 13px;
+            font-size: 14px;
             color: #4fc3f7;
-            margin-top: 10px;
+            margin: 10px 0;
             word-break: break-all;
+            border-left: 3px solid #667eea;
         }
         .tip {
             background: rgba(76, 175, 80, 0.1);
@@ -128,14 +149,19 @@
             color: #4caf50;
             margin-bottom: 10px;
         }
-        .tip p {
+        .tip p, .tip li {
             color: #aaa;
             font-size: 14px;
+        }
+        .tip ul {
+            margin-top: 10px;
+            margin-left: 20px;
         }
         .footer {
             text-align: center;
             color: #666;
             font-size: 14px;
+            margin-top: 40px;
         }
         .footer a {
             color: #667eea;
@@ -151,12 +177,16 @@
             font-weight: 500;
             margin-top: 15px;
         }
+        .arrow {
+            color: #ff6b6b;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Crect width='128' height='128' rx='20' fill='%23667eea'/%3E%3Cpath d='M30 40h68v8H30zM30 60h50v8H30zM30 80h60v8H30z' fill='%23fff'/%3E%3Ccircle cx='90' cy='64' r='20' fill='%23764ba2'/%3E%3Cpath d='M85 59l5 5 10-10' stroke='%23fff' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" alt="CDP Tunnel" class="logo">
+            <div class="logo">🔌</div>
             <h1>CDP Tunnel</h1>
             <p class="subtitle">Chrome DevTools Protocol Bridge</p>
         </div>
@@ -170,41 +200,80 @@
         </div>
 
         <div class="steps">
-            <h2>📍 连接步骤</h2>
+            <h2>📍 连接步骤（小白教程）</h2>
             
             <div class="step">
                 <div class="step-number">1</div>
                 <div class="step-content">
-                    <h4>点击扩展图标</h4>
-                    <p>在浏览器工具栏右上角找到 CDP Tunnel 扩展图标，点击打开配置页面</p>
+                    <h4>找到扩展图标</h4>
+                    <p>看浏览器<span class="arrow">右上角</span>的工具栏，找到这个图标：</p>
+                    <ul>
+                        <li>图标看起来像一个 <span class="highlight">拼图块</span> 或 <span class="highlight">插头</span></li>
+                        <li>如果找不到，点击浏览器右上角的 <span class="highlight">三个点菜单</span> → <span class="highlight">扩展程序</span></li>
+                    </ul>
                 </div>
             </div>
 
             <div class="step">
                 <div class="step-number">2</div>
                 <div class="step-content">
-                    <h4>确认服务器地址</h4>
-                    <p>确保服务器地址正确：</p>
-                    <div class="code-block">ws://localhost:9221/plugin</div>
+                    <h4>点击扩展图标</h4>
+                    <p>用鼠标<span class="arrow">左键单击</span>扩展图标，会弹出一个窗口</p>
+                    <ul>
+                        <li>窗口标题应该是 <span class="highlight">"CDP Tunnel"</span> 或 <span class="highlight">"CDP Bridge"</span></li>
+                        <li>如果窗口没出现，再点一次试试</li>
+                    </ul>
                 </div>
             </div>
 
             <div class="step">
                 <div class="step-number">3</div>
                 <div class="step-content">
-                    <h4>点击「保存并连接」</h4>
-                    <p>点击按钮连接服务器，连接成功后状态会变为绿色「已连接」</p>
+                    <h4>检查服务器地址</h4>
+                    <p>在弹出的窗口中，找到一个输入框，里面应该写着：</p>
+                    <div class="code-block">ws://localhost:9221/plugin</div>
+                    <ul>
+                        <li>如果地址不对，请改成上面的地址</li>
+                        <li>注意：地址里<span class="arrow">不要有空格</span></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">4</div>
+                <div class="step-content">
+                    <h4>点击连接按钮</h4>
+                    <p>找到按钮并点击：</p>
+                    <ul>
+                        <li>按钮上写着 <span class="highlight">"保存并连接"</span> 或 <span class="highlight">"连接"</span></li>
+                        <li>点击后按钮可能会变成 <span class="highlight">绿色</span> 或显示 <span class="highlight">"已连接"</span></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">5</div>
+                <div class="step-content">
+                    <h4>验证连接成功</h4>
+                    <p>回到终端（黑色的命令行窗口），运行：</p>
+                    <div class="code-block">cdp-tunnel status</div>
+                    <ul>
+                        <li>如果看到 <span class="highlight" style="color: #4caf50;">"扩展: 已连接"</span>，恭喜你，成功了！</li>
+                        <li>如果还是显示未连接，请检查上面的步骤</li>
+                    </ul>
                 </div>
             </div>
         </div>
 
         <div class="tip">
-            <h3>💡 提示</h3>
-            <p>如果连接失败，请检查：</p>
-            <ul style="margin-top: 10px; margin-left: 20px; color: #aaa;">
-                <li>服务器是否正在运行（运行 <code style="background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">cdp-tunnel status</code> 检查）</li>
-                <li>端口是否正确（默认 9221）</li>
-                <li>防火墙是否阻止连接</li>
+            <h3>💡 常见问题</h3>
+            <ul>
+                <li><strong>找不到扩展图标？</strong><br>
+                    点击 Chrome 右上角 <span class="highlight">⋮</span> → <span class="highlight">扩展程序</span> → <span class="highlight">管理扩展程序</span>，找到 CDP Tunnel 并点击</li>
+                <li><strong>点击连接没反应？</strong><br>
+                    检查服务器是否运行：在终端运行 <code style="background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">cdp-tunnel status</code></li>
+                <li><strong>显示连接失败？</strong><br>
+                    检查地址是否输入正确，确认没有多余的空格</li>
             </ul>
         </div>
 

@@ -240,9 +240,9 @@ function generateGuideHtml() {
   const templatePath = path.join(__dirname, 'guide.html');
   let html = fs.readFileSync(templatePath, 'utf8');
   
-  // 替换路径
+  // 替换路径占位符
   html = html.replace(
-    '/Users/xuyingzhou/Project/study-web/cdp-tunnel2/extension-new',
+    /{{EXTENSION_PATH}}/g,
     realPath
   );
   

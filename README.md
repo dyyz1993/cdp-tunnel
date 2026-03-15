@@ -18,6 +18,12 @@
   <a href="https://github.com/dyyz1993/cdp-tunnel">GitHub</a>
 </p>
 
+<p align="center">
+  <img src="https://img.shields.io/github/stars/dyyz1993/cdp-tunnel?style=social" alt="GitHub stars">
+  <img src="https://img.shields.io/github/forks/dyyz1993/cdp-tunnel?style=social" alt="GitHub forks">
+  <img src="https://img.shields.io/github/watchers/dyyz1993/cdp-tunnel?style=social" alt="GitHub watchers">
+</p>
+
 ---
 
 ## Architecture

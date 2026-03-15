@@ -1,0 +1,81 @@
+Apache License
+Version 2.0, January 2004
+http://www.apache.org/licenses/
+
+TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+1. Definitions.
+
+   "License" shall mean the terms and conditions for use, reproduction,
+   and distribution as defined by Sections 1 through 9 of this document.
+
+   "Licensor" shall mean the copyright owner or entity authorized by
+   the copyright owner that is granting the License.
+
+   "Legal Entity" shall mean the union of the acting entity and all
+   other entities that control, are controlled by, or are under common
+   control with that entity.
+
+   "You" (or "Your") shall mean an individual or Legal Entity
+   exercising permissions granted by this License.
+
+2. Grant of Copyright License.
+
+   Subject to the terms and conditions of this License, the Licensor
+   hereby grants to You a worldwide, royalty-free, non-exclusive,
+   perpetual, irrevocable copyright license to reproduce, prepare
+   derivative works of, publicly display, publicly perform, sublicense,
+   and distribute the Work and such derivative works in source and
+   object code form.
+
+3. Grant of Patent License.
+
+   Subject to the terms and conditions of this License, the Licensor
+   hereby grants to You a worldwide, royalty-free, non-exclusive,
+   perpetual, irrevocable patent license to make, have made, use,
+   offer to sell, sell, import, and otherwise transfer the Work,
+   where such license applies only to those patent claims licensable
+   by the Licensor that are necessarily infringed by their
+   contribution(s) alone or by combination of their contribution(s)
+   with the Work to which such contribution(s) was submitted.
+
+4. Attribution Requirement.
+
+   Any derivative works based on this Software must include clear
+   attribution to the original project:
+
+   - Project name: CDP Tunnel
+   - Author: dyyz1993
+   - Source: https://github.com/dyyz1993/cdp-tunnel
+
+   This attribution should appear in:
+   - Documentation or README files
+   - About/Info screens of the derivative software
+   - Source code comments (where practical)
+
+5. Disclaimer of Warranty.
+
+   Unless required by applicable law or agreed to in writing, Licensor
+   provides the Work (and each Contributor provides its Contributions)
+   on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+   either express or implied, including, without limitation, any
+   warranties or conditions of TITLE, NON-INFRINGEMENT,
+   MERCHANTABILITY, or FITNESS FOR A PARTICULAR PURPOSE.
+
+6. Limitation of Liability.
+
+   In no event and under no legal theory, whether in tort (including
+   negligence), contract, or otherwise, unless required by applicable
+   law (such as deliberate and grossly negligent acts) or agreed to in
+   writing, shall any Contributor be liable to You for damages, including any
+   direct, indirect, special, incidental, or consequential damages of
+   any character arising as a result of this License or out of the use
+   or inability to use the Work (including but not limited to damages
+   for loss of goodwill, work stoppage, computer failure or malfunction,
+   or any and all other commercial damages or losses), even if such
+   Contributor has been advised of the possibility of such damages.
+
+================================================================================
+
+Copyright (C) 2025 CDP Tunnel
+https://github.com/dyyz1993/cdp-tunnel

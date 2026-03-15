@@ -1,8 +1,24 @@
 # CDP Tunnel
 
-[中文文档](docs/README_CN.md)
+<p align="center">
+  <img src="extension-new/icons/icon128.png" alt="CDP Tunnel Logo" width="128" height="128">
+</p>
 
-A Chrome extension that exposes your browser as a CDP endpoint, supporting multiple Playwright/Puppeteer clients to connect and control simultaneously.
+<p align="center">
+  <strong>Chrome DevTools Protocol Bridge</strong>
+</p>
+
+<p align="center">
+  A Chrome extension that exposes your browser as a CDP endpoint,<br>
+  supporting multiple Playwright/Puppeteer clients to connect simultaneously.
+</p>
+
+<p align="center">
+  <a href="docs/README_CN.md">中文文档</a> | 
+  <a href="https://github.com/dyyz1993/cdp-tunnel">GitHub</a>
+</p>
+
+---
 
 ## Architecture
 
@@ -142,4 +158,13 @@ node tests/playwright-interactive.js
 
 ## License
 
-MIT
+This project is licensed under the Apache License 2.0 with Attribution Requirement.
+
+See [LICENSE](LICENSE) for details.
+
+---
+
+If you use this project in your work, please include attribution:
+- Project: CDP Tunnel
+- Author: dyyz1993
+- Source: https://github.com/dyyz1993/cdp-tunnel

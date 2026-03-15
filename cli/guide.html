@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CDP Tunnel - 扩展安装指南</title>
+    <title>CDP Tunnel - 安装向导</title>
     <style>
         * {
             margin: 0;
@@ -12,70 +12,101 @@
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Microsoft YaHei', sans-serif;
-            background: #f5f5f5;
-            min-height: 100vh;
-            padding: 20px;
-            line-height: 1.6;
-        }
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding: 30px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 12px;
-            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
         }
-        .header h1 {
+        .wizard-container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 800px;
+            width: 100%;
+            overflow: hidden;
+        }
+        .wizard-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .wizard-header h1 {
             font-size: 28px;
             margin-bottom: 10px;
         }
-        .header p {
+        .wizard-header p {
             opacity: 0.9;
         }
         
-        /* 步骤卡片 */
-        .step-card {
-            background: white;
-            border-radius: 12px;
-            padding: 25px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        /* 进度条 */
+        .progress-bar {
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e8eaed;
         }
-        .step-header {
+        .progress-step {
             display: flex;
             align-items: center;
-            gap: 15px;
-            margin-bottom: 20px;
         }
-        .step-number {
+        .step-circle {
             width: 36px;
             height: 36px;
-            background: #1a73e8;
-            color: white;
             border-radius: 50%;
+            background: #e8eaed;
+            color: #5f6368;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: bold;
-            font-size: 18px;
+            transition: all 0.3s;
         }
-        .step-title {
-            font-size: 20px;
-            font-weight: 600;
-            color: #333;
+        .step-circle.active {
+            background: #1a73e8;
+            color: white;
+        }
+        .step-circle.completed {
+            background: #34a853;
+            color: white;
+        }
+        .step-line {
+            width: 60px;
+            height: 3px;
+            background: #e8eaed;
+            margin: 0 10px;
+            transition: all 0.3s;
+        }
+        .step-line.completed {
+            background: #34a853;
         }
         
-        /* Chrome 扩展页面模拟 */
+        /* 步骤内容 */
+        .step-content {
+            padding: 30px;
+            min-height: 400px;
+        }
+        .step-title {
+            font-size: 24px;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .step-description {
+            color: #5f6368;
+            margin-bottom: 25px;
+            line-height: 1.8;
+        }
+        
+        /* Chrome 模拟界面 */
         .chrome-mockup {
             background: #fff;
             border: 2px solid #dadce0;
             border-radius: 8px;
             overflow: hidden;
-            margin: 15px 0;
+            margin: 20px 0;
         }
         .chrome-header {
             background: #f8f9fa;
@@ -104,6 +135,7 @@
             border-radius: 10px;
             position: relative;
             cursor: pointer;
+            transition: all 0.3s;
         }
         .toggle::after {
             content: '';
@@ -114,6 +146,13 @@
             border-radius: 50%;
             top: 2px;
             right: 2px;
+            transition: all 0.3s;
+        }
+        .toggle.off {
+            background: #dadce0;
+        }
+        .toggle.off::after {
+            right: 18px;
         }
         .chrome-toolbar {
             padding: 12px 16px;
@@ -129,6 +168,10 @@
             border-radius: 4px;
             font-size: 13px;
             cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary:hover {
+            background: #1557b0;
         }
         .btn-secondary {
             background: white;
@@ -140,65 +183,37 @@
             cursor: pointer;
         }
         
-        /* 扩展卡片 */
-        .extensions-list {
-            padding: 16px;
+        /* 高亮动画 */
+        .highlight-pulse {
+            animation: pulse 1.5s infinite;
+            box-shadow: 0 0 0 0 rgba(234, 67, 53, 0.7);
         }
-        .extension-card {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            padding: 16px;
-            border: 1px solid #dadce0;
-            border-radius: 8px;
-            margin-bottom: 12px;
-            background: white;
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(234, 67, 53, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(234, 67, 53, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(234, 67, 53, 0);
+            }
         }
-        .extension-icon {
-            width: 48px;
-            height: 48px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 24px;
-        }
-        .extension-info {
-            flex: 1;
-        }
-        .extension-name {
-            font-size: 14px;
-            font-weight: 500;
-            color: #333;
-            margin-bottom: 4px;
-        }
-        .extension-desc {
-            font-size: 12px;
-            color: #5f6368;
-        }
-        .extension-id {
-            font-size: 11px;
-            color: #80868b;
-            margin-top: 4px;
-        }
-        .extension-toggle {
-            width: 36px;
-            height: 20px;
-            background: #1a73e8;
-            border-radius: 10px;
-            position: relative;
-        }
-        .extension-toggle::after {
-            content: '';
+        
+        /* 箭头提示 */
+        .arrow-hint {
             position: absolute;
-            width: 16px;
-            height: 16px;
-            background: white;
-            border-radius: 50%;
-            top: 2px;
-            right: 2px;
+            color: #ea4335;
+            font-weight: bold;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            animation: bounce 1s infinite;
+        }
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
         }
         
         /* 路径显示 */
@@ -207,17 +222,48 @@
             border: 2px dashed #1a73e8;
             border-radius: 8px;
             padding: 16px;
-            margin: 15px 0;
+            margin: 20px 0;
             font-family: 'Monaco', 'Menlo', monospace;
             font-size: 14px;
             color: #333;
             word-break: break-all;
         }
-        .path-label {
-            font-size: 12px;
+        
+        /* 操作按钮 */
+        .action-buttons {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-top: 1px solid #e8eaed;
+        }
+        .btn {
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+        }
+        .btn-prev {
+            background: white;
             color: #5f6368;
-            margin-bottom: 8px;
-            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            border: 1px solid #dadce0;
+        }
+        .btn-prev:hover {
+            background: #f1f3f4;
+        }
+        .btn-next {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-next:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
         
         /* 提示框 */
@@ -226,252 +272,287 @@
             border-left: 4px solid #1a73e8;
             padding: 16px;
             border-radius: 0 8px 8px 0;
-            margin: 15px 0;
+            margin: 20px 0;
         }
         .tip-box h4 {
             color: #1a73e8;
             margin-bottom: 8px;
-            font-size: 14px;
         }
-        .tip-box p, .tip-box li {
+        .tip-box p {
             color: #333;
-            font-size: 13px;
-        }
-        .tip-box ul {
-            margin-left: 20px;
-            margin-top: 8px;
-        }
-        .tip-box li {
-            margin-bottom: 6px;
-        }
-        
-        /* 箭头标注 */
-        .arrow-annotation {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            color: #ea4335;
-            font-weight: bold;
             font-size: 14px;
         }
-        .arrow {
-            font-size: 20px;
-        }
         
-        /* 操作说明 */
-        .action-list {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 16px;
-            margin: 15px 0;
-        }
-        .action-item {
-            display: flex;
-            align-items: flex-start;
-            gap: 12px;
-            margin-bottom: 12px;
-        }
-        .action-item:last-child {
-            margin-bottom: 0;
-        }
-        .action-check {
-            width: 20px;
-            height: 20px;
-            background: #34a853;
-            color: white;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            flex-shrink: 0;
-            margin-top: 2px;
-        }
-        .action-text {
-            font-size: 14px;
-            color: #333;
-        }
-        
-        .footer {
+        /* 成功页面 */
+        .success-page {
             text-align: center;
-            padding: 20px;
-            color: #5f6368;
-            font-size: 13px;
+            padding: 60px 30px;
         }
-        .footer a {
-            color: #1a73e8;
-            text-decoration: none;
+        .success-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+        .success-title {
+            font-size: 28px;
+            color: #34a853;
+            margin-bottom: 15px;
+        }
+        .success-text {
+            color: #5f6368;
+            font-size: 16px;
+            margin-bottom: 30px;
+        }
+        
+        /* 隐藏步骤 */
+        .step-panel {
+            display: none;
+        }
+        .step-panel.active {
+            display: block;
+            animation: fadeIn 0.3s;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🔌 CDP Tunnel 安装指南</h1>
-            <p>Chrome 扩展连接教程（小白专用）</p>
+    <div class="wizard-container">
+        <div class="wizard-header">
+            <h1>🔌 CDP Tunnel 安装向导</h1>
+            <p>一步一步引导你完成安装</p>
         </div>
-
-        <!-- 步骤 1: 打开扩展页面 -->
-        <div class="step-card">
-            <div class="step-header">
-                <div class="step-number">1</div>
-                <div class="step-title">打开 Chrome 扩展页面</div>
+        
+        <!-- 进度条 -->
+        <div class="progress-bar">
+            <div class="progress-step">
+                <div class="step-circle active" id="step1-circle">1</div>
             </div>
-            
-            <div class="action-list">
-                <div class="action-item">
-                    <div class="action-check">✓</div>
-                    <div class="action-text">在 Chrome 地址栏输入 <code style="background: #e8eaed; padding: 2px 6px; border-radius: 4px;">chrome://extensions/</code> 并回车</div>
-                </div>
-                <div class="action-item">
-                    <div class="action-check">✓</div>
-                    <div class="action-text">或者点击 Chrome 右上角 <span style="font-size: 18px;">⋮</span> → 更多工具 → 扩展程序</div>
-                </div>
+            <div class="step-line" id="line1"></div>
+            <div class="progress-step">
+                <div class="step-circle" id="step2-circle">2</div>
             </div>
-
-            <div class="tip-box">
-                <h4>💡 提示</h4>
-                <p>打开后你会看到类似下面的页面：</p>
+            <div class="step-line" id="line2"></div>
+            <div class="progress-step">
+                <div class="step-circle" id="step3-circle">3</div>
             </div>
-
-            <!-- Chrome 扩展页面模拟 -->
-            <div class="chrome-mockup">
-                <div class="chrome-header">
-                    <div class="chrome-title">扩展程序</div>
-                    <div class="dev-mode">
-                        <span>开发者模式</span>
-                        <div class="toggle"></div>
-                    </div>
+            <div class="step-line" id="line3"></div>
+            <div class="progress-step">
+                <div class="step-circle" id="step4-circle">4</div>
+            </div>
+            <div class="step-line" id="line4"></div>
+            <div class="progress-step">
+                <div class="step-circle" id="step5-circle">5</div>
+            </div>
+        </div>
+        
+        <!-- 步骤内容 -->
+        <div class="step-content">
+            <!-- 步骤 1: 打开扩展页面 -->
+            <div class="step-panel active" id="step1">
+                <h2 class="step-title">第一步：打开 Chrome 扩展页面</h2>
+                <p class="step-description">
+                    我们需要先打开 Chrome 的扩展管理页面。请按照下面的方法操作：
+                </p>
+                <div class="tip-box">
+                    <h4>💡 两种打开方式</h4>
+                    <p>方式一：在地址栏输入 <code style="background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 4px;">chrome://extensions/</code> 并回车</p>
+                    <p style="margin-top: 8px;">方式二：点击 Chrome 右上角 <span style="font-size: 18px;">⋮</span> → 更多工具 → 扩展程序</p>
                 </div>
-                <div class="chrome-toolbar">
-                    <button class="btn-primary">加载已解压的扩展程序</button>
-                    <button class="btn-secondary">打包扩展程序</button>
-                    <button class="btn-secondary">更新</button>
-                </div>
-                <div class="extensions-list">
-                    <div class="extension-card">
-                        <div class="extension-icon">🔌</div>
-                        <div class="extension-info">
-                            <div class="extension-name">CDP Tunnel</div>
-                            <div class="extension-desc">Chrome DevTools Protocol Bridge</div>
-                            <div class="extension-id">ID: bchclccgjmihieacfmaelkpfjlghhoph</div>
+                <div class="chrome-mockup">
+                    <div class="chrome-header">
+                        <div class="chrome-title">扩展程序</div>
+                        <div class="dev-mode">
+                            <span>开发者模式</span>
+                            <div class="toggle off"></div>
                         </div>
-                        <div class="extension-toggle"></div>
+                    </div>
+                    <div style="padding: 40px; text-align: center; color: #5f6368;">
+                        打开后你会看到这个页面
                     </div>
                 </div>
             </div>
-        </div>
-
-        <!-- 步骤 2: 开启开发者模式 -->
-        <div class="step-card">
-            <div class="step-header">
-                <div class="step-number">2</div>
-                <div class="step-title">开启开发者模式</div>
-            </div>
             
-            <div class="tip-box">
-                <h4>⚠️ 重要！必须先开启开发者模式</h4>
-                <ul>
-                    <li>看页面<span class="arrow-annotation"><span class="arrow">右上角</span> →</span> 找到「开发者模式」开关</li>
-                    <li>点击开关，让它变成 <span style="color: #1a73e8; font-weight: bold;">蓝色/开启</span> 状态</li>
-                    <li>开启后，页面上方会出现「加载已解压的扩展程序」按钮</li>
-                </ul>
-            </div>
-
-            <div class="chrome-mockup">
-                <div class="chrome-header">
-                    <div class="chrome-title">扩展程序</div>
-                    <div class="dev-mode">
-                        <span style="color: #1a73e8; font-weight: bold;">开发者模式</span>
-                        <div class="toggle" style="background: #1a73e8;"></div>
-                        <span class="arrow-annotation"><span class="arrow">← 点击这里</span></span>
+            <!-- 步骤 2: 开启开发者模式 -->
+            <div class="step-panel" id="step2">
+                <h2 class="step-title">第二步：开启开发者模式</h2>
+                <p class="step-description">
+                    这是最关键的一步！必须先开启开发者模式，才能加载我们的扩展。
+                </p>
+                <div class="tip-box" style="background: #fce8e6; border-left-color: #ea4335;">
+                    <h4 style="color: #ea4335;">⚠️ 注意</h4>
+                    <p>请看页面右上角，找到「开发者模式」开关，点击它变成蓝色开启状态</p>
+                </div>
+                <div class="chrome-mockup" style="position: relative;">
+                    <div class="chrome-header">
+                        <div class="chrome-title">扩展程序</div>
+                        <div class="dev-mode" style="position: relative;">
+                            <span style="color: #1a73e8; font-weight: bold;">开发者模式</span>
+                            <div class="toggle highlight-pulse"></div>
+                            <div class="arrow-hint" style="top: -35px; right: 0;">
+                                <span style="font-size: 24px;">👆</span>
+                                <span>点击这里</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chrome-toolbar">
+                        <button class="btn-primary">加载已解压的扩展程序</button>
+                        <button class="btn-secondary">打包扩展程序</button>
+                    </div>
+                    <div style="padding: 30px; text-align: center; color: #5f6368;">
+                        开启后会出现「加载已解压的扩展程序」按钮
                     </div>
                 </div>
-                <div class="chrome-toolbar">
-                    <button class="btn-primary" style="position: relative;">
-                        加载已解压的扩展程序
-                        <span class="arrow-annotation" style="position: absolute; top: -30px; left: 50%; transform: translateX(-50%);"><span class="arrow">↑ 点击这里</span></span>
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- 步骤 3: 选择扩展目录 -->
-        <div class="step-card">
-            <div class="step-header">
-                <div class="step-number">3</div>
-                <div class="step-title">选择扩展目录</div>
             </div>
             
-            <div class="tip-box">
-                <h4>📁 选择正确的文件夹</h4>
-                <ul>
-                    <li>点击「加载已解压的扩展程序」按钮</li>
-                    <li>会弹出一个文件选择窗口</li>
-                    <li>找到并选择下面的路径（不要选错！）</li>
-                </ul>
-            </div>
-
-            <div class="path-box">
-                <div class="path-label">扩展目录路径：</div>
-                /Users/xuyingzhou/Project/study-web/cdp-tunnel2/extension-new
-            </div>
-
-            <div class="tip-box" style="background: #fce8e6; border-left-color: #ea4335;">
-                <h4 style="color: #ea4335;">⚠️ 注意</h4>
-                <ul>
-                    <li>必须选择 <strong>extension-new</strong> 文件夹本身，而不是里面的文件</li>
-                    <li>选择后点击「选择文件夹」按钮</li>
-                    <li>如果提示错误，检查是否选对了文件夹</li>
-                </ul>
-            </div>
-        </div>
-
-        <!-- 步骤 4: 连接到服务器 -->
-        <div class="step-card">
-            <div class="step-header">
-                <div class="step-number">4</div>
-                <div class="step-title">连接到服务器</div>
+            <!-- 步骤 3: 选择扩展目录 -->
+            <div class="step-panel" id="step3">
+                <h2 class="step-title">第三步：选择扩展目录</h2>
+                <p class="step-description">
+                    点击「加载已解压的扩展程序」按钮，然后选择下面的文件夹：
+                </p>
+                <div class="path-box">
+                    /Users/xuyingzhou/Project/study-web/cdp-tunnel2/extension-new
+                </div>
+                <div class="tip-box" style="background: #fce8e6; border-left-color: #ea4335;">
+                    <h4 style="color: #ea4335;">⚠️ 重要提示</h4>
+                    <p>必须选择 <strong>extension-new</strong> 这个文件夹本身，不要选里面的文件！</p>
+                    <p style="margin-top: 8px;">选择后点击「选择文件夹」按钮</p>
+                </div>
+                <div class="chrome-mockup" style="position: relative;">
+                    <div class="chrome-toolbar">
+                        <button class="btn-primary highlight-pulse" style="position: relative;">
+                            加载已解压的扩展程序
+                            <div class="arrow-hint" style="top: -35px; left: 50%; transform: translateX(-50%);">
+                                <span style="font-size: 24px;">👆</span>
+                                <span>点击这里</span>
+                            </div>
+                        </button>
+                    </div>
+                    <div style="padding: 30px;">
+                        <div style="display: flex; align-items: center; gap: 16px; padding: 16px; border: 1px solid #dadce0; border-radius: 8px;">
+                            <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 24px;">🔌</div>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 500; color: #333;">CDP Tunnel</div>
+                                <div style="font-size: 12px; color: #5f6368;">Chrome DevTools Protocol Bridge</div>
+                            </div>
+                            <div style="width: 36px; height: 20px; background: #1a73e8; border-radius: 10px; position: relative;">
+                                <div style="position: absolute; width: 16px; height: 16px; background: white; border-radius: 50%; top: 2px; right: 2px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
             
-            <div class="action-list">
-                <div class="action-item">
-                    <div class="action-check">1</div>
-                    <div class="action-text">安装成功后，在 Chrome 右上角找到 🔌 图标（可能需要点击拼图图标才能看到）</div>
+            <!-- 步骤 4: 连接服务器 -->
+            <div class="step-panel" id="step4">
+                <h2 class="step-title">第四步：连接到服务器</h2>
+                <p class="step-description">
+                    扩展安装成功了！现在需要连接到你的服务器。
+                </p>
+                <div class="tip-box">
+                    <h4>🔌 连接步骤</h4>
+                    <p style="margin-bottom: 8px;">1. 在 Chrome 右上角找到 🔌 图标（可能需要点击拼图图标展开）</p>
+                    <p style="margin-bottom: 8px;">2. 点击 🔌 图标，会弹出配置窗口</p>
+                    <p style="margin-bottom: 8px;">3. 确认地址是：<code style="background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 4px;">ws://localhost:9221/plugin</code></p>
+                    <p>4. 点击「保存并连接」按钮</p>
                 </div>
-                <div class="action-item">
-                    <div class="action-check">2</div>
-                    <div class="action-text">点击 🔌 图标，会弹出配置窗口</div>
+                <div style="background: #e6f4ea; border: 2px solid #34a853; border-radius: 8px; padding: 20px; text-align: center;">
+                    <div style="font-size: 48px; margin-bottom: 10px;">🔌</div>
+                    <div style="color: #34a853; font-weight: bold; font-size: 18px;">点击这个图标</div>
                 </div>
-                <div class="action-item">
-                    <div class="action-check">3</div>
-                    <div class="action-text">确认地址是：<code style="background: #e8eaed; padding: 2px 6px; border-radius: 4px;">ws://localhost:9221/plugin</code></div>
-                </div>
-                <div class="action-item">
-                    <div class="action-check">4</div>
-                    <div class="action-text">点击「保存并连接」按钮</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 步骤 5: 验证连接 -->
-        <div class="step-card">
-            <div class="step-header">
-                <div class="step-number">5</div>
-                <div class="step-title">验证连接成功</div>
             </div>
             
-            <div class="tip-box" style="background: #e6f4ea; border-left-color: #34a853;">
-                <h4 style="color: #34a853;">✅ 检查是否成功</h4>
-                <p>回到终端（命令行窗口），运行：</p>
-                <div class="path-box" style="border-color: #34a853; background: white;">cdp-tunnel status</div>
-                <p style="margin-top: 10px;">如果看到 <span style="color: #34a853; font-weight: bold;">「扩展: 已连接」</span>，恭喜你，成功了！</p>
+            <!-- 步骤 5: 验证成功 -->
+            <div class="step-panel" id="step5">
+                <div class="success-page">
+                    <div class="success-icon">🎉</div>
+                    <h2 class="success-title">安装完成！</h2>
+                    <p class="success-text">
+                        现在回到终端，运行下面的命令验证连接：
+                    </p>
+                    <div class="path-box" style="max-width: 400px; margin: 0 auto 30px;">
+                        cdp-tunnel status
+                    </div>
+                    <p class="success-text">
+                        如果看到 <span style="color: #34a853; font-weight: bold;">「扩展: 已连接」</span>，恭喜你，全部完成了！
+                    </p>
+                </div>
             </div>
         </div>
-
-        <div class="footer">
-            <p>遇到问题？<a href="https://github.com/dyyz1993/cdp-tunnel/issues" target="_blank">在 GitHub 提交 Issue</a></p>
+        
+        <!-- 操作按钮 -->
+        <div class="action-buttons">
+            <button class="btn btn-prev" id="prevBtn" onclick="prevStep()" disabled>上一步</button>
+            <button class="btn btn-next" id="nextBtn" onclick="nextStep()">下一步</button>
         </div>
     </div>
+    
+    <script>
+        let currentStep = 1;
+        const totalSteps = 5;
+        
+        function updateUI() {
+            // 更新进度条
+            for (let i = 1; i <= totalSteps; i++) {
+                const circle = document.getElementById('step' + i + '-circle');
+                const line = document.getElementById('line' + i);
+                
+                if (i < currentStep) {
+                    circle.classList.add('completed');
+                    circle.classList.remove('active');
+                    circle.innerHTML = '✓';
+                    if (line) line.classList.add('completed');
+                } else if (i === currentStep) {
+                    circle.classList.add('active');
+                    circle.classList.remove('completed');
+                    circle.innerHTML = i;
+                    if (line) line.classList.remove('completed');
+                } else {
+                    circle.classList.remove('active', 'completed');
+                    circle.innerHTML = i;
+                    if (line) line.classList.remove('completed');
+                }
+            }
+            
+            // 更新步骤内容
+            for (let i = 1; i <= totalSteps; i++) {
+                const panel = document.getElementById('step' + i);
+                if (i === currentStep) {
+                    panel.classList.add('active');
+                } else {
+                    panel.classList.remove('active');
+                }
+            }
+            
+            // 更新按钮
+            document.getElementById('prevBtn').disabled = currentStep === 1;
+            document.getElementById('nextBtn').textContent = currentStep === totalSteps ? '完成' : '下一步';
+        }
+        
+        function nextStep() {
+            if (currentStep < totalSteps) {
+                currentStep++;
+                updateUI();
+            } else {
+                // 完成，关闭窗口或跳转
+                alert('安装向导完成！请在终端运行 cdp-tunnel status 验证连接。');
+            }
+        }
+        
+        function prevStep() {
+            if (currentStep > 1) {
+                currentStep--;
+                updateUI();
+            }
+        }
+        
+        // 键盘支持
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowRight') nextStep();
+            if (e.key === 'ArrowLeft') prevStep();
+        });
+    </script>
 </body>
 </html>

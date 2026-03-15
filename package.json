@@ -3,9 +3,7 @@
   "version": "1.0.3",
   "description": "Chrome Extension CDP Proxy - 通过 Chrome 扩展将 chrome.debugger API 暴露为 WebSocket 端点",
   "main": "server/proxy-server.js",
-  "bin": {
-    "cdp-tunnel": "./cli/index.js"
-  },
+  "bin": "./cli/index.js",
   "scripts": {
     "start": "node server/proxy-server.js",
     "client": "node client/playwright-client.js",

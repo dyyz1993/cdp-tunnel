@@ -55,7 +55,35 @@
 
 ## 快速开始
 
-### 1. 启动代理服务器
+### 方式一：npm 全局安装（推荐）
+
+```bash
+# 全局安装
+npm install -g cdp-tunnel
+
+# 启动服务器
+cdp-tunnel start
+
+# 查看状态
+cdp-tunnel status
+
+# 安装 Chrome 扩展（打开交互式安装向导）
+cdp-tunnel extension
+```
+
+### 方式二：从 GitHub Releases 下载
+
+1. 访问 [GitHub Releases](https://github.com/dyyz1993/cdp-tunnel/releases)
+2. 下载最新版本的 `cdp-tunnel-extension.zip`
+3. 解压文件
+4. 打开 Chrome 扩展页面 `chrome://extensions/`
+5. 开启「开发者模式」
+6. 点击「加载已解压的扩展程序」
+7. 选择解压后的扩展目录
+
+### 方式三：手动安装
+
+#### 1. 启动代理服务器
 
 ```bash
 cd server
@@ -65,18 +93,18 @@ node proxy-server.js
 
 服务器将在 `localhost:9221` 启动。
 
-### 2. 安装 Chrome 扩展
+#### 2. 安装 Chrome 扩展
 
 1. 打开 `chrome://extensions/`
 2. 开启「开发者模式」
 3. 点击「加载已解压的扩展程序」
 4. 选择 `extension-new` 目录
 
-### 3. 连接扩展
+#### 3. 连接扩展
 
 点击扩展图标，在配置页面输入服务器地址，点击「保存并连接」。
 
-### 4. 客户端连接
+### 客户端连接
 
 ```javascript
 // Playwright

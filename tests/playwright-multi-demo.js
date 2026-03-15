@@ -1,6 +1,6 @@
 const { chromium } = require('playwright');
 
-const SERVER_URL = process.env.CDP_SERVER || 'http://localhost:9222';
+const SERVER_URL = process.env.CDP_SERVER || 'http://localhost:9221';
 
 async function main() {
   console.log('\n=== 多客户端测试 ===\n');

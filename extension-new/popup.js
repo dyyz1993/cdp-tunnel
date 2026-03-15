@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (result.wsAddress) {
       wsAddressInput.value = result.wsAddress;
     } else {
-      wsAddressInput.value = 'ws://localhost:9222/plugin';
+      wsAddressInput.value = 'ws://localhost:9221/plugin';
     }
   });
 

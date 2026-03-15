@@ -31,7 +31,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Proxy Server                             │
-│                     (localhost:9222)                            │
+│                     (localhost:9221)                            │
 │                                                                 │
 │   /plugin  ←─── Chrome Extension (WebSocket)                    │
 │   HTTP     ←─── Playwright/Puppeteer Clients                    │
@@ -63,7 +63,7 @@ npm install
 node proxy-server.js
 ```
 
-The server will start on `localhost:9222`.
+The server will start on `localhost:9221`.
 
 ### 2. Install Chrome Extension
 
@@ -82,7 +82,7 @@ Click the extension icon, enter the server address in the configuration page, an
 // Playwright
 const { chromium } = require('playwright');
 
-const browser = await chromium.connectOverCDP('http://localhost:9222');
+const browser = await chromium.connectOverCDP('http://localhost:9221');
 const context = browser.contexts()[0];
 const page = await context.newPage();
 await page.goto('https://example.com');
@@ -91,7 +91,7 @@ await page.goto('https://example.com');
 const puppeteer = require('puppeteer');
 
 const browser = await puppeteer.connect({
-  browserWSEndpoint: 'ws://localhost:9222'
+  browserWSEndpoint: 'ws://localhost:9221'
 });
 const page = await browser.newPage();
 await page.goto('https://example.com');
@@ -99,13 +99,13 @@ await page.goto('https://example.com');
 
 ## Multi-client Usage
 
-All clients connect to the same endpoint `http://localhost:9222`. The server automatically assigns a unique `clientId` to each connection.
+All clients connect to the same endpoint `http://localhost:9221`. The server automatically assigns a unique `clientId` to each connection.
 
 ```javascript
 // Multiple clients can connect simultaneously
-const browser1 = await chromium.connectOverCDP('http://localhost:9222');
-const browser2 = await chromium.connectOverCDP('http://localhost:9222');
-const browser3 = await chromium.connectOverCDP('http://localhost:9222');
+const browser1 = await chromium.connectOverCDP('http://localhost:9221');
+const browser2 = await chromium.connectOverCDP('http://localhost:9221');
+const browser3 = await chromium.connectOverCDP('http://localhost:9221');
 
 // Pages created by each client are independent
 const page1 = await browser1.contexts()[0].newPage();
@@ -158,7 +158,7 @@ node tests/playwright-interactive.js
 
 ## Notes
 
-1. **Port Availability** - Ensure port 9222 is not in use
+1. **Port Availability** - Ensure port 9221 is not in use
 2. **Extension Permissions** - The extension requires `debugger`, `tabs`, and other permissions
 3. **Browser Limitation** - Only one extension can control a browser via debugger at a time
 

@@ -716,7 +716,7 @@
           <div class="card-body">
             <div class="form-group">
               <label>服务器地址</label>
-              <input type="text" id="serverAddress" value="ws://localhost:9222/plugin" placeholder="ws://your-server:9222/plugin">
+              <input type="text" id="serverAddress" value="ws://localhost:9221/plugin" placeholder="ws://your-server:9221/plugin">
               <div class="description">WebSocket 服务器地址，插件将连接到此服务器</div>
             </div>
             <button class="btn btn-primary btn-block" id="connectBtn">🔗 保存并连接</button>
@@ -729,12 +729,12 @@
               <div class="example">
                 <pre><span class="comment">// Playwright</span>
 <span class="keyword">const</span> browser = <span class="keyword">await</span> chromium.connectOverCDP(
-  <span class="string">'http://localhost:9222'</span>
+  <span class="string">'http://localhost:9221'</span>
 );
 
 <span class="comment">// Puppeteer</span>
 <span class="keyword">const</span> browser = <span class="keyword">await</span> puppeteer.connect({
-  browserWSEndpoint: <span class="string">'ws://localhost:9222'</span>
+  browserWSEndpoint: <span class="string">'ws://localhost:9221'</span>
 });</pre>
               </div>
             </div>

@@ -3,7 +3,7 @@
  * 用于连接 Chrome 扩展 (CDP) 和 Playwright/Puppeteer 客户端
  *
  * 功能:
- * - 单端口 9222，通过路径区分连接类型
+ * - 单端口 9221，通过路径区分连接类型
  * - /plugin 路径: 接收 Chrome 扩展的 CDP 连接
  * - /client 路径: 接收 Playwright/Puppeteer 客户端连接
  * - 双向透传消息

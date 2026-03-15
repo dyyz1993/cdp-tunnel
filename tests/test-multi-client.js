@@ -1,6 +1,6 @@
 const WebSocket = require('ws');
 
-const SERVER_URL = process.argv[2] || 'ws://localhost:9222';
+const SERVER_URL = process.argv[2] || 'ws://localhost:9221';
 const NUM_CLIENTS = parseInt(process.argv[3]) || 2;
 
 console.log(`Starting ${NUM_CLIENTS} test clients connecting to ${SERVER_URL}...\n`);
@@ -126,4 +126,4 @@ process.on('SIGINT', () => {
 });
 
 console.log('Usage: node test-multi-client.js [server_url] [num_clients]');
-console.log('Example: node test-multi-client.js ws://localhost:9222 2\n');
+console.log('Example: node test-multi-client.js ws://localhost:9221 2\n');

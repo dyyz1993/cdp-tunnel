@@ -246,7 +246,23 @@ program
     
     if (extStatus.installed) {
       log('yellow', '⚠️  扩展已安装但未连接');
-      console.log('请点击扩展图标连接服务器');
+      console.log('正在打开连接指南...');
+      
+      const guidePath = path.join(__dirname, 'guide.html');
+      const platform = os.platform();
+      
+      try {
+        if (platform === 'darwin') {
+          execSync('open "' + guidePath + '"');
+        } else if (platform === 'win32') {
+          execSync('start "" "' + guidePath + '"');
+        } else {
+          execSync('xdg-open "' + guidePath + '"');
+        }
+        console.log('已打开连接指南页面');
+      } catch (e) {
+        console.log('请手动打开: ' + guidePath);
+      }
       return;
     }
     

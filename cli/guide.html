@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CDP Tunnel - 扩展连接指南</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .logo {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #888;
+            font-size: 16px;
+        }
+        .status {
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid #ffc107;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .status-icon {
+            font-size: 32px;
+        }
+        .status-text h3 {
+            color: #ffc107;
+            margin-bottom: 5px;
+        }
+        .status-text p {
+            color: #aaa;
+            font-size: 14px;
+        }
+        .steps {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+        .steps h2 {
+            margin-bottom: 25px;
+            font-size: 20px;
+        }
+        .step {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 25px;
+            padding-bottom: 25px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .step:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+        .step-number {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+        .step-content h4 {
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        .step-content p {
+            color: #aaa;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .step-content img {
+            max-width: 100%;
+            border-radius: 8px;
+            margin-top: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .code-block {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+            color: #4fc3f7;
+            margin-top: 10px;
+            word-break: break-all;
+        }
+        .tip {
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid #4caf50;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        .tip h3 {
+            color: #4caf50;
+            margin-bottom: 10px;
+        }
+        .tip p {
+            color: #aaa;
+            font-size: 14px;
+        }
+        .footer {
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+        }
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        .btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 500;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Crect width='128' height='128' rx='20' fill='%23667eea'/%3E%3Cpath d='M30 40h68v8H30zM30 60h50v8H30zM30 80h60v8H30z' fill='%23fff'/%3E%3Ccircle cx='90' cy='64' r='20' fill='%23764ba2'/%3E%3Cpath d='M85 59l5 5 10-10' stroke='%23fff' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" alt="CDP Tunnel" class="logo">
+            <h1>CDP Tunnel</h1>
+            <p class="subtitle">Chrome DevTools Protocol Bridge</p>
+        </div>
+
+        <div class="status">
+            <div class="status-icon">⚠️</div>
+            <div class="status-text">
+                <h3>扩展已安装但未连接</h3>
+                <p>请按照以下步骤连接扩展到服务器</p>
+            </div>
+        </div>
+
+        <div class="steps">
+            <h2>📍 连接步骤</h2>
+            
+            <div class="step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <h4>点击扩展图标</h4>
+                    <p>在浏览器工具栏右上角找到 CDP Tunnel 扩展图标，点击打开配置页面</p>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <h4>确认服务器地址</h4>
+                    <p>确保服务器地址正确：</p>
+                    <div class="code-block">ws://localhost:9221/plugin</div>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <h4>点击「保存并连接」</h4>
+                    <p>点击按钮连接服务器，连接成功后状态会变为绿色「已连接」</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="tip">
+            <h3>💡 提示</h3>
+            <p>如果连接失败，请检查：</p>
+            <ul style="margin-top: 10px; margin-left: 20px; color: #aaa;">
+                <li>服务器是否正在运行（运行 <code style="background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">cdp-tunnel status</code> 检查）</li>
+                <li>端口是否正确（默认 9221）</li>
+                <li>防火墙是否阻止连接</li>
+            </ul>
+        </div>
+
+        <div class="footer">
+            <p>
+                <a href="https://github.com/dyyz1993/cdp-tunnel" target="_blank">GitHub</a> · 
+                <a href="https://github.com/dyyz1993/cdp-tunnel/issues" target="_blank">反馈问题</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CDP Bridge - 配置管理</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: #f0f2f5;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .navbar {
+      background: white;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .navbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .navbar-brand .logo {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .navbar-brand h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: #ecfdf5;
+      border-radius: 16px;
+      font-size: 13px;
+      color: #059669;
+    }
+
+    .status-badge .dot {
+      width: 6px;
+      height: 6px;
+      background: #10b981;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    .status-badge.disconnected {
+      background: #fef2f2;
+      color: #dc2626;
+    }
+
+    .status-badge.disconnected .dot {
+      background: #ef4444;
+      animation: none;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .main-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 24px;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .stat-card {
+      background: white;
+      border-radius: 10px;
+      padding: 14px 16px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .stat-card .icon {
+      font-size: 20px;
+      width: 40px;
+      height: 40px;
+      background: #f3f4f6;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stat-card .info .value {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1f2937;
+    }
+
+    .stat-card .info .label {
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    .stat-card.highlight {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .stat-card.highlight .icon {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .stat-card.highlight .info .value,
+    .stat-card.highlight .info .label {
+      color: white;
+    }
+
+    .content-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .left-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .left-panel .card {
+      flex: 1;
+      min-height: 0;
+    }
+
+    .card {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .card-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .card-header h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1f2937;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-header .badge {
+      font-size: 11px;
+      padding: 3px 8px;
+      background: #dbeafe;
+      color: #2563eb;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+
+    .card-body {
+      padding: 12px 16px;
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .connection-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .connection-item {
+      display: flex;
+      align-items: center;
+      padding: 10px 12px;
+      background: #f9fafb;
+      border-radius: 8px;
+      transition: all 0.2s;
+      border: 2px solid transparent;
+    }
+
+    .connection-item:hover {
+      background: #f3f4f6;
+    }
+
+    .connection-item.active {
+      border-color: #10b981;
+      background: rgba(16, 185, 129, 0.05);
+    }
+
+    .connection-item .status-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 10px;
+      flex-shrink: 0;
+    }
+
+    .connection-item .status-indicator.online {
+      background: #10b981;
+      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+    }
+
+    .connection-item .status-indicator.busy {
+      background: #f59e0b;
+      box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+      animation: blink 0.5s infinite;
+    }
+
+    .connection-item .status-indicator.offline {
+      background: #9ca3af;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .connection-item .connection-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .connection-item .connection-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 3px;
+    }
+
+    .connection-item .connection-name {
+      font-weight: 600;
+      color: #1f2937;
+      font-size: 13px;
+    }
+
+    .connection-item .connection-tag {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 500;
+    }
+
+    .connection-item .connection-tag.playwright {
+      background: #dbeafe;
+      color: #2563eb;
+    }
+
+    .connection-item .connection-tag.puppeteer {
+      background: #fef3c7;
+      color: #d97706;
+    }
+
+    .connection-item .connection-tag.cdp {
+      background: #e0e7ff;
+      color: #4f46e5;
+    }
+
+    .connection-item .connection-details {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 11px;
+      color: #6b7280;
+    }
+
+    .connection-item .page-info {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      max-width: 200px;
+      overflow: hidden;
+    }
+
+    .connection-item .page-title {
+      color: #1f2937;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .connection-item .connection-meta {
+      text-align: right;
+      flex-shrink: 0;
+      font-size: 11px;
+      color: #9ca3af;
+    }
+
+    .connection-item .connection-actions {
+      display: flex;
+      gap: 4px;
+      margin-left: 8px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .connection-item:hover .connection-actions {
+      opacity: 1;
+    }
+
+    .connection-item .action-btn {
+      width: 26px;
+      height: 26px;
+      border: none;
+      background: white;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #6b7280;
+      transition: all 0.2s;
+      font-size: 12px;
+    }
+
+    .connection-item .action-btn:hover {
+      background: #e5e7eb;
+      color: #1f2937;
+    }
+
+    .connection-item .action-btn.danger:hover {
+      background: #fef2f2;
+      color: #dc2626;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 13px;
+      transition: all 0.2s;
+      outline: none;
+    }
+
+    .form-group input:focus {
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+    }
+
+    .form-group .description {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+
+    .btn {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    }
+
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+    }
+
+    .btn-block {
+      width: 100%;
+    }
+
+    .btn-sm {
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .divider {
+      height: 1px;
+      background: #e5e7eb;
+      margin: 16px 0;
+    }
+
+    .usage-guide {
+      background: #f9fafb;
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    .usage-guide h4 {
+      font-size: 12px;
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 10px;
+    }
+
+    .usage-guide p {
+      font-size: 11px;
+      color: #6b7280;
+      line-height: 1.6;
+      margin-bottom: 8px;
+    }
+
+    .usage-guide code {
+      background: #1f2937;
+      color: #86efac;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-family: 'Monaco', 'Menlo', monospace;
+    }
+
+    .usage-guide .example {
+      background: #1f2937;
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 10px;
+    }
+
+    .usage-guide .example pre {
+      margin: 0;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 11px;
+      color: #e5e7eb;
+      line-height: 1.6;
+    }
+
+    .activity-log {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .log-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+
+    .log-item:last-child {
+      border-bottom: none;
+    }
+
+    .log-item .log-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      flex-shrink: 0;
+    }
+
+    .log-item .log-icon.connect { background: #dcfce7; color: #16a34a; }
+    .log-item .log-icon.disconnect { background: #fef2f2; color: #dc2626; }
+    .log-item .log-icon.action { background: #dbeafe; color: #2563eb; }
+    .log-item .log-icon.page { background: #fef3c7; color: #d97706; }
+
+    .log-item .log-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .log-item .log-message {
+      font-size: 12px;
+      color: #1f2937;
+      margin-bottom: 1px;
+    }
+
+    .log-item .log-message code {
+      background: #f3f4f6;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 11px;
+    }
+
+    .log-item .log-time {
+      font-size: 10px;
+      color: #9ca3af;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #6b7280;
+    }
+
+    .empty-state .icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+
+    .empty-state .title {
+      font-size: 14px;
+      font-weight: 500;
+      color: #374151;
+      margin-bottom: 4px;
+    }
+
+    .empty-state .desc {
+      font-size: 12px;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      background: #1f2937;
+      color: white;
+      padding: 10px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 1001;
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .toast.success { background: #059669; }
+    .toast.error { background: #dc2626; }
+
+    @media (max-width: 1200px) {
+      .content-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .stats-row {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <div class="logo">🔌</div>
+      <h1>CDP Bridge</h1>
+    </div>
+    <div class="status-badge disconnected" id="statusBadge">
+      <div class="dot"></div>
+      <span id="statusText">未连接</span>
+    </div>
+  </nav>
+
+  <div class="main-container">
+    <div class="stats-row">
+      <div class="stat-card highlight">
+        <div class="icon">🔗</div>
+        <div class="info">
+          <div class="value" id="activeConnections">0</div>
+          <div class="label">活跃连接</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="icon">📄</div>
+        <div class="info">
+          <div class="value" id="controlledPages">0</div>
+          <div class="label">受控页面</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="icon">⚡</div>
+        <div class="info">
+          <div class="value" id="cdpCommands">0</div>
+          <div class="label">CDP 命令/分</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="icon">⏱️</div>
+        <div class="info">
+          <div class="value" id="uptime">0s</div>
+          <div class="label">运行时长</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="content-grid">
+      <div class="left-panel">
+        <div class="card">
+          <div class="card-header">
+            <h3>
+              CDP 客户端
+              <span class="badge" id="clientCount">0 个</span>
+            </h3>
+          </div>
+          <div class="card-body">
+            <div class="connection-list" id="clientList">
+              <div class="empty-state">
+                <div class="icon">🔌</div>
+                <div class="title">暂无客户端</div>
+                <div class="desc">等待 Playwright/Puppeteer 连接...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>
+              受控页面
+              <span class="badge" id="pageCount">0 个</span>
+            </h3>
+            <button class="btn btn-secondary btn-sm" id="refreshBtn">🔄 刷新</button>
+          </div>
+          <div class="card-body">
+            <div class="connection-list" id="pageList">
+              <div class="empty-state">
+                <div class="icon">📄</div>
+                <div class="title">暂无页面</div>
+                <div class="desc">客户端创建页面后会显示在这里</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar">
+        <div class="card">
+          <div class="card-header">
+            <h3>插件配置</h3>
+          </div>
+          <div class="card-body">
+            <div class="form-group">
+              <label>服务器地址</label>
+              <input type="text" id="serverAddress" value="ws://localhost:8080/plugin" placeholder="ws://your-server:8080/plugin">
+              <div class="description">WebSocket 服务器地址，插件将连接到此服务器</div>
+            </div>
+            <button class="btn btn-primary btn-block" id="connectBtn">🔗 保存并连接</button>
+
+            <div class="divider"></div>
+
+            <div class="usage-guide">
+              <h4>📖 客户端连接方式</h4>
+              <p>插件连接后，客户端通过 CDP 端点连接：</p>
+              <div class="example">
+                <pre><span class="comment">// Playwright</span>
+<span class="keyword">const</span> browser = <span class="keyword">await</span> chromium.connectOverCDP(
+  <span class="string">'http://localhost:8080'</span>
+);
+
+<span class="comment">// Puppeteer</span>
+<span class="keyword">const</span> browser = <span class="keyword">await</span> puppeteer.connect({
+  browserWSEndpoint: <span class="string">'ws://localhost:8080'</span>
+});</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="flex: 1; min-height: 0;">
+          <div class="card-header">
+            <h3>活动日志</h3>
+          </div>
+          <div class="card-body">
+            <div class="activity-log" id="activityLog">
+              <div class="empty-state">
+                <div class="icon">📋</div>
+                <div class="title">暂无日志</div>
+                <div class="desc">活动将显示在这里</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">
+    <span class="icon">✓</span>
+    <span class="message">操作成功</span>
+  </div>
+
+  <script src="config-page.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+node_modules/
+*.log
+.DS_Store
+screenshot.png
+.trae
+logs
+test/.chrome-test-profile/
+test-screenshot.png
+test-body-screenshot.png
+*.webm
+*.pma
+analysis/

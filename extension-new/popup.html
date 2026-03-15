@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 300px;
+      padding: 15px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+    .status-dot.active {
+      background-color: #4CAF50;
+    }
+    .status-dot.inactive {
+      background-color: #9E9E9E;
+    }
+    .config-section {
+      margin-top: 15px;
+    }
+    .config-section label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+    .config-section input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    .config-section button {
+      margin-top: 10px;
+      padding: 8px 16px;
+      background-color: #2196F3;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .config-section button:hover {
+      background-color: #1976D2;
+    }
+  </style>
+</head>
+<body>
+  <div class="status">
+    <div class="status-dot active" id="statusDot"></div>
+    <span id="statusText">已激活</span>
+  </div>
+  
+  <div class="config-section">
+    <label>WebSocket 地址</label>
+    <input type="text" id="wsAddress" placeholder="ws://localhost:8080/client">
+    <button id="saveBtn">保存</button>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

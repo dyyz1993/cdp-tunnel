@@ -1,0 +1,50 @@
+name: Create Release Assets
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-assets:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # 打包扩展
+      - name: Pack extension
+        run: |
+          cd extension-new
+          zip -r ../cdp-tunnel-extension.zip .
+          cd ..
+          ls -lh cdp-tunnel-extension.zip
+      
+      # 上传扩展到 Release
+      - name: Upload extension to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./cdp-tunnel-extension.zip
+          asset_name: cdp-tunnel-extension.zip
+          asset_content_type: application/zip
+      
+      # 打包完整项目
+      - name: Pack full project
+        run: |
+          zip -r cdp-tunnel-full.zip . -x "*.git*" -x "node_modules/*" -x "test/*"
+          ls -lh cdp-tunnel-full.zip
+      
+      # 上传完整项目到 Release
+      - name: Upload full project to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./cdp-tunnel-full.zip
+          asset_name: cdp-tunnel-full.zip
+          asset_content_type: application/zip

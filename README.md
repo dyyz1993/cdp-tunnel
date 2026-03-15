@@ -125,6 +125,30 @@ const page = await browser.newPage();
 await page.goto('https://example.com');
 ```
 
+### 4. Using with agent-browser
+
+[agent-browser](https://github.com/nick1udwig/agent-browser) is a browser automation CLI that can connect to CDP Tunnel:
+
+```bash
+# Install agent-browser
+npm install -g agent-browser
+
+# Connect to CDP Tunnel
+agent-browser --cdp http://localhost:9221 open https://example.com
+
+# Take a snapshot
+agent-browser --cdp http://localhost:9221 snapshot -i
+
+# Interact with elements
+agent-browser --cdp http://localhost:9221 click @e1
+agent-browser --cdp http://localhost:9221 fill @e2 "hello"
+
+# Take screenshot
+agent-browser --cdp http://localhost:9221 screenshot output.png
+```
+
+This allows you to control the browser through CDP Tunnel using simple CLI commands.
+
 ## Multi-client Usage
 
 All clients connect to the same endpoint `http://localhost:9221`. The server automatically assigns a unique `clientId` to each connection.

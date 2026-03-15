@@ -233,6 +233,27 @@ program
     console.log('');
   });
 
+function generateGuideHtml() {
+  const extensionPath = path.join(__dirname, '..', 'extension-new');
+  const realPath = fs.realpathSync(extensionPath);
+  
+  const templatePath = path.join(__dirname, 'guide.html');
+  let html = fs.readFileSync(templatePath, 'utf8');
+  
+  // 替换路径
+  html = html.replace(
+    '/Users/xuyingzhou/Project/study-web/cdp-tunnel2/extension-new',
+    realPath
+  );
+  
+  // 生成临时 HTML 文件
+  const tempHtmlPath = path.join(CONFIG_DIR, 'guide.html');
+  ensureConfigDir();
+  fs.writeFileSync(tempHtmlPath, html);
+  
+  return tempHtmlPath;
+}
+
 program
   .command('extension')
   .description('检测/安装 Chrome 扩展')
@@ -248,7 +269,7 @@ program
       log('yellow', '⚠️  扩展已安装但未连接');
       console.log('正在打开连接指南...');
       
-      const guidePath = path.join(__dirname, 'guide.html');
+      const guidePath = generateGuideHtml();
       const platform = os.platform();
       
       try {
@@ -266,8 +287,27 @@ program
       return;
     }
     
-    printExtensionGuide();
-    openChromeExtensions();
+    // 扩展未安装，生成指南并打开
+    console.log('');
+    log('yellow', '⚠️  Chrome 扩展未安装');
+    console.log('');
+    console.log('正在打开安装指南...');
+    
+    const guidePath = generateGuideHtml();
+    const platform = os.platform();
+    
+    try {
+      if (platform === 'darwin') {
+        execSync('open "' + guidePath + '"');
+      } else if (platform === 'win32') {
+        execSync('start "" "' + guidePath + '"');
+      } else {
+        execSync('xdg-open "' + guidePath + '"');
+      }
+      console.log('已打开安装指南页面');
+    } catch (e) {
+      console.log('请手动打开: ' + guidePath);
+    }
   });
 
 program

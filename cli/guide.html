@@ -28,7 +28,12 @@
             gap: 15px;
         }
         .header-icon {
-            font-size: 32px;
+            width: 40px;
+            height: 40px;
+        }
+        .header-icon svg {
+            width: 100%;
+            height: 100%;
         }
         .header-title h1 {
             font-size: 20px;
@@ -63,8 +68,12 @@
         .sidebar-icon {
             width: 64px;
             height: 64px;
-            border-radius: 16px;
             margin: 0 auto 12px;
+        }
+        .sidebar-icon svg {
+            width: 100%;
+            height: 100%;
+            border-radius: 16px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         }
         .sidebar-title {
@@ -169,79 +178,120 @@
             margin-bottom: 25px;
         }
         
-        /* Chrome 模拟界面 */
-        .chrome-mockup {
-            background: #fff;
-            border: 2px solid #dadce0;
-            border-radius: 8px;
+        /* Chrome 扩展程序弹窗 - 一比一还原 */
+        .chrome-popup {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            width: 360px;
+            margin: 20px auto;
             overflow: hidden;
-            margin: 20px 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
-        .chrome-header {
-            background: #f8f9fa;
-            padding: 12px 16px;
-            border-bottom: 1px solid #dadce0;
+        .chrome-popup-header {
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid #e8eaed;
         }
-        .chrome-title {
+        .chrome-popup-title {
             font-size: 16px;
             font-weight: 500;
-            color: #333;
+            color: #202124;
         }
-        .dev-mode {
+        .chrome-popup-close {
+            width: 20px;
+            height: 20px;
             display: flex;
             align-items: center;
-            gap: 8px;
-            font-size: 13px;
+            justify-content: center;
+            color: #5f6368;
+            font-size: 18px;
+            cursor: pointer;
+        }
+        .chrome-popup-section {
+            padding: 12px 0;
+        }
+        .chrome-popup-section-title {
+            font-size: 11px;
+            color: #5f6368;
+            padding: 0 20px 8px;
+            font-weight: 500;
+        }
+        .chrome-popup-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 20px;
+            gap: 12px;
+        }
+        .chrome-popup-item:hover {
+            background: #f8f9fa;
+        }
+        .chrome-popup-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .chrome-popup-icon svg {
+            width: 100%;
+            height: 100%;
+            border-radius: 6px;
+        }
+        .chrome-popup-icon img {
+            width: 100%;
+            height: 100%;
+            border-radius: 6px;
+        }
+        .chrome-popup-name {
+            flex: 1;
+            font-size: 14px;
+            color: #202124;
+        }
+        .chrome-popup-pin {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #1a73e8;
+            font-size: 16px;
+        }
+        .chrome-popup-menu {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #5f6368;
+            font-size: 16px;
+        }
+        .chrome-popup-footer {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            border-top: 1px solid #e8eaed;
+            gap: 12px;
+            cursor: pointer;
+        }
+        .chrome-popup-footer:hover {
+            background: #f8f9fa;
+        }
+        .chrome-popup-footer-icon {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             color: #5f6368;
         }
-        .toggle {
-            width: 36px;
-            height: 20px;
-            background: #1a73e8;
-            border-radius: 10px;
-            position: relative;
-        }
-        .toggle.off {
-            background: #dadce0;
-        }
-        .toggle::after {
-            content: '';
-            position: absolute;
-            width: 16px;
-            height: 16px;
-            background: white;
-            border-radius: 50%;
-            top: 2px;
-            right: 2px;
-            transition: all 0.3s;
-        }
-        .toggle.off::after {
-            right: 18px;
-        }
-        .chrome-toolbar {
-            padding: 12px 16px;
-            border-bottom: 1px solid #dadce0;
-            display: flex;
-            gap: 10px;
-        }
-        .btn-mock {
-            background: #1a73e8;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            font-size: 13px;
-        }
-        .btn-mock-secondary {
-            background: white;
-            color: #1a73e8;
-            border: 1px solid #dadce0;
-            padding: 8px 16px;
-            border-radius: 4px;
-            font-size: 13px;
+        .chrome-popup-footer-text {
+            font-size: 14px;
+            color: #202124;
         }
         
         /* 高亮动画 */
@@ -404,9 +454,30 @@
     </style>
 </head>
 <body>
+    <!-- SVG 图标定义 -->
+    <svg style="display: none;">
+        <defs>
+            <linearGradient id="iconGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#4285f4"/>
+                <stop offset="100%" style="stop-color:#34a853"/>
+            </linearGradient>
+        </defs>
+        <symbol id="cdp-icon" viewBox="0 0 128 128">
+            <rect width="128" height="128" rx="24" fill="url(#iconGradient)"/>
+            <circle cx="35" cy="64" r="18" fill="white"/>
+            <circle cx="93" cy="64" r="18" fill="white"/>
+            <rect x="35" y="56" width="58" height="16" fill="white"/>
+            <circle cx="64" cy="35" r="8" fill="white"/>
+        </symbol>
+    </svg>
+
     <!-- 顶部标题 -->
     <div class="header">
-        <div class="header-icon">🔌</div>
+        <div class="header-icon">
+            <svg viewBox="0 0 128 128">
+                <use href="#cdp-icon"/>
+            </svg>
+        </div>
         <div class="header-title">
             <h1>CDP Tunnel 安装向导</h1>
             <p>一步一步引导你完成安装</p>
@@ -418,7 +489,11 @@
         <!-- 左侧步骤条 -->
         <div class="sidebar">
             <div class="sidebar-header">
-                <img src="../extension-new/icons/icon128.png" alt="CDP Tunnel" class="sidebar-icon">
+                <div class="sidebar-icon">
+                    <svg viewBox="0 0 128 128">
+                        <use href="#cdp-icon"/>
+                    </svg>
+                </div>
                 <div class="sidebar-title">CDP Tunnel</div>
                 <div class="sidebar-subtitle">安装向导</div>
             </div>
@@ -447,8 +522,8 @@
                 <div class="step-item" onclick="goToStep(4)" id="sidebar-step4">
                     <div class="step-number">4</div>
                     <div class="step-info">
-                        <div class="step-name">连接服务器</div>
-                        <div class="step-desc">配置并连接</div>
+                        <div class="step-name">固定扩展并连接</div>
+                        <div class="step-desc">固定到工具栏并连接</div>
                     </div>
                 </div>
                 <div class="step-item" onclick="goToStep(5)" id="sidebar-step5">
@@ -467,7 +542,7 @@
             <div class="content-panel active" id="panel1">
                 <h2 class="panel-title">第一步：打开 Chrome 扩展页面</h2>
                 <p class="panel-desc">
-                    首先，我们需要进入 Chrome 的扩展管理页面。点击下面的按钮可以直接打开：
+                    首先，我们需要进入 Chrome 的扩展管理页面。
                 </p>
                 <div class="tip-box">
                     <h4>📋 请复制下面的地址，在 Chrome 地址栏粘贴并回车</h4>
@@ -480,49 +555,17 @@
                     </div>
                     <p id="copy-tip" style="margin-top: 8px; font-size: 12px; color: #34a853; display: none;">✓ 已复制到剪贴板！</p>
                 </div>
-                <div class="chrome-mockup">
-                    <div class="chrome-header">
-                        <div class="chrome-title">扩展程序</div>
-                        <div class="dev-mode">
-                            <span>开发者模式</span>
-                            <div class="toggle off"></div>
-                        </div>
-                    </div>
-                    <div style="padding: 40px; text-align: center; color: #5f6368;">
-                        打开后你会看到这个页面
-                    </div>
-                </div>
             </div>
             
             <!-- 步骤 2 -->
             <div class="content-panel" id="panel2">
                 <h2 class="panel-title">第二步：开启开发者模式</h2>
                 <p class="panel-desc">
-                    这是最关键的一步！只有开启开发者模式，才能加载本地扩展。
+                    这是最关键的一步！必须先开启开发者模式，才能加载本地扩展。
                 </p>
                 <div class="tip-box warning">
                     <h4>⚠️ 注意</h4>
                     <p>请看页面右上角，找到「开发者模式」开关，点击它变成蓝色开启状态</p>
-                </div>
-                <div class="chrome-mockup" style="position: relative;">
-                    <div class="chrome-header">
-                        <div class="chrome-title">扩展程序</div>
-                        <div class="dev-mode" style="position: relative;">
-                            <span style="color: #1a73e8; font-weight: bold;">开发者模式</span>
-                            <div class="toggle highlight-pulse"></div>
-                            <div class="arrow-hint" style="top: -35px; right: 0;">
-                                <span style="font-size: 20px;">👆</span>
-                                <span>点击这里</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="chrome-toolbar">
-                        <button class="btn-mock">加载已解压的扩展程序</button>
-                        <button class="btn-mock-secondary">打包扩展程序</button>
-                    </div>
-                    <div style="padding: 30px; text-align: center; color: #5f6368;">
-                        开启后会出现「加载已解压的扩展程序」按钮
-                    </div>
                 </div>
             </div>
             
@@ -543,36 +586,13 @@
                         <li>选择后点击「选择文件夹」按钮</li>
                     </ul>
                 </div>
-                <div class="chrome-mockup" style="position: relative;">
-                    <div class="chrome-toolbar">
-                        <button class="btn-mock highlight-pulse" style="position: relative;">
-                            加载已解压的扩展程序
-                            <div class="arrow-hint" style="top: -35px; left: 50%; transform: translateX(-50%); white-space: nowrap;">
-                                <span style="font-size: 20px;">👆</span>
-                                <span>点击这里</span>
-                            </div>
-                        </button>
-                    </div>
-                    <div style="padding: 20px;">
-                        <div style="display: flex; align-items: center; gap: 16px; padding: 16px; border: 1px solid #dadce0; border-radius: 8px;">
-                            <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 24px;">🔌</div>
-                            <div style="flex: 1;">
-                                <div style="font-weight: 500; color: #333;">CDP Tunnel</div>
-                                <div style="font-size: 12px; color: #5f6368;">Chrome DevTools Protocol Bridge</div>
-                            </div>
-                            <div style="width: 36px; height: 20px; background: #1a73e8; border-radius: 10px; position: relative;">
-                                <div style="position: absolute; width: 16px; height: 16px; background: white; border-radius: 50%; top: 2px; right: 2px;"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
             
             <!-- 步骤 4 -->
             <div class="content-panel" id="panel4">
                 <h2 class="panel-title">第四步：固定扩展并连接服务器</h2>
                 
-                <div class="tip-box" style="margin-bottom: 25px;">
+                <div class="tip-box" style="margin-bottom: 20px;">
                     <h4>📌 第一步：把扩展固定到工具栏</h4>
                     <p style="margin-bottom: 12px;">刚安装的扩展可能在「拼图图标」里面，建议先固定到工具栏：</p>
                     <ul>
@@ -582,27 +602,54 @@
                     </ul>
                 </div>
 
-                <div style="background: white; border: 2px solid #dadce0; border-radius: 12px; padding: 20px; margin-bottom: 25px;">
-                    <p style="font-size: 14px; color: #5f6368; margin-bottom: 15px;">固定后，你会在工具栏看到这个图标：</p>
-                    <div style="display: flex; align-items: center; justify-content: center; gap: 20px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
-                        <div style="text-align: center;">
-                            <img src="../extension-new/icons/icon128.png" style="width: 48px; height: 48px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
-                            <p style="font-size: 12px; color: #5f6368; margin-top: 8px;">CDP Tunnel 图标</p>
-                        </div>
-                        <div style="color: #5f6368; font-size: 24px;">→</div>
-                        <div style="text-align: center;">
-                            <div style="width: 48px; height: 48px; background: #f1f3f4; border-radius: 8px; display: flex; align-items: center; justify-content: center; border: 2px dashed #dadce0;">
-                                <span style="font-size: 24px;">📌</span>
+                <!-- Chrome 扩展程序弹窗 - 一比一还原 -->
+                <div class="chrome-popup" style="position: relative;">
+                    <div class="arrow-hint" style="top: 85px; right: 50px;">
+                        <span style="font-size: 20px;">👆</span>
+                        <span>点击图钉</span>
+                    </div>
+                    <div class="chrome-popup-header">
+                        <div class="chrome-popup-title">扩展程序</div>
+                        <div class="chrome-popup-close">×</div>
+                    </div>
+                    <div class="chrome-popup-section">
+                        <div class="chrome-popup-section-title">已请求访问权限</div>
+                        <div class="chrome-popup-item">
+                            <div class="chrome-popup-icon">
+                                <svg viewBox="0 0 128 128" style="width: 28px; height: 28px;">
+                                    <use href="#cdp-icon"/>
+                                </svg>
                             </div>
-                            <p style="font-size: 12px; color: #5f6368; margin-top: 8px;">点击图钉固定</p>
+                            <div class="chrome-popup-name">CDP Tunnel</div>
+                            <div class="chrome-popup-pin highlight-pulse">📌</div>
+                            <div class="chrome-popup-menu">⋮</div>
                         </div>
+                    </div>
+                    <div class="chrome-popup-section">
+                        <div class="chrome-popup-section-title">不需要任何访问权限</div>
+                        <div class="chrome-popup-item">
+                            <div class="chrome-popup-icon" style="background: #ea4335; color: white; font-size: 12px; font-weight: bold;">ABP</div>
+                            <div class="chrome-popup-name">Adblock Plus</div>
+                            <div class="chrome-popup-pin">📌</div>
+                            <div class="chrome-popup-menu">⋮</div>
+                        </div>
+                        <div class="chrome-popup-item">
+                            <div class="chrome-popup-icon" style="background: #fbbc04; color: white; font-size: 12px; font-weight: bold;">A</div>
+                            <div class="chrome-popup-name">Apifox Browser Extension</div>
+                            <div class="chrome-popup-pin">📌</div>
+                            <div class="chrome-popup-menu">⋮</div>
+                        </div>
+                    </div>
+                    <div class="chrome-popup-footer">
+                        <div class="chrome-popup-footer-icon">⚙️</div>
+                        <div class="chrome-popup-footer-text">管理扩展程序</div>
                     </div>
                 </div>
 
-                <div class="tip-box">
+                <div class="tip-box" style="margin-top: 25px;">
                     <h4>🔌 第二步：连接服务器</h4>
                     <ul>
-                        <li>点击工具栏上的 <img src="../extension-new/icons/icon128.png" style="width: 16px; height: 16px; vertical-align: middle; border-radius: 4px;"> CDP Tunnel 图标</li>
+                        <li>点击工具栏上的 <svg viewBox="0 0 128 128" style="width: 16px; height: 16px; vertical-align: middle;"><use href="#cdp-icon"/></svg> <strong>CDP Tunnel</strong> 图标</li>
                         <li>会弹出配置窗口</li>
                         <li>确认地址是：<code style="background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 4px;">ws://localhost:9221/plugin</code></li>
                         <li>点击「保存并连接」按钮</li>
@@ -703,7 +750,6 @@
                     tip.style.display = 'none';
                 }, 2000);
             }).catch(() => {
-                // 降级方案
                 const textarea = document.createElement('textarea');
                 textarea.value = url;
                 document.body.appendChild(textarea);

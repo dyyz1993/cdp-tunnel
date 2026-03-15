@@ -10,7 +10,7 @@ const CONFIG_DIR = path.join(os.homedir(), '.cdp-tunnel');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const PID_FILE = path.join(CONFIG_DIR, 'server.pid');
 const LOG_FILE = path.join(CONFIG_DIR, 'server.log');
-const EXTENSION_ID = 'bchclccgjmihieacfmaelkpfjlghhoph';
+const EXTENSION_STATE_FILE = path.join(CONFIG_DIR, 'extension-state.json');
 
 const program = new Command();
 
@@ -69,34 +69,19 @@ function getServerPid() {
 }
 
 function checkChromeExtension() {
-  const platform = os.platform();
-  let chromePrefsPath;
-  
-  if (platform === 'darwin') {
-    chromePrefsPath = path.join(os.homedir(), 'Library/Application Support/Google/Chrome/Default/Preferences');
-  } else if (platform === 'win32') {
-    chromePrefsPath = path.join(process.env.LOCALAPPDATA || '', 'Google/Chrome/User Data/Default/Preferences');
-  } else {
-    chromePrefsPath = path.join(os.homedir(), '.config/google-chrome/Default/Preferences');
-  }
-  
-  if (!fs.existsSync(chromePrefsPath)) {
+  if (!fs.existsSync(EXTENSION_STATE_FILE)) {
     return { installed: false };
   }
   
   try {
-    const prefs = JSON.parse(fs.readFileSync(chromePrefsPath, 'utf8'));
-    const extensions = prefs.extensions || {};
-    const settings = extensions.settings || {};
-    
-    for (const extId of Object.keys(settings)) {
-      if (extId === EXTENSION_ID) {
-        return { installed: true, id: extId };
-      }
+    const state = JSON.parse(fs.readFileSync(EXTENSION_STATE_FILE, 'utf8'));
+    if (state.connected && Date.now() - state.lastSeen < 30000) {
+      return { installed: true, connected: true };
     }
-  } catch (e) {}
-  
-  return { installed: false };
+    return { installed: true, connected: false };
+  } catch (e) {
+    return { installed: false };
+  }
 }
 
 function getExtensionPath() {
@@ -227,7 +212,6 @@ program
     console.log('CDP Tunnel 状态');
     console.log('─'.repeat(30));
     console.log('');
-    
     console.log('  服务器: ' + (running ? '\x1b[32m运行中\x1b[0m' : '\x1b[31m已停止\x1b[0m'));
     console.log('  端口:   ' + config.port);
     
@@ -237,9 +221,14 @@ program
     }
     
     console.log('');
-    console.log('  扩展:   ' + (extStatus.installed ? '\x1b[32m已安装\x1b[0m' : '\x1b[31m未安装\x1b[0m'));
-    if (extStatus.installed) {
-      console.log('  ID:     ' + extStatus.id);
+    if (extStatus.installed && extStatus.connected) {
+      console.log('  扩展:   \x1b[32m已连接\x1b[0m');
+    } else if (extStatus.installed) {
+      console.log('  扩展:   \x1b[33m已安装但未连接\x1b[0m');
+      console.log('  提示:   请点击扩展图标连接服务器');
+    } else {
+      console.log('  扩展:   \x1b[31m未安装\x1b[0m');
+      console.log('  提示:   运行 cdp-tunnel extension 安装扩展');
     }
     console.log('');
   });
@@ -250,9 +239,14 @@ program
   .action(() => {
     const extStatus = checkChromeExtension();
     
+    if (extStatus.installed && extStatus.connected) {
+      log('green', '✓ Chrome 扩展已连接');
+      return;
+    }
+    
     if (extStatus.installed) {
-      log('green', '✓ Chrome 扩展已安装');
-      console.log('  ID: ' + extStatus.id);
+      log('yellow', '⚠️  扩展已安装但未连接');
+      console.log('请点击扩展图标连接服务器');
       return;
     }
     

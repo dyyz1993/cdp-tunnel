@@ -11,10 +11,27 @@
 
 const http = require('http');
 const WebSocket = require('ws');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const { CONFIG, BROWSER_ID, shouldLog } = require('./modules/config');
 const { logCDP, logEvent, clearLog, logStatus, logConnectionEvent, flushAllLogs } = require('./modules/logger');
 
 const PORT = CONFIG.PORT;
+const CONFIG_DIR = path.join(os.homedir(), '.cdp-tunnel');
+const EXTENSION_STATE_FILE = path.join(CONFIG_DIR, 'extension-state.json');
+
+function updateExtensionState(connected) {
+    try {
+        if (!fs.existsSync(CONFIG_DIR)) {
+            fs.mkdirSync(CONFIG_DIR, { recursive: true });
+        }
+        fs.writeFileSync(EXTENSION_STATE_FILE, JSON.stringify({
+            connected: connected,
+            lastSeen: Date.now()
+        }));
+    } catch (e) {}
+}
 
 clearLog();
 
@@ -247,6 +264,8 @@ function handlePluginConnection(ws, clientInfo) {
         totalPlugins: pluginConnections.size,
         totalClients: clientConnections.size
     });
+    
+    updateExtensionState(true);
 
     // 如果有待配对的客户端，自动配对
     if (clientConnections.size > 0) {
@@ -599,6 +618,10 @@ function handlePluginConnection(ws, clientInfo) {
             totalPlugins: pluginConnections.size,
             totalClients: clientConnections.size
         });
+        
+        if (pluginConnections.size === 0) {
+            updateExtensionState(false);
+        }
 
         // 清理配对关系并通知所有受影响的 Client
         const affectedClients = [];

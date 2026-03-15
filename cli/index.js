@@ -75,7 +75,9 @@ function checkChromeExtension() {
   
   try {
     const state = JSON.parse(fs.readFileSync(EXTENSION_STATE_FILE, 'utf8'));
-    if (state.connected && Date.now() - state.lastSeen < 30000) {
+    // 检查连接状态，允许5分钟的时间差容错
+    const timeDiff = Math.abs(Date.now() - state.lastSeen);
+    if (state.connected && timeDiff < 300000) {
       return { installed: true, connected: true };
     }
     return { installed: true, connected: false };
@@ -250,6 +252,13 @@ function generateGuideHtml() {
   const tempHtmlPath = path.join(CONFIG_DIR, 'guide.html');
   ensureConfigDir();
   fs.writeFileSync(tempHtmlPath, html);
+  
+  // 复制 icon 文件到同一目录
+  const iconSource = path.join(__dirname, 'icon128.png');
+  const iconTarget = path.join(CONFIG_DIR, 'icon128.png');
+  if (fs.existsSync(iconSource)) {
+    fs.copyFileSync(iconSource, iconTarget);
+  }
   
   return tempHtmlPath;
 }

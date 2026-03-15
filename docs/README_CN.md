@@ -18,6 +18,12 @@
   <a href="https://github.com/dyyz1993/cdp-tunnel">GitHub</a>
 </p>
 
+<p align="center">
+  <img src="https://img.shields.io/github/stars/dyyz1993/cdp-tunnel?style=social" alt="GitHub stars">
+  <img src="https://img.shields.io/github/forks/dyyz1993/cdp-tunnel?style=social" alt="GitHub forks">
+  <img src="https://img.shields.io/github/watchers/dyyz1993/cdp-tunnel?style=social" alt="GitHub watchers">
+</p>
+
 ---
 
 ## 架构
@@ -25,7 +31,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        代理服务器                                │
-│                     (localhost:8080)                            │
+│                     (localhost:9222)                            │
 │                                                                 │
 │   /plugin  ←─── Chrome 扩展 (WebSocket)                         │
 │   HTTP     ←─── Playwright/Puppeteer 客户端                     │
@@ -57,7 +63,7 @@ npm install
 node proxy-server.js
 ```
 
-服务器将在 `localhost:8080` 启动。
+服务器将在 `localhost:9222` 启动。
 
 ### 2. 安装 Chrome 扩展
 
@@ -76,7 +82,7 @@ node proxy-server.js
 // Playwright
 const { chromium } = require('playwright');
 
-const browser = await chromium.connectOverCDP('http://localhost:8080');
+const browser = await chromium.connectOverCDP('http://localhost:9222');
 const context = browser.contexts()[0];
 const page = await context.newPage();
 await page.goto('https://example.com');
@@ -85,7 +91,7 @@ await page.goto('https://example.com');
 const puppeteer = require('puppeteer');
 
 const browser = await puppeteer.connect({
-  browserWSEndpoint: 'ws://localhost:8080'
+  browserWSEndpoint: 'ws://localhost:9222'
 });
 const page = await browser.newPage();
 await page.goto('https://example.com');
@@ -93,13 +99,13 @@ await page.goto('https://example.com');
 
 ## 多客户端使用
 
-所有客户端连接同一个端点 `http://localhost:8080`，服务器自动为每个连接分配唯一的 `clientId`。
+所有客户端连接同一个端点 `http://localhost:9222`，服务器自动为每个连接分配唯一的 `clientId`。
 
 ```javascript
 // 多个客户端可以同时连接
-const browser1 = await chromium.connectOverCDP('http://localhost:8080');
-const browser2 = await chromium.connectOverCDP('http://localhost:8080');
-const browser3 = await chromium.connectOverCDP('http://localhost:8080');
+const browser1 = await chromium.connectOverCDP('http://localhost:9222');
+const browser2 = await chromium.connectOverCDP('http://localhost:9222');
+const browser3 = await chromium.connectOverCDP('http://localhost:9222');
 
 // 每个客户端创建的页面互不干扰
 const page1 = await browser1.contexts()[0].newPage();
@@ -152,7 +158,7 @@ node tests/playwright-interactive.js
 
 ## 注意事项
 
-1. **端口占用** - 确保 8080 端口未被占用
+1. **端口占用** - 确保 9222 端口未被占用
 2. **扩展权限** - 扩展需要 `debugger`、`tabs` 等权限
 3. **浏览器限制** - 同一浏览器只能被一个扩展通过 debugger 控制
 

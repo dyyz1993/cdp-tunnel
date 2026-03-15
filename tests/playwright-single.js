@@ -1,6 +1,6 @@
 const { chromium } = require('playwright');
 
-const SERVER_URL = process.env.CDP_SERVER || 'http://localhost:8080';
+const SERVER_URL = process.env.CDP_SERVER || 'http://localhost:9222';
 
 async function main() {
   console.log(`[Playwright] Connecting to ${SERVER_URL}...`);

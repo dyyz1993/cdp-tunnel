@@ -1,7 +1,7 @@
 (function() {
   var state = {
     connected: false,
-    serverAddress: 'ws://localhost:8080/plugin',
+    serverAddress: 'ws://localhost:9222/plugin',
     cdpClients: [],
     attachedPages: [],
     logs: [],

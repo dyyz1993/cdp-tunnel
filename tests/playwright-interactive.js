@@ -1,7 +1,7 @@
 const { chromium } = require('playwright');
 const readline = require('readline');
 
-const SERVER_URL = process.env.CDP_SERVER || 'http://localhost:8080';
+const SERVER_URL = process.env.CDP_SERVER || 'http://localhost:9222';
 
 const clients = [];
 let currentClient = 0;

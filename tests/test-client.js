@@ -1,6 +1,6 @@
 const WebSocket = require('ws');
 
-const SERVER_URL = process.argv[2] || 'ws://localhost:8080';
+const SERVER_URL = process.argv[2] || 'ws://localhost:9222';
 const CLIENT_ID = process.argv[3] || 'test-client-1';
 
 console.log(`[Test Client ${CLIENT_ID}] Connecting to ${SERVER_URL}...`);
@@ -85,5 +85,5 @@ process.on('SIGINT', () => {
 });
 
 console.log('\nUsage: node test-client.js [server_url] [client_id]');
-console.log('Example: node test-client.js ws://localhost:8080 client-1');
+console.log('Example: node test-client.js ws://localhost:9222 client-1');
 console.log('\nPress Ctrl+C to exit\n');

@@ -1,9 +1,9 @@
 const { chromium } = require('playwright');
 
 async function main() {
-  console.log('[Playwright] Connecting to http://localhost:8080...');
+  console.log('[Playwright] Connecting to http://localhost:9222...');
   
-  const browser = await chromium.connectOverCDP('http://localhost:8080');
+  const browser = await chromium.connectOverCDP('http://localhost:9222');
   console.log('[Playwright] Connected!');
   
   const context = browser.contexts()[0];

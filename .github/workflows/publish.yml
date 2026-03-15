@@ -4,35 +4,87 @@ on:
   # 当发布 release 时触发
   release:
     types: [published]
-  
+
+  # push 到 main 分支时自动更新 patch 版本
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - '.github/**'
+
   # 手动触发
   workflow_dispatch:
+    inputs:
+      version_type:
+        description: '版本类型'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write
+
     steps:
       # 检出代码
       - name: Checkout code
         uses: actions/checkout@v4
-      
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       # 设置 Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
-      
+
+      # 配置 Git
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # 从 Release 名称提取版本号，或使用手动输入
+      - name: Update version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            # 从 release tag 提取版本号（去掉 v 前缀）
+            VERSION=${GITHUB_REF_NAME#v}
+            npm version $VERSION --no-git-tag-version
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            # push 到 main，自动更新 patch 版本
+            npm version patch --no-git-tag-version
+          else
+            # 手动触发，使用选择的版本类型
+            npm version ${{ inputs.version_type }} --no-git-tag-version
+          fi
+          cat package.json | grep version
+
+      # 提交版本更新
+      - name: Commit version update
+        run: |
+          git add package.json package-lock.json
+          git commit -m "chore: bump version to $(cat package.json | grep '"version"' | head -1 | awk -F: '{ print $2 }' | sed 's/[",]//g' | tr -d ' ')"
+          git push
+
       # 安装依赖
       - name: Install dependencies
         run: npm ci
-      
+
       # 运行测试（如果有）
       - name: Run tests
         run: npm test || echo "No tests found"
         continue-on-error: true
-      
+
       # 发布到 npm
       - name: Publish to npm
         run: npm publish --access public

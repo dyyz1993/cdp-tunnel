@@ -1,16 +1,18 @@
 # CDP Tunnel
 
-通过 Chrome 扩展将浏览器暴露为 CDP 端点，支持多个 Playwright/Puppeteer 客户端同时连接和控制。
+[中文文档](docs/README_CN.md)
 
-## 架构
+A Chrome extension that exposes your browser as a CDP endpoint, supporting multiple Playwright/Puppeteer clients to connect and control simultaneously.
+
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        代理服务器                                │
+│                        Proxy Server                             │
 │                     (localhost:8080)                            │
 │                                                                 │
-│   /plugin  ←─── Chrome 扩展 (WebSocket)                         │
-│   HTTP     ←─── Playwright/Puppeteer 客户端                     │
+│   /plugin  ←─── Chrome Extension (WebSocket)                    │
+│   HTTP     ←─── Playwright/Puppeteer Clients                    │
 └─────────────────────────────────────────────────────────────────┘
          ↑              ↑              ↑
          │              │              │
@@ -18,16 +20,20 @@
    (clientId_1)    (clientId_2)    (clientId_3)
 ```
 
-## 功能特性
+## Features
 
-- **多客户端支持** - 多个 Playwright/Puppeteer 可同时连接
-- **消息隔离** - 每个客户端创建的页面归该客户端所有
-- **配置页面** - 可视化查看连接状态、客户端列表、受控页面
-- **自动重连** - 扩展断开后自动重连服务器
+- **Multi-client Support** - Multiple Playwright/Puppeteer clients can connect simultaneously
+- **Message Isolation** - Pages created by each client are owned by that client
+- **Configuration Page** - Visualize connection status, client list, and controlled pages
+- **Auto Reconnect** - Extension automatically reconnects to the server
 
-## 快速开始
+## Screenshot
 
-### 1. 启动代理服务器
+![Config Page](docs/config-page-screenshot.png)
+
+## Quick Start
+
+### 1. Start the Proxy Server
 
 ```bash
 cd server
@@ -35,20 +41,20 @@ npm install
 node proxy-server.js
 ```
 
-服务器将在 `localhost:8080` 启动。
+The server will start on `localhost:8080`.
 
-### 2. 安装 Chrome 扩展
+### 2. Install Chrome Extension
 
-1. 打开 `chrome://extensions/`
-2. 开启「开发者模式」
-3. 点击「加载已解压的扩展程序」
-4. 选择 `extension-new` 目录
+1. Open `chrome://extensions/`
+2. Enable "Developer mode"
+3. Click "Load unpacked"
+4. Select the `extension-new` directory
 
-### 3. 连接扩展
+### 3. Connect the Extension
 
-点击扩展图标，在配置页面输入服务器地址并点击「保存并连接」。
+Click the extension icon, enter the server address in the configuration page, and click "Save and Connect".
 
-### 4. 客户端连接
+### 4. Client Connection
 
 ```javascript
 // Playwright
@@ -69,67 +75,71 @@ const page = await browser.newPage();
 await page.goto('https://example.com');
 ```
 
-## 多客户端使用
+## Multi-client Usage
 
-所有客户端连接同一个端点 `http://localhost:8080`，服务器自动为每个连接分配唯一的 `clientId`。
+All clients connect to the same endpoint `http://localhost:8080`. The server automatically assigns a unique `clientId` to each connection.
 
 ```javascript
-// 多个客户端可以同时连接
+// Multiple clients can connect simultaneously
 const browser1 = await chromium.connectOverCDP('http://localhost:8080');
 const browser2 = await chromium.connectOverCDP('http://localhost:8080');
 const browser3 = await chromium.connectOverCDP('http://localhost:8080');
 
-// 每个客户端创建的页面互不干扰
+// Pages created by each client are independent
 const page1 = await browser1.contexts()[0].newPage();
 const page2 = await browser2.contexts()[0].newPage();
 const page3 = await browser3.contexts()[0].newPage();
 ```
 
-## 配置页面
+## Configuration Page
 
-点击扩展图标打开配置页面，可以查看：
+Click the extension icon to open the configuration page, where you can view:
 
-- **CDP 客户端列表** - 显示连接的 Playwright/Puppeteer 客户端
-- **受控页面列表** - 显示被控制的页面，支持点击跳转
-- **活动日志** - 连接状态变化记录
+- **CDP Client List** - Shows connected Playwright/Puppeteer clients
+- **Controlled Pages List** - Shows controlled pages with click-to-navigate support
+- **Activity Log** - Connection status change records
 
-## 项目结构
+## Project Structure
 
 ```
-cdp-tunnel2/
+cdp-tunnel/
 ├── server/
-│   └── proxy-server.js      # 代理服务器
+│   └── proxy-server.js      # Proxy server
 ├── extension-new/
-│   ├── background.js        # 扩展 Service Worker
-│   ├── config-page-preview.html  # 配置页面
-│   ├── config-page.js       # 配置页面脚本
+│   ├── background.js        # Extension Service Worker
+│   ├── config-page-preview.html  # Configuration page
+│   ├── config-page.js       # Configuration page script
 │   ├── core/
-│   │   ├── state.js         # 状态管理
-│   │   └── websocket.js     # WebSocket 连接管理
+│   │   ├── state.js         # State management
+│   │   └── websocket.js     # WebSocket connection management
 │   └── features/
-│       ├── cdp-router.js    # CDP 消息路由
-│       └── screencast.js    # 截图功能
+│       ├── cdp-router.js    # CDP message routing
+│       └── screencast.js    # Screenshot functionality
 └── tests/
-    ├── playwright-single.js      # 单客户端测试
-    ├── playwright-multi.js       # 多客户端测试
-    └── playwright-interactive.js # 交互式测试
+    ├── playwright-single.js      # Single client test
+    ├── playwright-multi.js       # Multi-client test
+    └── playwright-interactive.js # Interactive test
 ```
 
-## 测试
+## Testing
 
 ```bash
-# 单客户端测试
+# Single client test
 node tests/playwright-single.js
 
-# 多客户端测试
+# Multi-client test
 node tests/playwright-multi.js
 
-# 交互式测试
+# Interactive test
 node tests/playwright-interactive.js
 ```
 
-## 注意事项
+## Notes
 
-1. **端口占用** - 确保 8080 端口未被占用
-2. **扩展权限** - 扩展需要 `debugger`、`tabs` 等权限
-3. **浏览器限制** - 同一浏览器只能被一个扩展通过 debugger 控制
+1. **Port Availability** - Ensure port 8080 is not in use
+2. **Extension Permissions** - The extension requires `debugger`, `tabs`, and other permissions
+3. **Browser Limitation** - Only one extension can control a browser via debugger at a time
+
+## License
+
+MIT

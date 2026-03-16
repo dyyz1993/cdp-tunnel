@@ -137,7 +137,27 @@ var LocalHandler = (function() {
 
   function getTargetInfos() {
     return chrome.debugger.getTargets().then(function(targets) {
-      return targets.map(mapToTargetInfo).filter(Boolean);
+      // 为每个有 tabId 的 target 查询 openerTabId
+      const promises = targets.map(function(target) {
+        if (target.tabId) {
+          return new Promise(function(resolve) {
+            chrome.tabs.get(target.tabId, function(tab) {
+              if (tab && tab.openerTabId) {
+                const openerMatch = targets.find(function(t) {
+                  return String(t.tabId) === String(tab.openerTabId);
+                });
+                if (openerMatch) {
+                  target.openerId = openerMatch.id;
+                }
+              }
+              resolve(mapToTargetInfo(target));
+            });
+          });
+        } else {
+          return Promise.resolve(mapToTargetInfo(target));
+        }
+      });
+      return Promise.all(promises);
     });
   }
 
@@ -146,7 +166,28 @@ var LocalHandler = (function() {
       var match = targets.find(function(t) {
         return t.id === targetId || String(t.tabId) === String(targetId);
       });
-      return match ? mapToTargetInfo(match) : null;
+      if (!match) return null;
+      
+      // 获取 tab 信息以获取 openerTabId
+      var tabId = match.tabId;
+      if (tabId) {
+        return new Promise(function(resolve) {
+          chrome.tabs.get(tabId, function(tab) {
+            if (tab && tab.openerTabId) {
+              // 查找 opener 的 targetId
+              var openerMatch = targets.find(function(t) {
+                return String(t.tabId) === String(tab.openerTabId);
+              });
+              if (openerMatch) {
+                match.openerId = openerMatch.id;
+              }
+            }
+            resolve(mapToTargetInfo(match));
+          });
+        });
+      }
+      
+      return mapToTargetInfo(match);
     });
   }
 
@@ -194,7 +235,7 @@ var LocalHandler = (function() {
 
   function mapToTargetInfo(target) {
     if (!target) return null;
-    return {
+    var info = {
       targetId: target.id || String(target.tabId),
       type: target.type || 'page',
       title: target.title || '',
@@ -203,6 +244,11 @@ var LocalHandler = (function() {
       canAccessOpener: false,
       browserContextId: 'default'
     };
+    // 添加 openerId（如果有）
+    if (target.openerId) {
+      info.openerId = target.openerId;
+    }
+    return info;
   }
 
   return {

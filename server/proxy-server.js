@@ -50,6 +50,7 @@ const globalRequestIdMap = new Map();
 const targetIdToClientId = new Map();
 const pendingAttachedEvents = new Map();
 const browserContextToClientId = new Map();
+const clientIdToBrowserContext = new Map();
 let globalRequestIdCounter = 0;
 
 let cachedTargets = [];
@@ -309,6 +310,8 @@ function handlePluginConnection(ws, clientInfo) {
 
     // 消息转发: Plugin -> Client
     ws.on('message', (data) => {
+        console.log(`[PLUGIN MESSAGE] size=${data.length}`);
+        
         const messageSize = data.length;
         let messagePreview;
         let parsed;
@@ -331,69 +334,77 @@ function handlePluginConnection(ws, clientInfo) {
             return;
         }
         
-        // 记录所有 PLUGIN -> CLIENT 消息到日志文件
-        logCDP('PLUGIN -> CLIENT', data.toString().substring(0, CONFIG.LOG_MESSAGE_PREVIEW_LENGTH), parsed?.sessionId, ws.pluginType);
-        
         // 调试：打印所有收到的消息
         console.log(`[PLUGIN MSG] id=${parsed?.id} method=${parsed?.method || 'none'} type=${parsed?.type || 'none'} sessionId=${parsed?.sessionId?.substring(0,8) || 'none'}`);
 
+        // 记录所有 PLUGIN -> CLIENT 消息到日志文件
+        logCDP('PLUGIN -> CLIENT', data.toString().substring(0, CONFIG.LOG_MESSAGE_PREVIEW_LENGTH), parsed?.sessionId, ws.pluginType);
+
         // 处理 type: 'event' 消息（来自 background.js 的 screencast 等事件）
         if (parsed && parsed.type === 'event' && parsed.method) {
-            logCDP('DEBUG', `Converting type:event message: ${parsed.method}`, parsed?.sessionId);
+            // 对于 Target 事件，始终广播给所有客户端
+            const targetEvents = ['Target.targetCreated', 'Target.attachedToTarget', 'Target.targetDestroyed', 'Target.targetInfoChanged'];
+            if (targetEvents.includes(parsed.method)) {
+                const cdpMsg = {
+                    method: parsed.method,
+                    params: parsed.params,
+                    type: 'event'
+                };
+                if (parsed.sessionId) {
+                    cdpMsg.params.sessionId = parsed.sessionId;
+                    cdpMsg.sessionId = parsed.sessionId;
+                }
+
+                if (parsed.method === 'Target.targetCreated') {
+                    const targetId = parsed.params?.targetInfo?.targetId;
+                    const openerId = parsed.params?.targetInfo?.openerId;
+                    if (openerId && targetId) {
+                        const openerClientId = targetIdToClientId.get(openerId);
+                        if (openerClientId) {
+                            targetIdToClientId.set(targetId, openerClientId);
+                            console.log(`[TARGET CREATED with opener] targetId=${targetId.substring(0,8)} openerId=${openerId.substring(0,8)} -> clientId=${openerClientId}`);
+                        }
+                    }
+                }
+
+                rewriteBrowserContextId(cdpMsg);
+                const cdpData = JSON.stringify(cdpMsg);
+                logCDP('BROADCAST', `Broadcasting ${parsed.method}, full data: ${cdpData}`, parsed?.sessionId);
+                broadcastToClients(cdpData, null);
+                logCDP('BROADCAST', `Done broadcasting ${parsed.method}`, parsed?.sessionId);
+            }
             
-            // 处理 Target.attachedToTarget 事件，建立 sessionId -> clientId 映射
+            // 对于 Target.attachedToTarget 事件，建立 sessionId -> clientId 映射
             if (parsed.method === 'Target.attachedToTarget') {
                 const targetId = parsed.params?.targetInfo?.targetId;
                 const sessionId = parsed.params?.sessionId;
                 
-                console.log(`[ATTACHED EVENT (type:event)] targetId=${targetId} sessionId=${sessionId?.substring(0,8)}`);
+                if (targetId && sessionId) {
+                    sessionToClientId.set(sessionId, targetId);
+                    console.log(`[SESSION MAPPED] sessionId=${sessionId.substring(0,8)} -> targetId=${targetId.substring(0,8)}`);
+                }
+            }
+            
+            // 如果不是 Target 事件，按照原来的逻辑发送
+            if (!targetEvents.includes(parsed.method)) {
+                const cdpMsg = {
+                    method: parsed.method,
+                    params: parsed.params
+                };
+                if (parsed.sessionId) {
+                    cdpMsg.sessionId = parsed.sessionId;
+                }
+                const cdpData = JSON.stringify(cdpMsg);
                 
-                // 查找 targetId 对应的 clientId
-                const clientId = targetIdToClientId.get(targetId);
-                if (clientId && sessionId) {
-                    sessionToClientId.set(sessionId, clientId);
-                    console.log(`[SESSION MAPPED from event] sessionId=${sessionId.substring(0,8)} -> clientId=${clientId} (targetId=${targetId})`);
-                    targetIdToClientId.delete(targetId);
-                    
-                    // 转换为 CDP 格式并发送给对应的客户端
-                    const cdpMsg = {
-                        method: parsed.method,
-                        params: parsed.params
-                    };
-                    
-                    const clientWs = clientById.get(clientId);
-                    if (clientWs && clientWs.readyState === WebSocket.OPEN) {
-                        clientWs.send(JSON.stringify(cdpMsg));
-                        console.log(`[ATTACHED EVENT] Sent to client: ${clientId}`);
+                if (ws.pairedClientId) {
+                    const clientWs = clientById.get(ws.pairedClientId);
+                    if (safeSend(clientWs, cdpData, 'client')) {
+                        logCDP('DEBUG', `Sent converted event to client: ${parsed.method}`, parsed?.sessionId);
+                        return;
                     }
-                    return;
-                } else if (targetId && sessionId) {
-                    // targetId 还没有映射，缓存事件等待 Target.createTarget 响应
-                    pendingAttachedEvents.set(targetId, { sessionId, parsed, data });
-                    console.log(`[ATTACHED EVENT] Cached for targetId=${targetId}, waiting for createTarget response`);
-                    return;
                 }
+                broadcastToClients(cdpData, ws);
             }
-            
-            const cdpMsg = {
-                method: parsed.method,
-                params: parsed.params
-            };
-            if (parsed.sessionId) {
-                cdpMsg.sessionId = parsed.sessionId;
-            }
-            const cdpData = JSON.stringify(cdpMsg);
-            
-            // 发送给配对的 client
-            if (ws.pairedClientId) {
-                const clientWs = clientById.get(ws.pairedClientId);
-                if (safeSend(clientWs, cdpData, 'client')) {
-                    logCDP('DEBUG', `Sent converted event to client: ${parsed.method}`, parsed?.sessionId);
-                    return;
-                }
-            }
-            // 广播给所有 client
-            broadcastToClients(cdpData, ws);
             return;
         }
 
@@ -418,6 +429,7 @@ function handlePluginConnection(ws, clientInfo) {
                     if (mapping.isCreateBrowserContext && parsed.result?.browserContextId) {
                         const browserContextId = parsed.result.browserContextId;
                         browserContextToClientId.set(browserContextId, mapping.clientId);
+                        clientIdToBrowserContext.set(mapping.clientId, browserContextId);
                         console.log(`[BROWSER CONTEXT MAPPED] browserContextId=${browserContextId} -> clientId=${mapping.clientId}`);
                     }
                     
@@ -484,120 +496,16 @@ function handlePluginConnection(ws, clientInfo) {
             return;
         }
         
-        // 3. 事件广播：无 id 和 sessionId 的消息（如 Target.targetCreated）
-        // 只广播特定类型的事件，避免干扰其他客户端
-        if (parsed && parsed.method) {
-            // 处理 Target.attachedToTarget 事件，建立 sessionId -> clientId 映射
-            if (parsed.method === 'Target.attachedToTarget') {
-                const targetId = parsed.params?.targetInfo?.targetId;
-                const sessionId = parsed.params?.sessionId;
-                const openerId = parsed.params?.targetInfo?.openerId;
-                
-                // 查找 targetId 对应的 clientId
-                let clientId = targetIdToClientId.get(targetId);
-                
-                // 如果没有直接映射，检查 openerId（window.open 打开的新 tab）
-                if (!clientId && openerId) {
-                    // 查找 openerId 对应的 clientId
-                    // openerId 可能是某个已知的 targetId
-                    clientId = targetIdToClientId.get(openerId);
-                    if (clientId) {
-                        console.log(`[OPENER TRACKING] targetId=${targetId?.substring(0,8)} openerId=${openerId?.substring(0,8)} -> clientId=${clientId}`);
-                        // 记录新 targetId 的映射
-                        targetIdToClientId.set(targetId, clientId);
-                    }
-                }
-                
-                if (clientId && sessionId) {
-                    sessionToClientId.set(sessionId, clientId);
-                    console.log(`[SESSION MAPPED from event] sessionId=${sessionId.substring(0,8)} -> clientId=${clientId} (targetId=${targetId?.substring(0,8)})`);
-                    targetIdToClientId.delete(targetId);
-                    
-                    // 只发送给对应的客户端
-                    const clientWs = clientById.get(clientId);
-                    if (clientWs && clientWs.readyState === WebSocket.OPEN) {
-                        clientWs.send(data);
-                    }
-                    return;
-                }
-            }
-            
-            // 处理 Target.targetInfoChanged 事件
-            if (parsed.method === 'Target.targetInfoChanged') {
-                const targetId = parsed.params?.targetInfo?.targetId;
-                const openerId = parsed.params?.targetInfo?.openerId;
-                console.log(`[TARGET INFO CHANGED] targetId=${targetId?.substring(0,8)} openerId=${openerId?.substring(0, 8) || 'none'}`);
-            }
-            
-            if (parsed.method === 'Target.targetCreated') {
-                const targetId = parsed.params?.targetInfo?.targetId;
-                const openerId = parsed.params?.targetInfo?.openerId;
-                const browserContextId = parsed.params?.targetInfo?.browserContextId;
-                const targetType = parsed.params?.targetInfo?.type;
-                
-                console.log(`[TARGET CREATED] targetId=${targetId?.substring(0,8)} type=${targetType} openerId=${openerId?.substring(0, 8) || 'none'} browserContextId=${browserContextId?.substring(0, 8) || 'none'}`);
-                
-                // 如果有 openerId，尝试找到对应的 clientId
-                if (openerId && targetId) {
-                    const openerClientId = targetIdToClientId.get(openerId);
-                    if (openerClientId) {
-                        targetIdToClientId.set(targetId, openerClientId);
-                        console.log(`[TARGET CREATED with opener] targetId=${targetId?.substring(0,8)} openerId=${openerId?.substring(0,8)} -> clientId=${openerClientId}`);
-                    }
-                }
-                
-                // 如果有 browserContextId，尝试找到对应的 clientId
-                // browserContextId 是通过 Target.createBrowserContext 创建的
-                if (browserContextId && targetId) {
-                    const contextClientId = browserContextToClientId.get(browserContextId);
-                    if (contextClientId && !targetIdToClientId.has(targetId)) {
-                        targetIdToClientId.set(targetId, contextClientId);
-                        console.log(`[TARGET CREATED in context] targetId=${targetId?.substring(0,8)} browserContextId=${browserContextId?.substring(0,8)} -> clientId=${contextClientId}`);
-                    }
-                }
-                
-                // Service Worker 处理：Service Worker 通常属于创建它的页面所在的客户端
-                // 通过 browserContextId 来判断归属
-                if (targetType === 'service_worker' && browserContextId && targetId) {
-                    const contextClientId = browserContextToClientId.get(browserContextId);
-                    if (contextClientId) {
-                        targetIdToClientId.set(targetId, contextClientId);
-                        console.log(`[SERVICE WORKER] targetId=${targetId?.substring(0,8)} -> clientId=${contextClientId}`);
-                    }
-                }
-                
-                // iframe (OOPIF) 处理：跨域 iframe 可能有独立的 target
-                // 通过 openerId 或 browserContextId 来判断归属
-                if (targetType === 'iframe' && targetId) {
-                    // 优先使用 openerId
-                    if (openerId) {
-                        const openerClientId = targetIdToClientId.get(openerId);
-                        if (openerClientId) {
-                            targetIdToClientId.set(targetId, openerClientId);
-                            console.log(`[IFRAME with opener] targetId=${targetId?.substring(0,8)} openerId=${openerId?.substring(0,8)} -> clientId=${openerClientId}`);
-                        }
-                    } else if (browserContextId) {
-                        // 否则使用 browserContextId
-                        const contextClientId = browserContextToClientId.get(browserContextId);
-                        if (contextClientId) {
-                            targetIdToClientId.set(targetId, contextClientId);
-                            console.log(`[IFRAME in context] targetId=${targetId?.substring(0,8)} browserContextId=${browserContextId?.substring(0,8)} -> clientId=${contextClientId}`);
-                        }
-                    }
-                }
-            }
-            
-            const broadcastMethods = [
-                'Target.targetCreated',
-                'Target.targetDestroyed',
-                'Target.targetInfoChanged'
+        // 3. 其他事件：无 id 和 sessionId 的消息
+        // 注意：Target 事件已在上方 type: 'event' 分支处理
+        // 这里只处理非 Target 事件
+        if (parsed && parsed.method && !parsed.sessionId) {
+            const nonTargetBroadcastMethods = [
+                'Inspector.detached',
+                'Log.entryAdded'
             ];
-            if (broadcastMethods.includes(parsed.method)) {
-                for (const clientWs of clientConnections) {
-                    if (clientWs.readyState === WebSocket.OPEN) {
-                        clientWs.send(data);
-                    }
-                }
+            if (nonTargetBroadcastMethods.includes(parsed.method)) {
+                broadcastToClients(data, null);
             }
         }
     });
@@ -1016,11 +924,16 @@ function handlePageConnection(ws, clientInfo, targetId) {
                 cdpMsg.sessionId = msg.sessionId;
             }
             
-            if (msg.method === 'Page.screencastFrame' && shouldLog('debug')) {
-                console.log(`[PLUGIN -> PAGE] ${id}: Page.screencastFrame`);
+            // 对于全局 Target 事件，需要广播给所有客户端
+            const broadcastEvents = ['Target.targetCreated', 'Target.attachedToTarget', 'Target.targetDestroyed', 'Target.targetInfoChanged'];
+            if (broadcastEvents.includes(msg.method)) {
+                rewriteBrowserContextId(cdpMsg);
+                console.log(`[PLUGIN -> ALL CLIENTS] Broadcasting ${msg.method}`);
+                broadcastToClients(JSON.stringify(cdpMsg), null);
+            } else {
+                ws.lastActivityTime = Date.now();
+                ws.send(JSON.stringify(cdpMsg));
             }
-            ws.lastActivityTime = Date.now();
-            ws.send(JSON.stringify(cdpMsg));
             return;
         }
 
@@ -1110,15 +1023,50 @@ function handlePageConnection(ws, clientInfo, targetId) {
 }
 
 /**
+ * 重写 Target 事件中的 browserContextId
+ * 插件总是报告 'default'，但 Playwright 期望自己创建的 context ID
+ * 通过 openerId 找到对应的 clientId，再找到该 client 的 browserContextId
+ */
+function rewriteBrowserContextId(cdpMsg) {
+    const targetInfo = cdpMsg.params?.targetInfo;
+    if (!targetInfo || targetInfo.browserContextId !== 'default') {
+        return cdpMsg;
+    }
+
+    let clientId = null;
+
+    if (targetInfo.openerId) {
+        clientId = targetIdToClientId.get(targetInfo.openerId);
+    }
+    if (!clientId && targetInfo.targetId) {
+        clientId = targetIdToClientId.get(targetInfo.targetId);
+    }
+
+    if (clientId) {
+        const contextId = clientIdToBrowserContext.get(clientId);
+        if (contextId) {
+            console.log(`[CONTEXT REWRITE] targetId=${targetInfo.targetId?.substring(0,8)} browserContextId: 'default' -> '${contextId}' (via openerId=${targetInfo.openerId?.substring(0,8) || 'none'}, clientId=${clientId})`);
+            targetInfo.browserContextId = contextId;
+        }
+    }
+
+    return cdpMsg;
+}
+
+/**
  * 广播消息给所有客户端
  */
 function broadcastToClients(data, excludeWs = null) {
     let sent = 0;
+    logCDP('BROADCAST', `Starting broadcast to ${clientConnections.size} clients, data preview: ${data.substring(0, 200)}`);
     clientConnections.forEach((client) => {
+        logCDP('BROADCAST', `Checking client ${client.id}, state=${client.readyState}, excluded=${client === excludeWs}`);
         if (client !== excludeWs && safeSend(client, data, 'client')) {
             sent++;
+            logCDP('BROADCAST', `Sent to client ${client.id}`);
         }
     });
+    logCDP('BROADCAST', `Finished: sent to ${sent} clients`);
     return sent;
 }
 

@@ -11,6 +11,7 @@ const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const PID_FILE = path.join(CONFIG_DIR, 'server.pid');
 const LOG_FILE = path.join(CONFIG_DIR, 'server.log');
 const EXTENSION_STATE_FILE = path.join(CONFIG_DIR, 'extension-state.json');
+const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
 
 const program = new Command();
 
@@ -35,6 +36,22 @@ function log(color, ...args) {
 function ensureConfigDir() {
   if (!fs.existsSync(CONFIG_DIR)) {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  }
+}
+
+function cleanupLogFile() {
+  try {
+    if (fs.existsSync(LOG_FILE)) {
+      const stats = fs.statSync(LOG_FILE);
+      if (stats.size > MAX_LOG_SIZE) {
+        fs.writeFileSync(LOG_FILE, '');
+        console.log('');
+        log('yellow', '⚠ 日志文件超过 10MB，已清空');
+        console.log('');
+      }
+    }
+  } catch (e) {
+    // 清理失败不影响启动
   }
 }
 
@@ -149,7 +166,8 @@ program
     }
     
     ensureConfigDir();
-    
+    cleanupLogFile();
+
     const serverPath = path.join(__dirname, '..', 'server', 'proxy-server.js');
     
     const child = spawn('node', [serverPath], {

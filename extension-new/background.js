@@ -156,17 +156,24 @@ importScripts('features/automation-badge.js');
     var openerTabId = tab.openerTabId;
     var isOpenerControlled = openerTabId && State.isTabAttached(openerTabId);
     
-    if (!isOpenerControlled) {
-      Logger.info('[Tabs] Tab not controlled (no controlled opener), skipping. openerTabId:', openerTabId);
+    // 修改逻辑：只要有 opener，就尝试处理（不管 opener 是否被控制）
+    // 因为 Playwright 创建的页面 opener 可能没有被扩展识别
+    if (!openerTabId) {
+      Logger.info('[Tabs] Tab has no opener, skipping. tabId:', tabId);
       return;
     }
     
-    Logger.info('[Tabs] Tab has controlled opener:', openerTabId, ', will attach');
+    Logger.info('[Tabs] Tab has opener:', openerTabId, ', controlled:', isOpenerControlled, ', will attach');
     
     LocalHandler.getTargetInfoById(String(tabId)).then(function(targetInfo) {
-      if (!targetInfo) return;
+      Logger.info('[Tabs] getTargetInfoById result:', targetInfo ? targetInfo.targetId : 'null');
+      if (!targetInfo) {
+        Logger.error('[Tabs] getTargetInfoById returned null for tabId:', tabId);
+        return;
+      }
       
       var targetId = targetInfo.targetId;
+      Logger.info('[Tabs] targetId:', targetId);
       
       if (State.hasEmittedTarget(targetId)) {
         Logger.info('[Tabs] Target already emitted, skipping:', targetId);
@@ -174,23 +181,35 @@ importScripts('features/automation-badge.js');
       }
       
       State.addEmittedTarget(targetId);
+      Logger.info('[Tabs] Sending Target.targetCreated event');
       
       EventBuilder.send('Target.targetCreated', { targetInfo: targetInfo });
+      Logger.info('[Tabs] Target.targetCreated sent, now attaching to tab:', tabId);
       
       return DebuggerManager.attach(tabId).then(function(attached) {
-        if (!attached) return;
+        Logger.info('[Tabs] DebuggerManager.attach result:', attached);
+        if (!attached) {
+          Logger.error('[Tabs] Failed to attach to tab:', tabId);
+          return;
+        }
         
         var sessionId = CDPUtils.generateSessionId();
         State.mapSession(sessionId, tabId, targetId);
         
         AutomationBadge.inject(tabId);
+        Logger.info('[Tabs] Sending Target.attachedToTarget event');
         
         EventBuilder.send('Target.attachedToTarget', {
           sessionId: sessionId,
           targetInfo: targetInfo,
           waitingForDebugger: false
         });
+        Logger.info('[Tabs] Target.attachedToTarget sent');
+      }).catch(function(err) {
+        Logger.error('[Tabs] DebuggerManager.attach error:', err);
       });
+    }).catch(function(err) {
+      Logger.error('[Tabs] getTargetInfoById error:', err);
     });
   });
 

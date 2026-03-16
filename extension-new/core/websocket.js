@@ -52,8 +52,9 @@ var WebSocketManager = (function() {
 
   function send(message) {
     var ws = State.getWs();
+    var wsState = ws ? ws.readyState : 'no ws';
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      Logger.warn('[WS] Cannot send, WebSocket not open');
+      Logger.warn('[WS] Cannot send, WebSocket not open. State:', wsState);
       return false;
     }
 

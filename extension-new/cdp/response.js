@@ -39,6 +39,7 @@ var EventBuilder = (function() {
   function send(method, params, sessionId) {
     var event = EventBuilder.build(method, params, sessionId);
     WebSocketManager.send(event);
+    console.log('[EventBuilder.send]', method);
     return event;
   }
 

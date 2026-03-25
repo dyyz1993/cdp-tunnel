@@ -44,6 +44,8 @@ var SpecialHandler = (function() {
         var sessionId = CDPUtils.generateSessionId();
         State.mapSession(sessionId, tabId, targetId);
         
+        addTabToAutomationGroup(tabId);
+        
         return { sessionId: sessionId };
       });
     });
@@ -341,7 +343,7 @@ function checkTabVisibility(tabId) {
             var sessionId = CDPUtils.generateSessionId();
             State.mapSession(sessionId, target.tabId, targetId);
 
-            AutomationBadge.inject(target.tabId);
+            addTabToAutomationGroup(target.tabId);
 
             if (config.waitForDebuggerOnStart) {
               State.addPendingDebuggerTab(target.tabId);
@@ -379,6 +381,8 @@ function checkTabVisibility(tabId) {
 
         var sessionId = CDPUtils.generateSessionId();
         State.mapSession(sessionId, tabId, targetId);
+
+        addTabToAutomationGroup(tabId);
 
         var config = State.getAutoAttachConfig();
         if (config.waitForDebuggerOnStart) {

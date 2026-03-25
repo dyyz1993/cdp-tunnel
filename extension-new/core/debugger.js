@@ -106,7 +106,6 @@ var DebuggerManager = (function() {
         State.addAttachedTab(tabId);
         State.setCurrentTabId(tabId);
         State.persist(tabId, true);
-        AutomationBadge.inject(tabId);
         
         // 注入内部URL拦截脚本
         return injectInternalUrlBlocker(tabId);

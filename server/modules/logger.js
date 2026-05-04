@@ -11,6 +11,7 @@ const statusLogFile = path.join(logDir, 'server-status.log');
 
 const MAX_LOG_SIZE = 10 * 1024 * 1024;
 const MAX_LOG_FILES = 5;
+const MAX_TOTAL_LOG_SIZE = 30 * 1024 * 1024;
 
 let logWriteQueue = [];
 let isWritingLog = false;
@@ -84,6 +85,25 @@ function flushStatusQueue() {
 function checkLogRotation() {
   checkAndRotateLog(logFile);
   checkAndRotateLog(statusLogFile);
+  cleanupOldLogs();
+}
+
+function cleanupOldLogs() {
+  try {
+    const files = fs.readdirSync(logDir).filter(f => f.endsWith('.log')).map(f => {
+      const fp = path.join(logDir, f);
+      try {
+        return { path: fp, stat: fs.statSync(fp) };
+      } catch { return null; }
+    }).filter(Boolean).sort((a, b) => a.stat.mtimeMs - b.stat.mtimeMs);
+
+    let totalSize = files.reduce((sum, f) => sum + f.stat.size, 0);
+    while (totalSize > MAX_TOTAL_LOG_SIZE && files.length > 1) {
+      const oldest = files.shift();
+      fs.unlinkSync(oldest.path);
+      totalSize -= oldest.stat.size;
+    }
+  } catch {}
 }
 
 setInterval(checkLogRotation, 60000);
@@ -105,7 +125,43 @@ const NOISY_METHODS = [
   'Network.responseReceivedExtraInfo',
   'Network.dataReceived',
   'Network.loadingFinished',
+  'Network.resourceChangedPriority',
+  'Network.requestServedFromCache',
+  'Network.webSocketFrameSent',
+  'Network.webSocketFrameReceived',
+  'Network.eventSourceMessageReceived',
   'Input.dispatchMouseEvent',
+  'Input.mouseMoved',
+  'Input.keyDown',
+  'Input.keyUp',
+  'Input.char',
+  'Input.dispatchKeyEvent',
+  'Page.lifecycleEvent',
+  'Page.frameStartedLoading',
+  'Page.frameStoppedLoading',
+  'Page.frameNavigated',
+  'Page.frameRequestedNavigation',
+  'Page.frameScheduledNavigation',
+  'Page.frameStartedNavigating',
+  'Page.frameAttached',
+  'Page.frameClearedScheduledNavigation',
+  'Page.navigatedWithinDocument',
+  'Page.domContentEventFired',
+  'Page.loadEventFired',
+  'Page.screencastFrame',
+  'Page.screencastFrameAck',
+  'Runtime.executionContextCreated',
+  'Runtime.executionContextDestroyed',
+  'Runtime.executionContextsCleared',
+  'Runtime.bindingCalled',
+  'CSS.styleChanged',
+  'CSS.fontsUpdated',
+  'DOM.childNodeInserted',
+  'DOM.childNodeRemoved',
+  'DOM.attributeModified',
+  'DOM.attributeRemoved',
+  'DOM.childNodeCountUpdated',
+  'Log.entryAdded',
 ];
 
 function truncateMessage(message) {

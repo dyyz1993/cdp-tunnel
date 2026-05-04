@@ -143,10 +143,72 @@ function openChromeExtensions() {
   }
 }
 
+function startServer(port, watchdog) {
+  const serverPath = path.join(__dirname, '..', 'server', 'proxy-server.js');
+  const logFd = fs.openSync(LOG_FILE, 'a');
+
+  const child = spawn('node', [serverPath], {
+    detached: !watchdog,
+    stdio: ['ignore', logFd, logFd],
+    env: { ...process.env, PORT: port.toString() }
+  });
+
+  fs.writeFileSync(PID_FILE, child.pid.toString());
+
+  if (watchdog) {
+    let restartCount = 0;
+    const MAX_RESTARTS = 10;
+    const RESTART_WINDOW = 60000;
+    let restartTimestamps = [];
+
+    child.on('exit', (code, signal) => {
+      const now = Date.now();
+      restartTimestamps = restartTimestamps.filter(t => now - t < RESTART_WINDOW);
+      restartTimestamps.push(now);
+
+      if (restartTimestamps.length > MAX_RESTARTS) {
+        console.log('');
+        log('red', '✗ 服务器在 60 秒内崩溃超过 ' + MAX_RESTARTS + ' 次，停止重启');
+        log('gray', '  请检查日志: ' + LOG_FILE);
+        console.log('');
+        try { fs.unlinkSync(PID_FILE); } catch {}
+        process.exit(1);
+      }
+
+      const reason = signal ? `信号 ${signal}` : `退出码 ${code}`;
+      console.log('');
+      log('yellow', '⚠ 服务器异常退出 (' + reason + ')，3 秒后自动重启...');
+      console.log('  重启次数: ' + restartTimestamps.length + '/' + MAX_RESTARTS + ' (60秒内)');
+      console.log('');
+
+      setTimeout(() => startServer(port, true), 3000);
+    });
+
+    process.on('SIGINT', () => {
+      console.log('');
+      log('cyan', '正在停止服务器（含 watchdog）...');
+      try { child.kill('SIGTERM'); } catch {}
+      try { fs.unlinkSync(PID_FILE); } catch {}
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', () => {
+      try { child.kill('SIGTERM'); } catch {}
+      try { fs.unlinkSync(PID_FILE); } catch {}
+      process.exit(0);
+    });
+  } else {
+    child.unref();
+  }
+
+  return child;
+}
+
 program
   .command('start')
   .description('启动 CDP Tunnel 服务器')
   .option('-p, --port <port>', '指定端口', parseInt)
+  .option('-w, --watchdog', '启用看门狗，服务器崩溃时自动重启')
   .action((options) => {
     const config = getConfig();
     const port = options.port || config.port;
@@ -168,17 +230,7 @@ program
     ensureConfigDir();
     cleanupLogFile();
 
-    const serverPath = path.join(__dirname, '..', 'server', 'proxy-server.js');
-    
-    const child = spawn('node', [serverPath], {
-      detached: true,
-      stdio: ['ignore', fs.openSync(LOG_FILE, 'a'), fs.openSync(LOG_FILE, 'a')],
-      env: { ...process.env, PORT: port.toString() }
-    });
-    
-    child.unref();
-    
-    fs.writeFileSync(PID_FILE, child.pid.toString());
+    startServer(port, options.watchdog);
     
     if (port !== config.port) {
       config.port = port;
@@ -191,6 +243,9 @@ program
     console.log('  端口: ' + port);
     console.log('  插件: ws://localhost:' + port + '/plugin');
     console.log('  CDP:  http://localhost:' + port);
+    if (options.watchdog) {
+      console.log('  看门狗: 已启用（崩溃自动重启）');
+    }
     console.log('');
     log('gray', '  日志: ' + LOG_FILE);
     console.log('');

@@ -57,20 +57,21 @@ function routeCDPCommand(message) {
   var method = message.method;
   var params = message.params;
   var sessionId = message.sessionId;
+  var clientId = message.clientId;
 
-  console.log('[CDP] routeCDPCommand id=' + id + ' (type: ' + typeof id + ') method=' + method);
+  console.log('[CDP] routeCDPCommand id=' + id + ' (type: ' + typeof id + ') method=' + method + ' clientId=' + (clientId || 'none'));
 
   var route = CDP_HANDLERS[method];
   var logType = route ? route.type : 'FORWARD';
-  Logger.info('[CDP] RECV id=' + id + ' method=' + method + ' type=' + logType + ' sessionId=' + (sessionId || 'null'));
+  Logger.info('[CDP] RECV id=' + id + ' method=' + method + ' type=' + logType + ' sessionId=' + (sessionId || 'null') + ' clientId=' + (clientId || 'null'));
 
   return new Promise(function(resolve) {
     if (route) {
-      Promise.resolve(route.handler({ id: id, method: method, params: params, sessionId: sessionId }))
+      Promise.resolve(route.handler({ id: id, method: method, params: params, sessionId: sessionId, clientId: clientId }))
         .then(function(result) {
           if (result === null && route.type === 'SPECIAL') {
             Logger.info('[CDP] SPECIAL null -> FORWARD id=' + id + ' method=' + method);
-            return ForwardHandler.execute({ id: id, method: method, params: params, sessionId: sessionId });
+            return ForwardHandler.execute({ id: id, method: method, params: params, sessionId: sessionId, clientId: clientId });
           }
           return result;
         })
@@ -83,7 +84,7 @@ function routeCDPCommand(message) {
           resolve({ error: { message: error.message } });
         });
     } else {
-      ForwardHandler.execute({ id: id, method: method, params: params, sessionId: sessionId })
+      ForwardHandler.execute({ id: id, method: method, params: params, sessionId: sessionId, clientId: clientId })
         .then(function(result) {
           Logger.info('[CDP] SEND id=' + id + ' method=' + method + ' hasError=false (forwarded)');
           resolve({ result: result });

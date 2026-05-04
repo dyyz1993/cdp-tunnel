@@ -22,7 +22,8 @@ var State = (function() {
     isAttached: false,
     pendingCreatedTabUrls: new Set(),
     clientIdToTabId: new Map(),
-    clientIdToSessionId: new Map()
+    clientIdToSessionId: new Map(),
+    tabIdToClientId: new Map()
   };
 
   function mapSession(sessionId, tabId, targetId) {
@@ -282,6 +283,14 @@ var State = (function() {
     }
   }
 
+  function setTabIdToClientId(tabId, clientId) {
+    _state.tabIdToClientId.set(tabId, clientId);
+  }
+
+  function getClientIdByTabId(tabId) {
+    return _state.tabIdToClientId.get(tabId);
+  }
+
   function getTabIdByClientId(clientId) {
     return _state.clientIdToTabId.get(clientId);
   }
@@ -379,6 +388,8 @@ var State = (function() {
     getAutomatedTabs: getAutomatedTabs,
     clearSessionState: clearSessionState,
     clearAllState: clearAllState,
-    cleanupAllTabs: cleanupAllTabs
+    cleanupAllTabs: cleanupAllTabs,
+    setTabIdToClientId: setTabIdToClientId,
+    getClientIdByTabId: getClientIdByTabId
   };
 })();

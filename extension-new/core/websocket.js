@@ -223,7 +223,8 @@ var WebSocketManager = (function() {
             method: method,
             params: params,
             tabId: tabId,
-            sessionId: sessionId
+            sessionId: sessionId,
+            clientId: message.__clientId
           });
         }
         break;
@@ -235,7 +236,8 @@ var WebSocketManager = (function() {
             method: method,
             params: params,
             tabId: tabId,
-            sessionId: sessionId
+            sessionId: sessionId,
+            clientId: message.__clientId
           });
         }
     }

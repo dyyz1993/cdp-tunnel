@@ -18,6 +18,7 @@ var SpecialHandler = (function() {
   function targetAttachToTarget(context) {
     var params = context.params;
     var targetId = params && params.targetId;
+    var clientId = context.clientId;
     if (!targetId) {
       return Promise.resolve({});
     }
@@ -28,7 +29,7 @@ var SpecialHandler = (function() {
       }
 
       var isAlreadyAttached = State.isTabAttached(tabId);
-      
+
       if (isAlreadyAttached) {
         var newSessionId = CDPUtils.generateSessionId();
         State.mapSession(newSessionId, tabId, targetId);
@@ -43,9 +44,14 @@ var SpecialHandler = (function() {
 
         var sessionId = CDPUtils.generateSessionId();
         State.mapSession(sessionId, tabId, targetId);
-        
-        addTabToAutomationGroup(tabId);
-        
+
+        // 保存tabId到clientId的映射
+        if (clientId) {
+          State.setTabIdToClientId(tabId, clientId);
+        }
+
+        addTabToAutomationGroup(tabId, clientId);
+
         return { sessionId: sessionId };
       });
     });
@@ -75,6 +81,7 @@ var SpecialHandler = (function() {
     var params = context.params;
     var url = (params && params.url) || 'about:blank';
     var browserContextId = (params && params.browserContextId) || 'default';
+    var clientId = context.clientId;
 
     return new Promise(function(resolve, reject) {
       State.addPendingCreatedTabUrl(url);
@@ -85,10 +92,16 @@ var SpecialHandler = (function() {
           reject(new Error('Failed to create tab'));
           return;
         }
-        
-        // 将标签页添加到CDP Automation组
-        addTabToAutomationGroup(tab.id);
-        
+
+        // 保存tabId到clientId的映射，用于后续分组
+        if (clientId) {
+          State.setTabIdToClientId(tab.id, clientId);
+          Logger.info('[TabGroup] Mapped tabId:', tab.id, '-> clientId:', clientId);
+        }
+
+        // 将标签页添加到CDP Automation组，使用对应的clientId
+        addTabToAutomationGroup(tab.id, clientId);
+
         var targetId = String(tab.id);
         State.addEmittedTarget(targetId);
         getTargetIdByTabId(tab.id).then(function(targetId) {
@@ -99,22 +112,27 @@ var SpecialHandler = (function() {
       });
     });
   }
-  
-  function addTabToAutomationGroup(tabId) {
-    Logger.info('[TabGroup] Starting addTabToAutomationGroup for tabId:', tabId);
-    
-    // 获取当前CDP客户端列表
-    var cdpClients = State.getCDPClients() || [];
+
+  function addTabToAutomationGroup(tabId, clientId) {
+    Logger.info('[TabGroup] Starting addTabToAutomationGroup for tabId:', tabId, 'clientId:', clientId);
+
     var groupName;
-    
-    // 如果有CDP客户端，使用第一个客户端的ID作为组名
-    if (cdpClients.length > 0) {
-      groupName = 'CDP-' + cdpClients[0].id.substring(0, 8);
-      Logger.info('[TabGroup] Using CDP client ID for group name:', groupName);
+
+    // 如果有指定的clientId，使用该clientId作为组名
+    if (clientId) {
+      groupName = 'CDP-' + clientId.substring(0, 8);
+      Logger.info('[TabGroup] Using specific clientId for group name:', groupName);
     } else {
-      // 如果没有CDP客户端，使用固定的组名
-      groupName = 'CDP-Automation';
-      Logger.info('[TabGroup] No CDP client, using default group name:', groupName);
+      // 如果没有clientId，回退到使用第一个CDP客户端的ID
+      var cdpClients = State.getCDPClients() || [];
+      if (cdpClients.length > 0 && cdpClients[0] && cdpClients[0].id) {
+        groupName = 'CDP-' + cdpClients[0].id.substring(0, 8);
+        Logger.info('[TabGroup] Using first CDP client ID for group name:', groupName);
+      } else {
+        // 如果没有CDP客户端，使用固定的组名
+        groupName = 'CDP-Automation';
+        Logger.info('[TabGroup] No CDP client, using default group name:', groupName);
+      }
     }
     
     // 添加延迟等待，确保标签页完全加载后再分组

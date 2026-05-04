@@ -137,7 +137,7 @@ function logCDP(direction, message, sessionId = null, pluginType = null) {
     return;
   }
   const timestamp = new Date().toISOString();
-  const sessionPrefix = sessionId ? `[session:${sessionId.substring(0, 8)}]` : '';
+  const sessionPrefix = sessionId && typeof sessionId === 'string' ? `[session:${sessionId.substring(0, 8)}]` : '';
   const typePrefix = pluginType ? `[${pluginType}]` : '';
   const logLine = `[${timestamp}] ${typePrefix}${sessionPrefix}[${direction}] ${truncatedMessage}\n`;
   

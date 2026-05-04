@@ -362,7 +362,7 @@ function handlePluginConnection(ws, clientInfo) {
                         const openerClientId = targetIdToClientId.get(openerId);
                         if (openerClientId) {
                             targetIdToClientId.set(targetId, openerClientId);
-                            console.log(`[TARGET CREATED with opener] targetId=${targetId.substring(0,8)} openerId=${openerId.substring(0,8)} -> clientId=${openerClientId}`);
+                            console.log(`[TARGET CREATED with opener] targetId=${targetId?.substring(0,8) || 'none'} openerId=${openerId?.substring(0,8) || 'none'} -> clientId=${openerClientId}`);
                         }
                     }
                 }
@@ -381,7 +381,7 @@ function handlePluginConnection(ws, clientInfo) {
                 
                 if (targetId && sessionId) {
                     sessionToClientId.set(sessionId, targetId);
-                    console.log(`[SESSION MAPPED] sessionId=${sessionId.substring(0,8)} -> targetId=${targetId.substring(0,8)}`);
+                    console.log(`[SESSION MAPPED] sessionId=${sessionId?.substring(0,8) || 'none'} -> targetId=${targetId?.substring(0,8) || 'none'}`);
                 }
             }
             
@@ -443,8 +443,10 @@ function handlePluginConnection(ws, clientInfo) {
                         // 检查是否有缓存的 Target.attachedToTarget 事件
                         const cachedEvent = pendingAttachedEvents.get(targetId);
                         if (cachedEvent) {
-                            sessionToClientId.set(cachedEvent.sessionId, mapping.clientId);
-                            console.log(`[SESSION MAPPED from cached] sessionId=${cachedEvent.sessionId.substring(0,8)} -> clientId=${mapping.clientId} (targetId=${targetId})`);
+                            if (cachedEvent.sessionId) {
+                                sessionToClientId.set(cachedEvent.sessionId, mapping.clientId);
+                            }
+                            console.log(`[SESSION MAPPED from cached] sessionId=${cachedEvent.sessionId?.substring(0,8) || 'none'} -> clientId=${mapping.clientId} (targetId=${targetId})`);
                             pendingAttachedEvents.delete(targetId);
                             
                             // 先发送缓存的事件给客户端
@@ -483,7 +485,7 @@ function handlePluginConnection(ws, clientInfo) {
         // 2. sessionId 路由：消息属于特定 session（事件，没有 id）
         if (parsed && parsed.sessionId) {
             const targetClientId = sessionToClientId.get(parsed.sessionId);
-            console.log(`[SESSION ROUTE] sessionId=${parsed.sessionId?.substring(0,8)} -> clientId=${targetClientId || 'not found'}`);
+            console.log(`[SESSION ROUTE] sessionId=${parsed.sessionId?.substring(0,8) || 'none'} -> clientId=${targetClientId || 'not found'}`);
             if (targetClientId) {
                 const clientWs = clientById.get(targetClientId);
                 if (clientWs && clientWs.readyState === WebSocket.OPEN) {
@@ -491,7 +493,7 @@ function handlePluginConnection(ws, clientInfo) {
                     logCDP('DEBUG', `FORWARDED to client: ${targetClientId} (sessionId route)`, parsed?.sessionId);
                 }
             } else {
-                console.log(`[WARN] No clientId for sessionId: ${parsed.sessionId?.substring(0, 8)}`);
+                console.log(`[WARN] No clientId for sessionId: ${parsed.sessionId?.substring(0, 8) || 'none'}`);
             }
             return;
         }
@@ -787,8 +789,10 @@ function handleClientConnection(ws, clientInfo, customClientId = null) {
 
         // 发送给配对的 plugin (或广播)
         if (ws.pairedPlugin && ws.pairedPlugin.readyState === WebSocket.OPEN) {
-            console.log(`[SEND TO PLUGIN] id=${parsed?.id} method=${parsed?.method} sessionId=${parsed?.sessionId?.substring(0,8) || 'none'}`);
-            ws.pairedPlugin.send(modifiedData);
+            console.log(`[SEND TO PLUGIN] id=${parsed?.id} method=${parsed?.method} sessionId=${parsed?.sessionId?.substring(0,8) || 'none'} clientId=${id}`);
+            // 在消息中附加 clientId 信息
+            const pluginMsg = { ...parsed, __clientId: id };
+            ws.pairedPlugin.send(JSON.stringify(pluginMsg));
         } else {
             broadcastToPlugins(modifiedData, ws);
         }
@@ -1045,7 +1049,7 @@ function rewriteBrowserContextId(cdpMsg) {
     if (clientId) {
         const contextId = clientIdToBrowserContext.get(clientId);
         if (contextId) {
-            console.log(`[CONTEXT REWRITE] targetId=${targetInfo.targetId?.substring(0,8)} browserContextId: 'default' -> '${contextId}' (via openerId=${targetInfo.openerId?.substring(0,8) || 'none'}, clientId=${clientId})`);
+            console.log(`[CONTEXT REWRITE] targetId=${targetInfo.targetId?.substring(0,8) || 'none'} browserContextId: 'default' -> '${contextId}' (via openerId=${targetInfo.openerId?.substring(0,8) || 'none'}, clientId=${clientId})`);
             targetInfo.browserContextId = contextId;
         }
     }

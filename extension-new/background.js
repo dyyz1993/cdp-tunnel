@@ -167,14 +167,19 @@ String.prototype.hashCode = function() {
     var openerTabId = tab.openerTabId;
     var isOpenerControlled = openerTabId && State.isTabAttached(openerTabId);
     
-    // 修改逻辑：只要有 opener，就尝试处理（不管 opener 是否被控制）
-    // 因为 Playwright 创建的页面 opener 可能没有被扩展识别
+    // 只有当 opener 被 CDP 控制时才跟踪新页面
+    // 这样可以避免跟踪用户手动点击链接打开的页面
     if (!openerTabId) {
       Logger.info('[Tabs] Tab has no opener, skipping. tabId:', tabId);
       return;
     }
     
-    Logger.info('[Tabs] Tab has opener:', openerTabId, ', controlled:', isOpenerControlled, ', will attach');
+    if (!isOpenerControlled) {
+      Logger.info('[Tabs] Opener not controlled by CDP, skipping. tabId:', tabId, 'openerTabId:', openerTabId);
+      return;
+    }
+    
+    Logger.info('[Tabs] Tab has controlled opener, will attach. tabId:', tabId, 'openerTabId:', openerTabId);
     
     LocalHandler.getTargetInfoById(String(tabId)).then(function(targetInfo) {
       Logger.info('[Tabs] getTargetInfoById result:', targetInfo ? targetInfo.targetId : 'null');
@@ -209,18 +214,26 @@ String.prototype.hashCode = function() {
         
         // 将标签页添加到CDP组（添加延迟等待）
         setTimeout(function() {
-          // 获取当前CDP客户端列表
-          var cdpClients = State.getCDPClients() || [];
+          // 获取openerTabId对应的clientId
+          var openerClientId = openerTabId ? State.getClientIdByTabId(openerTabId) : null;
           var groupName;
-          
-          // 如果有CDP客户端，使用第一个客户端的ID作为组名
-          if (cdpClients.length > 0) {
-            groupName = 'CDP-' + cdpClients[0].id.substring(0, 8);
+
+          // 如果有指定的clientId，使用该clientId作为组名
+          if (openerClientId) {
+            groupName = 'CDP-' + openerClientId.substring(0, 8);
+            Logger.info('[TabGroup] Using opener clientId for group name:', groupName, 'openerTabId:', openerTabId);
           } else {
-            // 如果没有CDP客户端，使用时间戳作为组名
-            groupName = 'CDP-' + Date.now().toString(36);
+            // 回退到使用第一个CDP客户端的ID
+            var cdpClients = State.getCDPClients() || [];
+            if (cdpClients.length > 0 && cdpClients[0] && cdpClients[0].id) {
+              groupName = 'CDP-' + cdpClients[0].id.substring(0, 8);
+            } else {
+              // 如果没有CDP客户端，使用时间戳作为组名
+              groupName = 'CDP-' + Date.now().toString(36);
+            }
+            Logger.info('[TabGroup] Using fallback clientId for group name:', groupName);
           }
-          
+
           chrome.tabGroups.query({ title: groupName }, function(groups) {
             if (groups.length > 0) {
               // 找到现有的组，将标签页添加到组

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>IFrame Test Page</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    .section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 8px; }
+    h2 { margin-top: 0; color: #333; }
+    iframe { width: 100%; height: 200px; border: 2px solid #666; margin: 10px 0; }
+    input { padding: 8px; font-size: 14px; margin: 5px; }
+    button { padding: 8px 16px; font-size: 14px; cursor: pointer; }
+    #status { margin-top: 10px; padding: 10px; background: #f0f0f0; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>CDP Tunnel - IFrame Test Page</h1>
+
+  <div class="section">
+    <h2>Main Page Inputs</h2>
+    <input id="main-input-1" type="text" placeholder="Main input 1" />
+    <input id="main-input-2" type="text" placeholder="Main input 2" />
+    <button id="main-btn" onclick="document.getElementById('status').textContent='Main button clicked at ' + new Date().toISOString()">Main Button</button>
+    <div id="status"></div>
+  </div>
+
+  <div class="section">
+    <h2>Same-Origin IFrame</h2>
+    <iframe id="same-origin-iframe" srcdoc="
+      <html>
+        <body style='padding:10px; font-family:sans-serif;'>
+          <h3>Same-Origin IFrame Content</h3>
+          <input id='iframe-input-1' type='text' placeholder='Same-origin input 1' />
+          <input id='iframe-input-2' type='text' placeholder='Same-origin input 2' />
+          <button id='iframe-btn' onclick=\"document.getElementById('iframe-result').textContent='Iframe button clicked!'\">
+            Iframe Button
+          </button>
+          <div id='iframe-result'></div>
+        </body>
+      </html>
+    "></iframe>
+  </div>
+
+  <div class="section">
+    <h2>Cross-Origin IFrame (Wikipedia)</h2>
+    <iframe id="cross-origin-iframe" src="https://en.wikipedia.org/wiki/Main_Page" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+  </div>
+
+  <div class="section">
+    <h2>Nested IFrame (same-origin, 2 levels)</h2>
+    <iframe id="nested-iframe" srcdoc="
+      <html>
+        <body style='padding:10px; font-family:sans-serif;'>
+          <h3>Level 1 IFrame</h3>
+          <input id='l1-input' type='text' placeholder='Level 1 input' />
+          <iframe id='nested-inner' srcdoc=\"
+            <html>
+              <body style='padding:10px; font-family:sans-serif;'>
+                <h4>Level 2 Nested IFrame</h4>
+                <input id='l2-input' type='text' placeholder='Level 2 input' />
+              </body>
+            </html>
+          \" width='100%' height='120' style='border:1px solid #999;'></iframe>
+        </body>
+      </html>
+    "></iframe>
+  </div>
+
+  <div class="section">
+    <h2>Dynamic IFrame (created by JS)</h2>
+    <button id="create-iframe-btn" onclick="createDynamicIframe()">Create Dynamic IFrame</button>
+    <div id="dynamic-iframe-container"></div>
+    <script>
+      function createDynamicIframe() {
+        const container = document.getElementById('dynamic-iframe-container');
+        const iframe = document.createElement('iframe');
+        iframe.id = 'dynamic-iframe';
+        iframe.width = '100%';
+        iframe.height = '150';
+        iframe.style.border = '2px solid red';
+        iframe.style.marginTop = '10px';
+        iframe.srcdoc = '<html><body style="padding:10px; font-family:sans-serif;"><h3>Dynamic IFrame</h3><input id="dyn-input" type="text" placeholder="Dynamic iframe input" /></body></html>';
+        container.appendChild(iframe);
+        document.getElementById('status').textContent = 'Dynamic iframe created';
+      }
+    </script>
+  </div>
+</body>
+</html>

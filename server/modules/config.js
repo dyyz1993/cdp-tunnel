@@ -1,5 +1,5 @@
 const CONFIG = {
-  PORT: 9221,
+  PORT: process.env.PORT ? parseInt(process.env.PORT) : 9221,
   HEARTBEAT_INTERVAL: 30000,
   STATUS_PRINT_INTERVAL: 60000,
   TARGETS_CACHE_TTL: 2000,

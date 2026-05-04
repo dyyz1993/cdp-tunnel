@@ -4,14 +4,24 @@ var DebuggerManager = (function() {
   if (window.__internalUrlBlockInjected) return;
   window.__internalUrlBlockInjected = true;
   
-  var blockedProtocols = ['bitbrowser:', 'chrome:', 'edge:', 'chrome-extension:'];
+  var blockedProtocols = ['bitbrowser:', 'chrome:', 'edge:', 'chrome-extension:', 'bytedance:', 'sslocal:', 'alipays:', 'weixin:', 'mqq:', 'taobao:', 'tmall:'];
   
   function isInternalUrl(url) {
     if (!url) return false;
+    // Whitelist: only allow http/https/about/data/blob/file
+    if (url.startsWith('http:') || url.startsWith('https:') || url.startsWith('about:') || url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('file:')) {
+      return false;
+    }
+    // Also check explicit blocked list for common custom protocols
     for (var i = 0; i < blockedProtocols.length; i++) {
       if (url.startsWith(blockedProtocols[i])) {
         return true;
       }
+    }
+    // Block any other custom protocol (xxx://)
+    var colonIdx = url.indexOf(':');
+    if (colonIdx > 0 && colonIdx < 20 && url.substring(colonIdx, colonIdx + 3) === '://') {
+      return true;
     }
     return false;
   }
@@ -232,10 +242,7 @@ var DebuggerManager = (function() {
       Logger.warn('  Disposition:', disposition);
       Logger.warn('  FrameId:', frameId);
       
-      if (url.startsWith('chrome://') || 
-          url.startsWith('bitbrowser://') || 
-          url.startsWith('edge://') ||
-          url.startsWith('chrome-extension://')) {
+      if (url && !url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('about:') && !url.startsWith('data:') && !url.startsWith('blob:') && !url.startsWith('file://')) {
         Logger.error('[NAVIGATION] ⚠️ 检测到导航到内部页面，尝试阻止!');
         Logger.error('[NAVIGATION] 目标URL:', url);
         

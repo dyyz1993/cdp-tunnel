@@ -369,9 +369,20 @@ function handlePluginConnection(ws, clientInfo) {
 
                 rewriteBrowserContextId(cdpMsg);
                 const cdpData = JSON.stringify(cdpMsg);
-                logCDP('BROADCAST', `Broadcasting ${parsed.method}, full data: ${cdpData}`, parsed?.sessionId);
-                broadcastToClients(cdpData, null);
-                logCDP('BROADCAST', `Done broadcasting ${parsed.method}`, parsed?.sessionId);
+
+                const targetId = parsed.params?.targetInfo?.targetId;
+                const eventClientId = targetId ? targetIdToClientId.get(targetId) : null;
+
+                if (eventClientId) {
+                    const clientWs = clientById.get(eventClientId);
+                    if (clientWs && clientWs.readyState === WebSocket.OPEN) {
+                        clientWs.send(cdpData);
+                        console.log(`[TARGET EVENT ROUTED] ${parsed.method} targetId=${targetId?.substring(0,8)} -> clientId=${eventClientId}`);
+                    }
+                } else {
+                    console.log(`[TARGET EVENT BROADCAST] ${parsed.method} targetId=${targetId?.substring(0,8) || 'none'} (no owner, broadcasting)`);
+                    broadcastToClients(cdpData, null);
+                }
             }
             
             // 对于 Target.attachedToTarget 事件，建立 sessionId -> clientId 映射
@@ -460,6 +471,23 @@ function handlePluginConnection(ws, clientInfo) {
                             console.log(`[ATTACHED EVENT] Full message: ${msgStr}`);
                             clientWs.send(msgStr);
                             console.log(`[ATTACHED EVENT] Sent cached event to client: ${mapping.clientId}`);
+                        }
+                    }
+                    // 过滤 Target.getTargets 响应，只返回该客户端拥有的 target
+                    if (mapping.isGetTargets && parsed.result && parsed.result.targetInfos) {
+                        const clientId = mapping.clientId;
+                        parsed.result.targetInfos = parsed.result.targetInfos.filter(t => {
+                            if (t.type !== 'page') return true;
+                            const ownerClient = targetIdToClientId.get(t.targetId);
+                            return !ownerClient || ownerClient === clientId;
+                        });
+                        console.log(`[GET TARGETS FILTERED] client=${clientId} returned ${parsed.result.targetInfos.filter(t => t.type === 'page').length} page targets`);
+                    }
+                    // 清理 Target.closeTarget 成功后的映射
+                    if (parsed.result && parsed.result.success !== undefined && mapping.method === 'Target.closeTarget') {
+                        if (mapping.closeTargetId) {
+                            targetIdToClientId.delete(mapping.closeTargetId);
+                            console.log(`[CLOSE TARGET CLEANUP] removed targetId=${mapping.closeTargetId?.substring(0,8)} from mapping`);
                         }
                     }
                     
@@ -731,6 +759,13 @@ function handleClientConnection(ws, clientInfo, customClientId = null) {
             }
             console.log(`[PENDING CREATE TARGET] Request id=${parsed.id} from client=${id}`);
         }
+        if (parsed && parsed.method === 'Target.closeTarget' && parsed.id !== undefined) {
+            const currentMapping = globalRequestIdMap.get(parsed.id);
+            if (currentMapping) {
+                currentMapping.method = 'Target.closeTarget';
+                currentMapping.closeTargetId = parsed.params?.targetId;
+            }
+        }
         
         // 记录 Target.createBrowserContext 请求，用于后续建立 browserContextId -> clientId 映射
         if (parsed && parsed.method === 'Target.createBrowserContext' && parsed.id !== undefined) {
@@ -740,41 +775,17 @@ function handleClientConnection(ws, clientInfo, customClientId = null) {
             }
             console.log(`[PENDING CREATE CONTEXT] Request id=${parsed.id} from client=${id}`);
         }
+        if (parsed && parsed.method === 'Target.getTargets' && parsed.id !== undefined) {
+            const currentMapping = globalRequestIdMap.get(parsed.id);
+            if (currentMapping) {
+                currentMapping.isGetTargets = true;
+            }
+        }
 
-        // 拦截 Browser.close - 清理会话状态
         if (parsed && parsed.method === 'Browser.close') {
             if (shouldLog('info')) {
-                console.log(`\n[BROWSER CLOSE] Client ${id} requested Browser.close`);
+                console.log(`\n[BROWSER CLOSE] Client ${id} requested Browser.close, forwarding to plugin`);
             }
-            
-            // 清理该客户端的所有 session 映射
-            const sessionsToClean = [];
-            for (const [sessionId, clientId] of sessionToClientId.entries()) {
-                if (clientId === id) {
-                    sessionsToClean.push(sessionId);
-                    sessionToClientId.delete(sessionId);
-                }
-            }
-            if (shouldLog('info')) {
-                console.log(`  - Cleaned ${sessionsToClean.length} sessions`);
-            }
-            
-            // 通知扩展清理状态
-            if (ws.pairedPlugin && ws.pairedPlugin.readyState === WebSocket.OPEN) {
-                ws.pairedPlugin.send(JSON.stringify({
-                    type: 'browser-close',
-                    clientId: id,
-                    sessions: sessionsToClean
-                }));
-            }
-            
-            // 返回 mock 响应（包含 sessionId）
-            const response = { id: parsed.id, result: {} };
-            if (parsed.sessionId) {
-                response.sessionId = parsed.sessionId;
-            }
-            ws.send(JSON.stringify(response));
-            return;
         }
 
         if (parsed && parsed.method) {

@@ -181,7 +181,7 @@ var WebSocketManager = (function() {
         break;
 
       case 'browser-close':
-        handleBrowserClose(message.sessions);
+        handleBrowserClose(message.sessions, message.clientId);
         break;
 
       case 'client-connected':
@@ -193,11 +193,18 @@ var WebSocketManager = (function() {
 
       case 'client-disconnected':
         Logger.info('[WS] Client disconnected:', message.clientId);
-        State.removeCDPClient(message.clientId);
-        if (State.getCDPClients().length === 0) {
-          State.setHasConnectedClient(false);
-        }
-        broadcastStateUpdate();
+        var discClientId = message.clientId;
+        closeTabGroupByClientId(discClientId).then(function() {
+          return new Promise(function(resolve) {
+            closeTabsByClientId(discClientId, resolve);
+          });
+        }).then(function() {
+          State.removeCDPClient(discClientId);
+          if (State.getCDPClients().length === 0) {
+            State.setHasConnectedClient(false);
+          }
+          broadcastStateUpdate();
+        });
         break;
         
       case 'client-list':
@@ -243,6 +250,103 @@ var WebSocketManager = (function() {
     }
   }
 
+  function closeTabGroupByClientId(clientId) {
+    if (!clientId) return Promise.resolve();
+    
+    Logger.info('[WS] Closing tab group for client:', clientId);
+    
+    return new Promise(function(resolve) {
+        var groupId = State.getGroupIdForClient(clientId);
+        
+        if (groupId) {
+            closeGroupById(groupId, clientId, resolve);
+        } else {
+            var groupName = 'CDP-' + clientId.substring(0, 8);
+            chrome.tabGroups.query({ title: groupName }, function(groups) {
+                if (!groups || groups.length === 0) {
+                    chrome.tabGroups.query({}, function(allGroups) {
+                        if (allGroups) {
+                            var match = allGroups.find(function(g) {
+                                return g.title && g.title.indexOf(groupName) === 0;
+                            });
+                            if (match) {
+                                closeGroupById(match.id, clientId, resolve);
+                            } else {
+                                Logger.info('[WS] No tab group found, closing tabs by clientId:', clientId);
+                                closeTabsByClientId(clientId, resolve);
+                            }
+                        } else {
+                            resolve();
+                        }
+                    });
+                } else {
+                    closeGroupById(groups[0].id, clientId, resolve);
+                }
+            });
+        }
+    });
+  }
+
+  function closeGroupById(groupId, clientId, resolve) {
+    chrome.tabs.query({ groupId: groupId }, function(tabs) {
+        if (!tabs || tabs.length === 0) {
+            Logger.info('[WS] No tabs in group:', groupId);
+            State.removeGroupForClient(clientId);
+            resolve();
+            return;
+        }
+        
+        var tabIds = tabs.map(function(tab) { return tab.id; });
+        Logger.info('[WS] Closing ' + tabIds.length + ' tabs in group:', groupId);
+        
+        chrome.tabs.remove(tabIds, function() {
+            if (chrome.runtime.lastError) {
+                Logger.error('[WS] Failed to close tabs:', chrome.runtime.lastError.message);
+            } else {
+                Logger.info('[WS] Successfully closed ' + tabIds.length + ' tabs');
+            }
+            
+            tabIds.forEach(function(tabId) {
+                chrome.debugger.detach({ tabId: tabId }).catch(function() {});
+            });
+            
+            State.removeGroupForClient(clientId);
+            resolve();
+        });
+    });
+  }
+
+  function closeTabsByClientId(clientId, resolve) {
+    var attachedTabs = State.getAttachedTabIds();
+    var tabsToClose = [];
+    
+    attachedTabs.forEach(function(tabId) {
+      if (State.getClientIdByTabId(tabId) === clientId) {
+        tabsToClose.push(tabId);
+      }
+    });
+    
+    if (tabsToClose.length === 0) {
+      Logger.info('[WS] No attached tabs found for clientId:', clientId);
+      resolve();
+      return;
+    }
+    
+    Logger.info('[WS] Closing ' + tabsToClose.length + ' attached tabs for clientId:', clientId);
+    
+    tabsToClose.forEach(function(tabId) {
+      chrome.tabs.remove(tabId, function() {
+        if (chrome.runtime.lastError) {
+          Logger.info('[WS] Tab already closed:', tabId);
+        }
+      });
+      chrome.debugger.detach({ tabId: tabId }).catch(function() {});
+      State.removeAttachedTab(tabId);
+    });
+    
+    resolve();
+  }
+
   function handleServerRestart() {
     Logger.info('[WS] Server restarted, cleaning up all state...');
 
@@ -260,20 +364,21 @@ var WebSocketManager = (function() {
     });
   }
 
-  function handleBrowserClose(sessions) {
-    Logger.info('[WS] Browser.close received, cleaning up...');
-
-    var attachedTabIds = State.getAttachedTabIds();
-    var promises = attachedTabIds.map(function(tabId) {
-      return chrome.debugger.detach({ tabId: tabId }).catch(function(e) {
-        Logger.info('[WS] Detach failed for tab', tabId, ':', e.message);
+  function handleBrowserClose(sessions, clientId) {
+    Logger.info('[WS] Browser.close received, cleaning up... clientId:', clientId);
+    
+    closeTabGroupByClientId(clientId).then(function() {
+      var attachedTabIds = State.getAttachedTabIds();
+      var promises = attachedTabIds.map(function(tabId) {
+          return chrome.debugger.detach({ tabId: tabId }).catch(function(e) {
+            Logger.info('[WS] Detach failed for tab', tabId, ':', e.message);
+          });
       });
-    });
-
-    Promise.all(promises).then(function() {
-      State.clearAllState();
-      State.persist(null, false);
-      Logger.info('[WS] Browser.close cleanup complete');
+      Promise.all(promises).then(function() {
+        State.clearAllState();
+        State.persist(null, false);
+        Logger.info('[WS] Browser.close cleanup complete');
+      });
     });
   }
 

@@ -23,7 +23,8 @@ var State = (function() {
     pendingCreatedTabUrls: new Set(),
     clientIdToTabId: new Map(),
     clientIdToSessionId: new Map(),
-    tabIdToClientId: new Map()
+    tabIdToClientId: new Map(),
+    clientIdToGroupId: new Map()
   };
 
   function mapSession(sessionId, tabId, targetId) {
@@ -261,17 +262,59 @@ var State = (function() {
     };
     _state.discoverTargetsEnabled = false;
     _state.hasConnectedClient = false;
+    _state.tabIdToClientId.clear();
+    _state.clientIdToGroupId.clear();
   }
 
   function cleanupAllTabs() {
     return new Promise(function(resolve) {
       var tabIds = Array.from(_state.attachedTabIds);
-      var promises = tabIds.map(function(tabId) {
+      
+      var detachPromises = tabIds.map(function(tabId) {
         return chrome.debugger.detach({ tabId: tabId }).catch(function() {});
       });
-      Promise.all(promises).then(function() {
-        clearAllState();
-        persist(null, false).then(resolve);
+      
+      Promise.all(detachPromises).then(function() {
+        chrome.tabGroups.query({}, function(groups) {
+          if (!groups || groups.length === 0) {
+            clearAllState();
+            persist(null, false).then(resolve);
+            return;
+          }
+          
+          var cdpGroups = groups.filter(function(g) {
+            return g.title && g.title.indexOf('CDP-') === 0;
+          });
+          
+          if (cdpGroups.length === 0) {
+            clearAllState();
+            persist(null, false).then(resolve);
+            return;
+          }
+          
+          var closePromises = cdpGroups.map(function(group) {
+            return new Promise(function(res) {
+              chrome.tabs.query({ groupId: group.id }, function(tabs) {
+                if (!tabs || tabs.length === 0) {
+                  res();
+                  return;
+                }
+                var ids = tabs.map(function(t) { return t.id; });
+                chrome.tabs.remove(ids, function() {
+                  if (chrome.runtime.lastError) {
+                    console.error('[State] Failed to close tabs:', chrome.runtime.lastError.message);
+                  }
+                  res();
+                });
+              });
+            });
+          });
+          
+          Promise.all(closePromises).then(function() {
+            clearAllState();
+            persist(null, false).then(resolve);
+          });
+        });
       });
     });
   }
@@ -289,6 +332,18 @@ var State = (function() {
 
   function getClientIdByTabId(tabId) {
     return _state.tabIdToClientId.get(tabId);
+  }
+
+  function setGroupIdForClient(clientId, groupId) {
+    _state.clientIdToGroupId.set(clientId, groupId);
+  }
+
+  function getGroupIdForClient(clientId) {
+    return _state.clientIdToGroupId.get(clientId);
+  }
+
+  function removeGroupForClient(clientId) {
+    _state.clientIdToGroupId.delete(clientId);
   }
 
   function getTabIdByClientId(clientId) {
@@ -390,6 +445,9 @@ var State = (function() {
     clearAllState: clearAllState,
     cleanupAllTabs: cleanupAllTabs,
     setTabIdToClientId: setTabIdToClientId,
-    getClientIdByTabId: getClientIdByTabId
+    getClientIdByTabId: getClientIdByTabId,
+    setGroupIdForClient: setGroupIdForClient,
+    getGroupIdForClient: getGroupIdForClient,
+    removeGroupForClient: removeGroupForClient
   };
 })();

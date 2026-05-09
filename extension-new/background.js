@@ -122,6 +122,7 @@ String.prototype.hashCode = function() {
     Logger.info('[Tabs] Tab removed:', tabId);
 
     State.removeAttachedTab(tabId);
+    var removedClientId = State.getClientIdByTabId(tabId);
     Screencast.stopPolling(tabId);
     AutomationBadge.remove(tabId);
 
@@ -134,6 +135,9 @@ String.prototype.hashCode = function() {
         targetId: targetId
       });
       State.unmapSession(sessionId);
+      if (removedClientId) {
+        SpecialHandler.updateTabGroupName(removedClientId);
+      }
     }
 
     if (State.getCurrentTabId() === tabId) {
@@ -260,7 +264,8 @@ String.prototype.hashCode = function() {
                   
                   chrome.tabGroups.update(groupId, {
                     title: groupName,
-                    color: groupColor
+                    color: groupColor,
+                    collapsed: true
                   }, function(group) {
                     if (chrome.runtime.lastError) {
                       Logger.error('[TabGroup] Failed to update group:', chrome.runtime.lastError.message);

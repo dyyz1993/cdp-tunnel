@@ -117,74 +117,88 @@ var SpecialHandler = (function() {
     Logger.info('[TabGroup] Starting addTabToAutomationGroup for tabId:', tabId, 'clientId:', clientId);
 
     var groupName;
+    var groupClientId = clientId;
 
-    // 如果有指定的clientId，使用该clientId作为组名
     if (clientId) {
       groupName = 'CDP-' + clientId.substring(0, 8);
-      Logger.info('[TabGroup] Using specific clientId for group name:', groupName);
     } else {
-      // 如果没有clientId，回退到使用第一个CDP客户端的ID
       var cdpClients = State.getCDPClients() || [];
       if (cdpClients.length > 0 && cdpClients[0] && cdpClients[0].id) {
         groupName = 'CDP-' + cdpClients[0].id.substring(0, 8);
-        Logger.info('[TabGroup] Using first CDP client ID for group name:', groupName);
+        groupClientId = cdpClients[0].id;
       } else {
-        // 如果没有CDP客户端，使用固定的组名
         groupName = 'CDP-Automation';
-        Logger.info('[TabGroup] No CDP client, using default group name:', groupName);
       }
     }
     
-    // 添加延迟等待，确保标签页完全加载后再分组
     setTimeout(function() {
       Logger.info('[TabGroup] Executing group operation after delay...');
       
-      // 查找或创建标签组
-      chrome.tabGroups.query({ title: groupName }, function(groups) {
-        Logger.info('[TabGroup] Found groups:', groups);
-        
+      chrome.tabGroups.query({}, function(allGroups) {
+        var groups = allGroups.filter(function(g) {
+          return g.title && g.title.indexOf(groupName) === 0;
+        });
         if (groups.length > 0) {
-          // 找到现有的组，将标签页添加到组
-          Logger.info('[TabGroup] Adding tab to existing group:', groups[0].id);
-          chrome.tabs.group({ tabIds: tabId, groupId: groups[0].id }, function(groupId) {
+          chrome.tabs.group({ tabIds: tabId, groupId: groups[0].id }, function(result) {
             if (chrome.runtime.lastError) {
               Logger.error('[TabGroup] Failed to add tab to group:', chrome.runtime.lastError.message);
             } else {
-              Logger.info('[TabGroup] Tab added to group:', groupId, 'Group name:', groupName);
+              State.setGroupIdForClient(groupClientId, groups[0].id);
+              updateTabGroupName(groupClientId);
             }
           });
         } else {
-          // 创建新组并添加标签页
-          Logger.info('[TabGroup] Creating new group...');
           chrome.tabs.group({ tabIds: tabId }, function(groupId) {
             if (chrome.runtime.lastError) {
               Logger.error('[TabGroup] Failed to create group:', chrome.runtime.lastError.message);
               return;
             }
-            // 更新组的标题和颜色
             if (groupId) {
-              Logger.info('[TabGroup] Group created with ID:', groupId);
-              // 为不同的组使用不同的颜色
               var colors = ['blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'];
               var colorIndex = Math.abs(groupName.hashCode ? groupName.hashCode() : 0) % colors.length;
-              var groupColor = colors[colorIndex];
               
-              Logger.info('[TabGroup] Updating group with title:', groupName, 'color:', groupColor);
               chrome.tabGroups.update(groupId, {
                 title: groupName,
-                color: groupColor
-              }, function(group) {
+                color: colors[colorIndex],
+                collapsed: true
+              }, function() {
                 if (chrome.runtime.lastError) {
                   Logger.error('[TabGroup] Failed to update group:', chrome.runtime.lastError.message);
                 } else {
-                  Logger.info('[TabGroup] Group created and updated:', group);
+                  State.setGroupIdForClient(groupClientId, groupId);
+                  updateTabGroupName(groupClientId);
                 }
               });
             }
           });
         }
       });
-    }, 2000); // 等待2秒
+    }, 2000);
+  }
+
+  function updateTabGroupName(clientId) {
+    if (!clientId) return;
+    
+    var groupId = State.getGroupIdForClient(clientId);
+    if (!groupId) return;
+    
+    chrome.tabs.query({ groupId: groupId }, function(tabs) {
+      if (chrome.runtime.lastError || !tabs) return;
+      
+      var count = tabs.length;
+      var baseName = 'CDP-' + clientId.substring(0, 8);
+      var newName = baseName + ' (' + count + ')';
+      
+      chrome.tabGroups.update(groupId, {
+        title: newName
+      }, function() {
+        if (chrome.runtime.lastError) {
+          Logger.error('[TabGroup] Failed to update group name:', chrome.runtime.lastError.message);
+        } else {
+          Logger.info('[TabGroup] Updated group name:', newName);
+        }
+      });
+    });
   }
   
   // 为字符串添加hashCode方法（用于生成颜色索引）
@@ -219,8 +233,13 @@ var SpecialHandler = (function() {
     if (targetId) {
       var tabId = State.getTabIdByTargetId(targetId);
       if (tabId) {
+        State.removeAttachedTab(tabId);
+        var closeClientId = State.getClientIdByTabId(tabId);
         return new Promise(function(resolve) {
           chrome.tabs.remove(tabId, function() {
+            if (closeClientId) {
+              updateTabGroupName(closeClientId);
+            }
             resolve({ success: true });
           });
         }).catch(function() {
@@ -540,6 +559,7 @@ function checkTabVisibility(tabId) {
     pageCreateIsolatedWorld: pageCreateIsolatedWorld,
     pageAddScriptToEvaluateOnNewDocument: pageAddScriptToEvaluateOnNewDocument,
     runtimeRunIfWaitingForDebugger: runtimeRunIfWaitingForDebugger,
-    domSetFileInputFiles: domSetFileInputFiles
+    domSetFileInputFiles: domSetFileInputFiles,
+    updateTabGroupName: updateTabGroupName
   };
 })();

@@ -79,7 +79,9 @@ async function waitForProxy(port, maxWait = 10000) {
   return false;
 }
 
-async function waitForExtension(port, maxWait = 30000) {
+async function waitForExtension(port, maxWait = 45000) {
+  await sleep(5000);
+  let reqId = 0;
   const start = Date.now();
   while (Date.now() - start < maxWait) {
     try {
@@ -88,11 +90,29 @@ async function waitForExtension(port, maxWait = 30000) {
         ws.on('open', resolve);
         ws.on('error', reject);
       });
+      const id = ++reqId;
+      const result = await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => { ws.off('message', handler); reject(new Error('timeout')); }, 5000);
+        const handler = (data) => {
+          try {
+            const msg = JSON.parse(data.toString());
+            if (msg.id === id) {
+              clearTimeout(timeout);
+              ws.off('message', handler);
+              if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+              else resolve(msg.result);
+            }
+          } catch {}
+        };
+        ws.on('message', handler);
+        ws.send(JSON.stringify({ id, method: 'Target.getTargets', params: {} }));
+      });
       ws.close();
-      return true;
-    } catch {
-      await sleep(3000);
+      if (result && result.targetInfos && result.targetInfos.length > 0) return true;
+    } catch (e) {
+      log('SETUP', `  Waiting for extension... (${e.message})`);
     }
+    await sleep(3000);
   }
   return false;
 }

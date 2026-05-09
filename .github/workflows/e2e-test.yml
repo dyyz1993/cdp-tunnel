@@ -30,7 +30,7 @@ jobs:
           echo "Chromium found at: $CHROME_PATH"
 
       - name: Run E2E Tests
-        run: node tests/e2e/run-all.js
+        run: xvfb-run node tests/e2e/run-all.js
         env:
           CHROME_PATH: ${{ steps.chromium.outputs.path }}
           LOG_LEVEL: warn
@@ -68,7 +68,7 @@ jobs:
           echo "Chromium found at: $CHROME_PATH"
 
       - name: Run Playwright close hang test
-        run: node tests/e2e/test-playwright-close.js
+        run: xvfb-run node tests/e2e/test-playwright-close.js
         env:
           CHROME_PATH: ${{ steps.chromium.outputs.path }}
           LOG_LEVEL: warn

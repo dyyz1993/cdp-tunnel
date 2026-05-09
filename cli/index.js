@@ -276,6 +276,71 @@ program
   });
 
 program
+  .command('update')
+  .description('自动更新 cdp-tunnel 并重启服务')
+  .option('-p, --port <port>', '重启时指定端口', parseInt)
+  .option('-w, --watchdog', '重启时启用看门狗')
+  .action(async (options) => {
+    const config = getConfig();
+    const wasRunning = isServerRunning();
+    const savedPort = options.port || config.port;
+    const savedWatchdog = options.watchdog;
+
+    console.log('');
+    log('cyan', '⬆  正在检查更新...');
+
+    try {
+      const beforeVersion = execSync('npm view cdp-tunnel version', { encoding: 'utf8' }).trim();
+      const localVersion = require(path.join(__dirname, '..', 'package.json')).version;
+      log('gray', '  当前版本: ' + localVersion);
+      log('gray', '  最新版本: ' + beforeVersion);
+
+      if (wasRunning) {
+        log('yellow', '  正在停止服务器...');
+        try {
+          const pid = getServerPid();
+          process.kill(pid, 'SIGTERM');
+          fs.unlinkSync(PID_FILE);
+          await new Promise(r => setTimeout(r, 1500));
+          log('green', '  ✓ 服务器已停止');
+        } catch (e) {
+          log('yellow', '  ⚠ 停止服务器失败: ' + e.message);
+        }
+      }
+
+      log('cyan', '  正在更新...');
+      execSync('npm update -g cdp-tunnel', { stdio: 'inherit' });
+
+      const afterVersion = require(path.join(__dirname, '..', 'package.json')).version;
+      if (afterVersion !== localVersion) {
+        log('green', '  ✓ 已更新: ' + localVersion + ' → ' + afterVersion);
+      } else {
+        log('green', '  ✓ 已是最新版本');
+      }
+
+      ensureConfigDir();
+      cleanupLogFile();
+      startServer(savedPort, savedWatchdog);
+      log('green', '  ✓ 服务器已重启 (端口: ' + savedPort + ')');
+      console.log('');
+    } catch (e) {
+      log('red', '✗ 更新失败: ' + e.message);
+      console.log('');
+      if (wasRunning) {
+        log('yellow', '正在尝试恢复服务器...');
+        try {
+          ensureConfigDir();
+          startServer(savedPort, savedWatchdog);
+          log('green', '✓ 服务器已恢复');
+        } catch (re) {
+          log('red', '✗ 恢复失败，请手动启动: cdp-tunnel start');
+        }
+      }
+      process.exit(1);
+    }
+  });
+
+program
   .command('status')
   .description('查看服务器状态')
   .action(() => {

@@ -160,14 +160,34 @@ async function runTest() {
       '--disable-backgrounding-occluded-windows',
       '--disable-renderer-backgrounding',
       '--no-sandbox',
+      '--enable-logging',
+      '--v=1',
       'about:blank'
-    ], { detached: true, stdio: 'ignore' });
+    ], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    chromeProcess.stdout?.on('data', d => {
+      d.toString().trim().split('\n').forEach(l => log('CHROME', l));
+    });
+    chromeProcess.stderr?.on('data', d => {
+      d.toString().trim().split('\n').forEach(l => log('CHROME-ERR', l));
+    });
     chromeProcess._profile = userDataDir;
     log('SETUP', `Chrome started (PID: ${chromeProcess.pid})`);
+
+    chromeProcess.on('exit', (code, signal) => {
+      log('CHROME', `Chrome exited with code=${code} signal=${signal}`);
+    });
 
     log('SETUP', 'Waiting for proxy...');
     if (!await waitForProxy(PROXY_PORT)) throw new Error('Proxy did not become ready');
     log('SETUP', 'Proxy is ready');
+
+    await sleep(3000);
+    try {
+      chromeProcess.ref();
+      const stillAlive = chromeProcess.exitCode === null;
+      log('SETUP', `Chrome alive check: ${stillAlive} (exitCode=${chromeProcess.exitCode})`);
+      chromeProcess.unref();
+    } catch {}
 
     log('SETUP', 'Waiting for extension to connect...');
     if (!await waitForExtension(PROXY_PORT)) throw new Error('Extension did not connect');

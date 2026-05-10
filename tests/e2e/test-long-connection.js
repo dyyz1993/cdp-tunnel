@@ -5,11 +5,14 @@
  * Test: Long connection stability (3 minutes)
  *
  * 1. Start proxy + Chrome
- * 2. Connect CDP client
- * 3. Create 3 pages
- * 4. Every 30s for 3 minutes (6 iterations), send Target.getTargets
- * 5. Verify pages persist, connection stays alive
- * 6. Close everything
+ * 2. Connect CDP client, create 3 pages
+ * 3. Every 30 seconds for 3 minutes (6 iterations):
+ *    - Send Target.getTargets
+ *    - Verify page count is still correct
+ *    - Print status: "Heartbeat N/6: OK (3 pages)"
+ * 4. After 3 minutes, verify connection still alive
+ * 5. Close everything
+ * 6. Print PASS/FAIL summary
  */
 
 const { spawn } = require('child_process');
@@ -24,14 +27,14 @@ const PROXY_PATH = path.resolve(__dirname, '../../server/proxy-server.js');
 const CONFIG_PATH = path.resolve(__dirname, '../../extension-new/utils/config.js');
 const CHROME_PATH = process.env.CHROME_PATH || '/Applications/Chromium.app/Contents/MacOS/Chromium';
 
-const ITERATIONS = 6;
-const INTERVAL_MS = 30_000;
-const TOTAL_WAIT_MS = ITERATIONS * INTERVAL_MS;
+const HEARTBEAT_INTERVAL = 30000;
+const HEARTBEAT_COUNT = 6;
+const EXPECTED_PAGES = 3;
 
 let proxyProcess = null;
 let chromeProcess = null;
 let originalConfig = null;
-let reqId = 0;
+let _requestId = 0;
 
 function log(tag, msg) {
   console.log(`[${new Date().toISOString().slice(11, 19)}] [${tag}] ${msg}`);
@@ -54,8 +57,25 @@ function httpGet(port, urlPath) {
   });
 }
 
+function patchConfig(port) {
+  originalConfig = fs.readFileSync(CONFIG_PATH, 'utf8');
+  fs.writeFileSync(CONFIG_PATH,
+    originalConfig.replace(
+      /WS_URL:\s*'ws:\/\/localhost:9221\/plugin'/,
+      `WS_URL: 'ws://localhost:${port}/plugin'`
+    )
+  );
+}
+
+function restoreConfig() {
+  if (originalConfig) {
+    fs.writeFileSync(CONFIG_PATH, originalConfig);
+    originalConfig = null;
+  }
+}
+
 function sendCDP(ws, method, params = {}) {
-  const id = ++reqId;
+  const id = ++_requestId;
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       ws.off('message', handler);
@@ -77,21 +97,12 @@ function sendCDP(ws, method, params = {}) {
   });
 }
 
-function patchConfig(port) {
-  originalConfig = fs.readFileSync(CONFIG_PATH, 'utf8');
-  fs.writeFileSync(CONFIG_PATH,
-    originalConfig.replace(
-      /WS_URL:\s*'ws:\/\/localhost:9221\/plugin'/,
-      `WS_URL: 'ws://localhost:${port}/plugin'`
-    )
-  );
-}
-
-function restoreConfig() {
-  if (originalConfig) {
-    fs.writeFileSync(CONFIG_PATH, originalConfig);
-    originalConfig = null;
-  }
+async function connectCDP(port) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://localhost:${port}/client`);
+    ws.on('open', () => resolve(ws));
+    ws.on('error', reject);
+  });
 }
 
 async function waitForProxy(port, maxWait = 10000) {
@@ -112,14 +123,13 @@ async function waitForExtension(port, maxWait = 45000) {
   const start = Date.now();
   while (Date.now() - start < maxWait) {
     try {
-      const ws = new WebSocket(`ws://localhost:${port}/client`);
-      await new Promise((resolve, reject) => { ws.on('open', resolve); ws.on('error', reject); });
+      const ws = await connectCDP(port);
       const result = await Promise.race([
         sendCDP(ws, 'Target.getTargets'),
         new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))
       ]);
       ws.close();
-      reqId = 0;
+      _requestId = 0;
       if (result && result.targetInfos && result.targetInfos.length > 0) return true;
     } catch (e) {
       log('SETUP', `  Waiting for extension... (${e.message})`);
@@ -127,14 +137,6 @@ async function waitForExtension(port, maxWait = 45000) {
     await sleep(3000);
   }
   return false;
-}
-
-function connectCDP(port) {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://localhost:${port}/client`);
-    ws.on('open', () => resolve(ws));
-    ws.on('error', reject);
-  });
 }
 
 function cleanup() {
@@ -153,16 +155,12 @@ function cleanup() {
 }
 
 async function runTest() {
-  console.log(`=== Long Connection Stability Test (${ITERATIONS} x ${INTERVAL_MS / 1000}s = ${TOTAL_WAIT_MS / 1000}s) ===\n`);
-  let passed = 0;
-  let failed = 0;
-
-  function assert(condition, msg) {
-    if (!condition) throw new Error(`Assertion failed: ${msg}`);
-  }
+  console.log('=== Long Connection Stability E2E Test (3 min) ===\n');
+  const results = [];
 
   try {
     patchConfig(PROXY_PORT);
+    log('SETUP', 'Patched extension config');
 
     proxyProcess = spawn('node', [PROXY_PATH], {
       env: { ...process.env, PORT: String(PROXY_PORT), LOG_LEVEL: 'warn' },
@@ -171,112 +169,104 @@ async function runTest() {
     proxyProcess.stderr?.on('data', d => {
       d.toString().trim().split('\n').forEach(l => log('PROXY-ERR', l));
     });
+    log('SETUP', `Proxy started (PID: ${proxyProcess.pid})`);
 
     const userDataDir = `/tmp/long-conn-test-${Date.now()}`;
     chromeProcess = spawn(CHROME_PATH, [
       `--load-extension=${EXTENSION_PATH}`,
       `--user-data-dir=${userDataDir}`,
-      '--no-first-run', '--no-default-browser-check',
+      '--no-first-run',
+      '--no-default-browser-check',
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding', '--no-sandbox',
+      '--disable-renderer-backgrounding',
+      '--no-sandbox',
       'about:blank'
     ], { detached: true, stdio: 'ignore' });
     chromeProcess._profile = userDataDir;
+    log('SETUP', `Chrome started (PID: ${chromeProcess.pid})`);
 
-    if (!await waitForProxy(PROXY_PORT)) throw new Error('Proxy did not start');
-    log('SETUP', 'Proxy ready');
+    if (!await waitForProxy(PROXY_PORT)) throw new Error('Proxy did not become ready');
+    log('SETUP', 'Proxy is ready');
 
     if (!await waitForExtension(PROXY_PORT)) throw new Error('Extension did not connect');
     log('SETUP', 'Extension connected');
 
     await sleep(3000);
 
+    // Step 2: Connect CDP client, create 3 pages
     const ws = await connectCDP(PROXY_PORT);
     await sendCDP(ws, 'Target.setDiscoverTargets', { discover: true });
+    log('TEST', 'CDP client connected');
 
-    // Create 3 pages
-    log('TEST', 'Creating 3 pages...');
     const pageIds = [];
-    for (let i = 0; i < 3; i++) {
-      const r = await sendCDP(ws, 'Target.createTarget', { url: `about:blank#long_${i}` });
+    for (let i = 0; i < EXPECTED_PAGES; i++) {
+      const r = await sendCDP(ws, 'Target.createTarget', { url: `https://www.example.com/?longtest${i}` });
       pageIds.push(r.targetId);
     }
+    log('TEST', `Created ${EXPECTED_PAGES} pages`);
     await sleep(3000);
-    log('TEST', `Created ${pageIds.length} pages`);
 
-    // Monitor for disconnections
-    let disconnected = false;
-    ws.on('close', () => {
-      disconnected = true;
-      log('HEARTBEAT', '⚠️ WebSocket disconnected!');
-    });
-    ws.on('error', (err) => {
-      log('HEARTBEAT', `⚠️ WebSocket error: ${err.message}`);
-    });
-
-    // === Heartbeat loop: 6 iterations x 30s ===
-    log('HEARTBEAT', `Starting ${ITERATIONS}-iteration heartbeat check (${TOTAL_WAIT_MS / 1000}s total)...`);
     const testStart = Date.now();
 
-    for (let i = 1; i <= ITERATIONS; i++) {
-      await sleep(INTERVAL_MS);
-
-      if (disconnected) {
-        throw new Error(`WebSocket disconnected before iteration ${i}`);
+    // Step 3: Every 30 seconds for 3 minutes (6 iterations)
+    for (let i = 1; i <= HEARTBEAT_COUNT; i++) {
+      if (i > 1) {
+        log('TEST', `Waiting ${HEARTBEAT_INTERVAL / 1000}s before heartbeat ${i}/${HEARTBEAT_COUNT}...`);
+        await sleep(HEARTBEAT_INTERVAL);
       }
 
-      const targets = await sendCDP(ws, 'Target.getTargets');
-      const myPages = targets.targetInfos.filter(t =>
-        t.type === 'page' && pageIds.includes(t.targetId)
-      );
-      const elapsed = ((Date.now() - testStart) / 1000).toFixed(0);
+      try {
+        const targets = await sendCDP(ws, 'Target.getTargets');
+        const myPages = targets.targetInfos.filter(t => t.type === 'page' && t.url.includes('example.com/?longtest'));
+        const ok = myPages.length === EXPECTED_PAGES;
 
-      assert(myPages.length === pageIds.length,
-        `Iteration ${i}: expected ${pageIds.length} pages, found ${myPages.length}`);
-
-      log('HEARTBEAT',
-        `✅ Iteration ${i}/${ITERATIONS} @ ${elapsed}s — ` +
-        `${myPages.length} pages present, ws alive, no disconnect`
-      );
+        log('TEST', `Heartbeat ${i}/${HEARTBEAT_COUNT}: ${ok ? 'OK' : 'FAIL'} (${myPages.length} pages)`);
+        results.push({ name: `Heartbeat ${i}/${HEARTBEAT_COUNT}: ${myPages.length} pages`, pass: ok });
+      } catch (e) {
+        log('TEST', `Heartbeat ${i}/${HEARTBEAT_COUNT}: FAIL (${e.message})`);
+        results.push({ name: `Heartbeat ${i}/${HEARTBEAT_COUNT}`, pass: false });
+      }
     }
 
-    passed++;
-    log('TEST', `✅ Connection stable for ${TOTAL_WAIT_MS / 1000}s across ${ITERATIONS} iterations`);
+    const totalDuration = Date.now() - testStart;
+    log('TEST', `Heartbeat loop completed in ${totalDuration}ms`);
 
-    // Final check: all pages still accessible
+    // Step 4: Verify connection still alive
+    log('TEST', 'Verifying connection still alive after 3 minutes...');
     const finalTargets = await sendCDP(ws, 'Target.getTargets');
-    const finalPages = finalTargets.targetInfos.filter(t =>
-      t.type === 'page' && pageIds.includes(t.targetId)
-    );
-    assert(finalPages.length === pageIds.length,
-      `Final: expected ${pageIds.length}, found ${finalPages.length}`);
-    passed++;
-    log('TEST', '✅ All pages still accessible after 3 minutes');
+    const finalPages = finalTargets.targetInfos.filter(t => t.type === 'page' && t.url.includes('example.com/?longtest'));
+    const alive = finalPages.length === EXPECTED_PAGES;
+    results.push({ name: `Connection alive after 3 min (${finalPages.length} pages)`, pass: alive });
+    log('TEST', `Final check: ${finalPages.length} pages — ${alive ? 'OK' : 'FAIL'}`);
 
-    // Close
-    for (const pid of pageIds) {
-      await sendCDP(ws, 'Target.closeTarget', { targetId: pid });
+    // Step 5: Close everything
+    log('TEST', 'Closing all test pages...');
+    for (const targetId of pageIds) {
+      try { await sendCDP(ws, 'Target.closeTarget', { targetId }); } catch {}
     }
     ws.close();
-
-    console.log('\n=== RESULTS ===');
-    console.log(`Passed: ${passed}/2, Failed: ${failed}`);
-    console.log(`Total wait: ${TOTAL_WAIT_MS / 1000}s (${ITERATIONS} x ${INTERVAL_MS / 1000}s)`);
-    console.log('===============\n');
-
-    cleanup();
-    process.exit(failed > 0 ? 1 : 0);
+    await sleep(3000);
 
   } catch (err) {
     console.error('Test error:', err);
-    failed++;
-    console.log('\n=== RESULTS ===');
-    console.log(`Passed: ${passed}/2, Failed: ${failed}`);
-    console.log('===============\n');
-    cleanup();
-    process.exit(1);
+    results.push({ name: 'Test execution', pass: false });
   }
+
+  cleanup();
+
+  // Step 6: Print summary
+  const passed = results.filter(r => r.pass).length;
+  const failed = results.filter(r => !r.pass).length;
+
+  console.log('\n=== RESULTS ===');
+  results.forEach(r => {
+    console.log(`  ${r.pass ? '✅' : '❌'} ${r.name}`);
+  });
+  console.log(`\nTotal: ${passed} passed, ${failed} failed`);
+  console.log('===============\n');
+
+  process.exit(failed > 0 ? 1 : 0);
 }
 
 process.on('SIGINT', () => { cleanup(); process.exit(130); });

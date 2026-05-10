@@ -16,5 +16,14 @@ var Config = {
     chrome.storage.local.get(['wsAddress'], function(result) {
       callback(result.wsAddress || Config.WS_URL);
     });
+  },
+  AUTO_MUTE: true,
+  getAutoMute: function(callback) {
+    chrome.storage.local.get(['autoMute'], function(result) {
+      callback(result.autoMute !== false);
+    });
+  },
+  setAutoMute: function(enabled, callback) {
+    chrome.storage.local.set({ autoMute: enabled }, callback);
   }
 };

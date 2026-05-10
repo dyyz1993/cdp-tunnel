@@ -458,6 +458,35 @@
       font-size: 12px;
     }
 
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 40px;
+      height: 22px;
+    }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #ccc;
+      transition: .3s;
+      border-radius: 22px;
+    }
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+    input:checked + .toggle-slider { background-color: #4CAF50; }
+    input:checked + .toggle-slider:before { transform: translateX(18px); }
+
     .divider {
       height: 1px;
       background: #e5e7eb;
@@ -720,6 +749,16 @@
               <div class="description">WebSocket 服务器地址，插件将连接到此服务器</div>
             </div>
             <button class="btn btn-primary btn-block" id="connectBtn">🔗 保存并连接</button>
+
+            <div class="config-item" style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px;">
+              <label style="font-size: 13px; color: #666;">
+                🔇 自动静音新标签页
+              </label>
+              <label class="toggle-switch">
+                <input type="checkbox" id="autoMuteToggle" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
 
             <div class="divider"></div>
 

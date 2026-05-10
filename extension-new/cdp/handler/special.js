@@ -1,4 +1,17 @@
 var SpecialHandler = (function() {
+  function muteTabIfNeeded(tabId) {
+    Config.getAutoMute(function(enabled) {
+      if (!enabled) return;
+      chrome.tabs.update(tabId, { muted: true }, function() {
+        if (chrome.runtime.lastError) {
+          Logger.error('[TabMute] Failed to mute tab ' + tabId + ':', chrome.runtime.lastError.message);
+        } else {
+          Logger.info('[TabMute] Tab muted:', tabId);
+        }
+      });
+    });
+  }
+
   function targetSetAutoAttach(context) {
     var params = context.params;
     State.setAutoAttachConfig({
@@ -115,6 +128,8 @@ var SpecialHandler = (function() {
 
   function addTabToAutomationGroup(tabId, clientId) {
     Logger.info('[TabGroup] Starting addTabToAutomationGroup for tabId:', tabId, 'clientId:', clientId);
+
+    muteTabIfNeeded(tabId);
 
     var groupName;
     var groupClientId = clientId;

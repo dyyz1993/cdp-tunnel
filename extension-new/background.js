@@ -216,6 +216,18 @@ String.prototype.hashCode = function() {
         var sessionId = CDPUtils.generateSessionId();
         State.mapSession(sessionId, tabId, targetId);
         
+        Config.getAutoMute(function(enabled) {
+          if (enabled) {
+            chrome.tabs.update(tabId, { muted: true }, function() {
+              if (chrome.runtime.lastError) {
+                Logger.error('[TabMute] Failed to mute tab ' + tabId + ':', chrome.runtime.lastError.message);
+              } else {
+                Logger.info('[TabMute] Tab muted:', tabId);
+              }
+            });
+          }
+        });
+        
         // 将标签页添加到CDP组（添加延迟等待）
         setTimeout(function() {
           // 获取openerTabId对应的clientId

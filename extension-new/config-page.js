@@ -258,7 +258,15 @@
           elements.serverAddress.value = result.wsAddress;
         }
       });
+      chrome.storage.local.get(['autoMute'], function(result) {
+        document.getElementById('autoMuteToggle').checked = result.autoMute !== false;
+      });
     }
+    
+    document.getElementById('autoMuteToggle').addEventListener('change', function(e) {
+      chrome.storage.local.set({ autoMute: e.target.checked });
+      addLog(e.target.checked ? '🔇 自动静音已开启' : '🔊 自动静音已关闭', 'action');
+    });
     
     fetchState();
     

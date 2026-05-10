@@ -204,61 +204,136 @@ function startServer(port, watchdog, autoRestart) {
   return child;
 }
 
+function waitForPluginConnection(maxWaitMs) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const interval = setInterval(() => {
+      const status = checkChromeExtension();
+      if (status.connected) {
+        clearInterval(interval);
+        resolve(true);
+      } else if (Date.now() - start > maxWaitMs) {
+        clearInterval(interval);
+        resolve(false);
+      }
+    }, 3000);
+  });
+}
+
+function generateAndSaveGuideHtml() {
+  return generateGuideHtml();
+}
+
+function openInBrowser(filePath) {
+  const platform = os.platform();
+  try {
+    if (platform === 'darwin') {
+      execSync(`open "${filePath}"`);
+    } else if (platform === 'win32') {
+      execSync(`start "" "${filePath}"`);
+    } else {
+      execSync(`xdg-open "${filePath}"`);
+    }
+  } catch {}
+}
+
 program
   .command('start')
   .description('启动 CDP Tunnel 服务器')
   .option('-p, --port <port>', '指定端口', parseInt)
-    .option('-w, --watchdog', '启用看门狗，服务器崩溃时自动重启')
-    .option('-a, --auto-restart', '浏览器断连时自动重启 Chrome（带插件）')
-  .action((options) => {
+  .option('-w, --watchdog', '启用看门狗，服务器崩溃时自动重启')
+  .option('-a, --auto-restart', '浏览器断连时自动重启 Chrome（带插件）')
+  .action(async (options) => {
     const config = getConfig();
-    const port = options.port || config.port;
-    
+    const port = options.port || config.port || 9221;
+
+    config.port = port;
+    config.autoRestart = !!options.autoRestart;
+    saveConfig(config);
+
     if (isServerRunning()) {
       console.log('');
-      log('yellow', '⚠️  服务器已在运行');
-      log('cyan', '   端口: ') + console.log(port);
-      log('cyan', '   PID:  ') + console.log(getServerPid());
+      log('yellow', `⚠ 服务器已在运行 (PID: ${getServerPid()})`);
+      log('cyan', `  CDP: http://localhost:${port}`);
+    } else {
+      ensureConfigDir();
+      cleanupLogFile();
+      startServer(port, options.watchdog, options.autoRestart);
+      console.log('');
+      log('green', '✅ 服务器已启动');
+      log('cyan', `  CDP: http://localhost:${port}`);
+    }
+
+    await new Promise(r => setTimeout(r, 1000));
+
+    const extStatus = checkChromeExtension();
+    if (extStatus.connected) {
+      console.log('');
+      log('green', '✅ Ready! Chrome 扩展已连接');
+      log('cyan', `  连接: ws://localhost:${port}/devtools/browser/...`);
+      if (!options.watchdog) {
+        process.exit(0);
+      }
       return;
     }
-    
-    const extStatus = checkChromeExtension();
-    if (!extStatus.installed) {
-      printExtensionGuide();
-      openChromeExtensions();
-    }
-    
-    ensureConfigDir();
-    cleanupLogFile();
 
-    startServer(port, options.watchdog, options.autoRestart);
-    
-    if (port !== config.port || !!config.autoRestart !== !!options.autoRestart) {
-      config.port = port;
-      config.autoRestart = !!options.autoRestart;
-      saveConfig(config);
+    const { isChromeRunning, launchChromeWithExtension } = require('./chrome-manager');
+    const chromeRunning = isChromeRunning();
+
+    if (!chromeRunning) {
+      log('cyan', '🔍 Chrome 未运行，正在启动...');
+      const launched = launchChromeWithExtension();
+      if (launched) {
+        log('cyan', '⏳ 等待插件连接...');
+        const connected = await waitForPluginConnection(15000);
+        if (connected) {
+          console.log('');
+          log('green', '✅ Ready! Chrome 已启动，插件已连接');
+          log('cyan', `  连接: ws://localhost:${port}/devtools/browser/...`);
+        } else {
+          console.log('');
+          log('yellow', '⚠ Chrome 已启动，但插件未自动连接。请点击浏览器工具栏上的 CDP Bridge 图标。');
+        }
+      } else {
+        console.log('');
+        log('yellow', '⚠ 无法自动启动 Chrome。请手动安装插件：');
+        printExtensionGuide();
+        openChromeExtensions();
+        const connected = await waitForPluginConnection(120000);
+        if (connected) {
+          console.log('');
+          log('green', '✅ Ready! 插件已连接');
+          log('cyan', `  连接: ws://localhost:${port}/devtools/browser/...`);
+        } else {
+          console.log('');
+          log('yellow', '⚠ 等待超时。插件安装完成后，运行 cdp-tunnel start 即可。');
+        }
+      }
+      if (!options.watchdog) process.exit(0);
+      return;
     }
-    
+
     console.log('');
-    log('green', '✓ CDP Tunnel 服务器已启动');
-    console.log('');
-    console.log('  端口: ' + port);
-    console.log('  插件: ws://localhost:' + port + '/plugin');
-    console.log('  CDP:  http://localhost:' + port);
-    if (options.watchdog) {
-      console.log('  看门狗: 已启用（崩溃自动重启）');
-    }
-    if (options.autoRestart) {
-      console.log('  自动重启: 已启用（浏览器断连时自动重启 Chrome）');
-    }
-    console.log('');
-    log('gray', '  日志: ' + LOG_FILE);
-    console.log('');
-    
-    if (!extStatus.installed) {
-      console.log('请先安装扩展，然后点击扩展图标连接服务器');
+    log('yellow', '⚠ Chrome 正在运行但插件未连接');
+    log('cyan', '📖 正在打开安装引导...');
+
+    const guidePath = generateAndSaveGuideHtml();
+    openInBrowser(guidePath);
+    openChromeExtensions();
+    printExtensionGuide();
+
+    log('cyan', '⏳ 等待插件安装并连接（最多 2 分钟）...');
+    const connected = await waitForPluginConnection(120000);
+    if (connected) {
       console.log('');
+      log('green', '✅ Ready! 插件已连接');
+      log('cyan', `  连接: ws://localhost:${port}/devtools/browser/...`);
+    } else {
+      console.log('');
+      log('yellow', '⚠ 等待超时。插件安装完成后，运行 cdp-tunnel start 即可。');
     }
+
+    if (!options.watchdog) process.exit(0);
   });
 
 program

@@ -7,7 +7,9 @@ const CONFIG = {
   CDP_TRACE_MAX_LENGTH: 300,
   LOG_MESSAGE_PREVIEW_LENGTH: 1000,
   CLIENT_IDLE_TIMEOUT: 300000,
-  LOG_LEVEL: process.env.LOG_LEVEL || 'info'
+  LOG_LEVEL: process.env.LOG_LEVEL || 'info',
+  AUTO_RESTART: process.env.AUTO_RESTART === 'true',
+  CHROME_RESTART_COOLDOWN: 30000
 };
 
 const LOG_LEVELS = {

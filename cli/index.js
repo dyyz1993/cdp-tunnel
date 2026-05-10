@@ -143,14 +143,14 @@ function openChromeExtensions() {
   }
 }
 
-function startServer(port, watchdog) {
+function startServer(port, watchdog, autoRestart) {
   const serverPath = path.join(__dirname, '..', 'server', 'proxy-server.js');
   const logFd = fs.openSync(LOG_FILE, 'a');
 
   const child = spawn('node', [serverPath], {
     detached: !watchdog,
     stdio: ['ignore', logFd, logFd],
-    env: { ...process.env, PORT: port.toString() }
+    env: { ...process.env, PORT: port.toString(), AUTO_RESTART: autoRestart ? 'true' : 'false' }
   });
 
   fs.writeFileSync(PID_FILE, child.pid.toString());
@@ -181,7 +181,7 @@ function startServer(port, watchdog) {
       console.log('  重启次数: ' + restartTimestamps.length + '/' + MAX_RESTARTS + ' (60秒内)');
       console.log('');
 
-      setTimeout(() => startServer(port, true), 3000);
+      setTimeout(() => startServer(port, true, autoRestart), 3000);
     });
 
     process.on('SIGINT', () => {
@@ -208,7 +208,8 @@ program
   .command('start')
   .description('启动 CDP Tunnel 服务器')
   .option('-p, --port <port>', '指定端口', parseInt)
-  .option('-w, --watchdog', '启用看门狗，服务器崩溃时自动重启')
+    .option('-w, --watchdog', '启用看门狗，服务器崩溃时自动重启')
+    .option('-a, --auto-restart', '浏览器断连时自动重启 Chrome（带插件）')
   .action((options) => {
     const config = getConfig();
     const port = options.port || config.port;
@@ -230,10 +231,11 @@ program
     ensureConfigDir();
     cleanupLogFile();
 
-    startServer(port, options.watchdog);
+    startServer(port, options.watchdog, options.autoRestart);
     
-    if (port !== config.port) {
+    if (port !== config.port || !!config.autoRestart !== !!options.autoRestart) {
       config.port = port;
+      config.autoRestart = !!options.autoRestart;
       saveConfig(config);
     }
     
@@ -245,6 +247,9 @@ program
     console.log('  CDP:  http://localhost:' + port);
     if (options.watchdog) {
       console.log('  看门狗: 已启用（崩溃自动重启）');
+    }
+    if (options.autoRestart) {
+      console.log('  自动重启: 已启用（浏览器断连时自动重启 Chrome）');
     }
     console.log('');
     log('gray', '  日志: ' + LOG_FILE);
@@ -358,6 +363,10 @@ program
     if (running) {
       console.log('  PID:    ' + getServerPid());
       console.log('  CDP:    http://localhost:' + config.port);
+    }
+
+    if (config.autoRestart) {
+      console.log('  自动重启: 已启用');
     }
     
     console.log('');

@@ -14,12 +14,112 @@ const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { execSync, spawn: spawnProcess } = require('child_process');
 const { CONFIG, BROWSER_ID, shouldLog } = require('./modules/config');
 const { logCDP, logEvent, clearLog, logStatus, logConnectionEvent, flushAllLogs } = require('./modules/logger');
 
 const PORT = CONFIG.PORT;
 const CONFIG_DIR = path.join(os.homedir(), '.cdp-tunnel');
 const EXTENSION_STATE_FILE = path.join(CONFIG_DIR, 'extension-state.json');
+const PLUGIN_EVER_CONNECTED_FILE = path.join(CONFIG_DIR, 'plugin-ever-connected');
+
+let lastChromeRestartAttempt = 0;
+const CHROME_RESTART_COOLDOWN = CONFIG.CHROME_RESTART_COOLDOWN;
+const autoRestartEnabled = CONFIG.AUTO_RESTART;
+
+function findChromePath() {
+    if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
+        return process.env.CHROME_PATH;
+    }
+    const platform = os.platform();
+    const candidates = {
+        darwin: [
+            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            '/Applications/Chromium.app/Contents/MacOS/Chromium',
+        ],
+        win32: [
+            'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+            'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        ],
+        linux: [
+            '/usr/bin/google-chrome-stable',
+            '/usr/bin/google-chrome',
+            '/usr/bin/chromium-browser',
+            '/usr/bin/chromium',
+        ],
+    };
+    const paths = candidates[platform] || [];
+    for (const p of paths) {
+        if (fs.existsSync(p)) return p;
+    }
+    return null;
+}
+
+function isChromeRunning() {
+    const platform = os.platform();
+    try {
+        if (platform === 'darwin') {
+            const result = execSync('pgrep -x "Google Chrome" || pgrep -x "Chromium" || true', { encoding: 'utf8' });
+            return result.trim().length > 0;
+        }
+        if (platform === 'win32') {
+            const result = execSync('tasklist /FI "IMAGENAME eq chrome.exe" /NH', { encoding: 'utf8' });
+            return result.includes('chrome.exe');
+        }
+        const result = execSync('pgrep -f "chrome|chromium" || true', { encoding: 'utf8' });
+        return result.trim().length > 0;
+    } catch { return false; }
+}
+
+function tryAutoRestartChrome() {
+    if (!autoRestartEnabled) return false;
+
+    const now = Date.now();
+    if (now - lastChromeRestartAttempt < CHROME_RESTART_COOLDOWN) {
+        console.log('[AUTO-RESTART] Cooldown active, skipping restart');
+        return false;
+    }
+    lastChromeRestartAttempt = now;
+
+    if (isChromeRunning()) {
+        console.log('[AUTO-RESTART] Chrome is already running. Cannot add extension to running Chrome.');
+        console.log('[AUTO-RESTART] Please click the CDP Bridge extension icon to connect.');
+        return false;
+    }
+
+    const chromePath = findChromePath();
+    if (!chromePath) {
+        console.log('[AUTO-RESTART] Chrome not found. Set CHROME_PATH env var.');
+        return false;
+    }
+
+    const extensionPath = path.join(__dirname, '..', 'extension-new');
+    if (!fs.existsSync(extensionPath)) {
+        console.log('[AUTO-RESTART] Extension directory not found:', extensionPath);
+        return false;
+    }
+
+    try {
+        const platform = os.platform();
+        if (platform === 'darwin') {
+            const appName = chromePath.replace(/\/Contents\/MacOS\/.*$/, '');
+            execSync(`open -a "${appName}" --args --load-extension="${extensionPath}"`, {
+                timeout: 10000,
+                stdio: 'ignore',
+            });
+        } else {
+            spawnProcess(chromePath, [`--load-extension=${extensionPath}`], {
+                detached: true,
+                stdio: 'ignore',
+            }).unref();
+        }
+        console.log('[AUTO-RESTART] Chrome launched with extension:', chromePath);
+        return true;
+    } catch (err) {
+        console.error('[AUTO-RESTART] Failed to launch Chrome:', err.message);
+        return false;
+    }
+}
 
 function updateExtensionState(connected) {
     try {
@@ -267,6 +367,15 @@ function handlePluginConnection(ws, clientInfo) {
     });
     
     updateExtensionState(true);
+
+    try {
+        if (!fs.existsSync(CONFIG_DIR)) {
+            fs.mkdirSync(CONFIG_DIR, { recursive: true });
+        }
+        if (!fs.existsSync(PLUGIN_EVER_CONNECTED_FILE)) {
+            fs.writeFileSync(PLUGIN_EVER_CONNECTED_FILE, new Date().toISOString());
+        }
+    } catch {}
 
     // 如果有待配对的客户端，自动配对
     if (clientConnections.size > 0) {
@@ -659,6 +768,16 @@ function handleClientConnection(ws, clientInfo, customClientId = null) {
             console.log(`  - Please ensure Chrome extension is connected.`);
         }
         logConnectionEvent('CLIENT_NO_PLUGIN', { clientId: id });
+        
+        if (autoRestartEnabled) {
+            const wasConnectedBefore = fs.existsSync(PLUGIN_EVER_CONNECTED_FILE);
+            if (wasConnectedBefore) {
+                console.log('[AUTO-RESTART] Plugin disconnected, client connecting. Attempting to restart Chrome...');
+                tryAutoRestartChrome();
+            } else {
+                console.log('[AUTO-RESTART] No previous plugin connection found. New user? Run "cdp-tunnel extension" to install.');
+            }
+        }
     } else {
         // 多客户端模式: 所有客户端共享同一个 plugin
         // 每个 clientId 对应不同的 tab

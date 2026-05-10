@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Complex CDP Stress Test</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f5f5f5; }
+    .section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 8px; background: white; }
+    h2 { margin-top: 0; color: #333; font-size: 16px; }
+    iframe { width: 100%; height: 180px; border: 2px solid #666; margin: 10px 0; }
+    button { padding: 6px 14px; font-size: 13px; cursor: pointer; margin: 4px; border-radius: 4px; border: 1px solid #999; background: #eee; }
+    button:hover { background: #ddd; }
+    #shadow-host, #shadow-host-dynamic { margin: 10px 0; padding: 10px; border: 2px dashed #e91e63; border-radius: 8px; }
+    #virtual-list { max-height: 200px; overflow-y: auto; border: 1px solid #ccc; padding: 5px; }
+    #virtual-list div { padding: 8px; border-bottom: 1px solid #eee; font-size: 13px; }
+    #log { margin-top: 10px; padding: 8px; background: #263238; color: #80cbc4; font-family: monospace; font-size: 12px; max-height: 150px; overflow-y: auto; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>CDP Stress Test - Complex Scenarios</h1>
+  <div id="log"></div>
+
+  <script>
+    const _log = document.getElementById('log');
+    function log(msg) {
+      const line = document.createElement('div');
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      _log.prepend(line);
+      if (_log.children.length > 50) _log.lastChild.remove();
+    }
+    log('Page loaded');
+  </script>
+
+  <!-- 1. Shadow DOM (Open) -->
+  <div class="section">
+    <h2>1. Shadow DOM (Open) - Static</h2>
+    <div id="shadow-host"></div>
+    <script>
+      (function() {
+        const host = document.getElementById('shadow-host');
+        const shadow = host.attachShadow({ mode: 'open' });
+        shadow.innerHTML = `
+          <style>
+            .shadow-box { padding: 10px; background: #fce4ec; border-radius: 6px; }
+            input { padding: 6px; margin: 4px; }
+            button { padding: 6px 12px; margin: 4px; cursor: pointer; }
+          </style>
+          <div class="shadow-box">
+            <h3>Shadow DOM (Open)</h3>
+            <input id="shadow-input" type="text" placeholder="Shadow input" />
+            <button id="shadow-btn">Shadow Button</button>
+            <div id="shadow-result"></div>
+          </div>
+        `;
+        shadow.getElementById('shadow-btn').addEventListener('click', () => {
+          const val = shadow.getElementById('shadow-input').value;
+          shadow.getElementById('shadow-result').textContent = 'Clicked! Value: ' + val;
+          log('Shadow open btn clicked, value: ' + val);
+        });
+        log('Shadow DOM (open) created');
+      })();
+    </script>
+  </div>
+
+  <!-- 2. Shadow DOM (Closed) -->
+  <div class="section">
+    <h2>2. Shadow DOM (Closed)</h2>
+    <div id="shadow-host-closed"></div>
+    <script>
+      (function() {
+        const host = document.getElementById('shadow-host-closed');
+        const shadow = host.attachShadow({ mode: 'closed' });
+        shadow.innerHTML = `
+          <style>
+            .closed-box { padding: 10px; background: #e8eaf6; border-radius: 6px; }
+            input { padding: 6px; margin: 4px; }
+          </style>
+          <div class="closed-box">
+            <h3>Shadow DOM (Closed) - Cannot be accessed from outside</h3>
+            <input id="closed-input" type="text" placeholder="Closed shadow input" />
+          </div>
+        `;
+        window._getClosedShadowInput = () => shadow.getElementById('closed-input').value;
+        log('Shadow DOM (closed) created');
+      })();
+    </script>
+  </div>
+
+  <!-- 3. Nested Shadow DOM -->
+  <div class="section">
+    <h2>3. Nested Shadow DOM (3 levels)</h2>
+    <div id="nested-shadow"></div>
+    <script>
+      (function() {
+        const l1 = document.getElementById('nested-shadow');
+        const s1 = l1.attachShadow({ mode: 'open' });
+        s1.innerHTML = `<div style="padding:10px;background:#fff3e0;border-radius:6px;"><h3>Shadow L1</h3><div id="l2-host"></div></div>`;
+        
+        const l2 = s1.getElementById('l2-host');
+        const s2 = l2.attachShadow({ mode: 'open' });
+        s2.innerHTML = `<div style="padding:10px;background:#e8f5e9;border-radius:6px;"><h4>Shadow L2</h4><input id="l2-input" placeholder="Shadow L2 input" /><div id="l3-host"></div></div>`;
+        
+        const l3 = s2.getElementById('l3-host');
+        const s3 = l3.attachShadow({ mode: 'open' });
+        s3.innerHTML = `<div style="padding:10px;background:#e1f5fe;border-radius:6px;"><h5>Shadow L3 (deepest)</h5><input id="l3-input" placeholder="Shadow L3 input" /><button id="l3-btn">L3 Button</button></div>`;
+        
+        s3.getElementById('l3-btn').addEventListener('click', () => {
+          log('Nested shadow L3 btn clicked: ' + s3.getElementById('l3-input').value);
+        });
+        log('Nested shadow DOM (3 levels) created');
+      })();
+    </script>
+  </div>
+
+  <!-- 4. Virtual DOM (Simulated React-like re-rendering) -->
+  <div class="section">
+    <h2>4. Virtual List (Dynamic DOM mutations)</h2>
+    <button onclick="vListAdd()">Add Item</button>
+    <button onclick="vListRemove()">Remove Item</button>
+    <button onclick="vListShuffle()">Shuffle</button>
+    <button onclick="vListBatchAdd()">Batch +50</button>
+    <button onclick="vListClear()">Clear</button>
+    <div id="virtual-list"></div>
+    <script>
+      let vItems = [];
+      let vCounter = 0;
+
+      function vListRender() {
+        const container = document.getElementById('virtual-list');
+        container.innerHTML = '';
+        vItems.forEach(item => {
+          const div = document.createElement('div');
+          div.innerHTML = `<strong>#${item.id}</strong> ${item.text} <button onclick="vListToggle(${item.id})">${item.active ? '✓' : '✗'}</button>`;
+          container.appendChild(div);
+        });
+      }
+
+      function vListAdd() {
+        vCounter++;
+        vItems.push({ id: vCounter, text: 'Item ' + vCounter, active: true });
+        vListRender();
+        log('vList add #' + vCounter + ', total: ' + vItems.length);
+      }
+
+      function vListRemove() {
+        if (vItems.length === 0) return;
+        const removed = vItems.pop();
+        vListRender();
+        log('vList remove #' + removed.id + ', total: ' + vItems.length);
+      }
+
+      function vListShuffle() {
+        for (let i = vItems.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [vItems[i], vItems[j]] = [vItems[j], vItems[i]];
+        }
+        vListRender();
+        log('vList shuffled');
+      }
+
+      function vListBatchAdd() {
+        for (let i = 0; i < 50; i++) {
+          vCounter++;
+          vItems.push({ id: vCounter, text: 'Batch Item ' + vCounter, active: Math.random() > 0.5 });
+        }
+        vListRender();
+        log('vList batch +50, total: ' + vItems.length);
+      }
+
+      function vListClear() {
+        vItems = [];
+        vListRender();
+        log('vList cleared');
+      }
+
+      window.vListToggle = function(id) {
+        const item = vItems.find(i => i.id === id);
+        if (item) { item.active = !item.active; vListRender(); }
+      };
+    </script>
+  </div>
+
+  <!-- 5. Auto-updating Virtual DOM -->
+  <div class="section">
+    <h2>5. Auto-updating DOM (every 500ms)</h2>
+    <div id="auto-update" style="padding:10px;background:#f3e5f5;border-radius:6px;font-family:monospace;font-size:13px;"></div>
+    <script>
+      let autoCounter = 0;
+      setInterval(() => {
+        autoCounter++;
+        const el = document.getElementById('auto-update');
+        el.innerHTML = `<div>Tick #${autoCounter} | ${new Date().toISOString()}</div><div style="margin-top:5px;">${Array.from({length: 5}, (_, i) => `<span style="color:hsl(${(autoCounter * 30 + i * 72) % 360},70%,50%)">●</span>`).join(' ')}</div>`;
+      }, 500);
+      log('Auto-updating DOM started (500ms)');
+    </script>
+  </div>
+
+  <!-- 6. Nested iframes (3 levels) -->
+  <div class="section">
+    <h2>6. Nested iframes (3 levels deep)</h2>
+    <iframe id="nested-3" srcdoc="
+      <html><body style='padding:10px;font-family:sans-serif;background:#e3f2fd;'>
+        <h3>iframe Level 1</h3>
+        <input id='l1-input' placeholder='L1 input' />
+        <iframe id='nested-2' srcdoc=\&quot;
+          <html><body style='padding:10px;font-family:sans-serif;background:#e8f5e9;'>
+            <h4>iframe Level 2</h4>
+            <input id='l2-input' placeholder='L2 input' />
+            <iframe id='nested-1' srcdoc=\&amp;quot;
+              <html><body style='padding:10px;font-family:sans-serif;background:#fff8e1;'>
+                <h5>iframe Level 3 (deepest)</h5>
+                <input id='l3-input' placeholder='L3 input' />
+              </body></html>
+            \&amp;quot; width='100%' height='100' style='border:1px solid #999;'></iframe>
+          </body></html>
+        \&quot; width='100%' height='160' style='border:1px solid #999;'></iframe>
+      </body></html>
+    "></iframe>
+  </div>
+
+  <!-- 7. Dynamic iframe creation/destruction -->
+  <div class="section">
+    <h2>7. Dynamic iframe (create/destroy cycle)</h2>
+    <button onclick="createIframe()">Create iframe</button>
+    <button onclick="destroyIframe()">Destroy iframe</button>
+    <button onclick="rapidIframeCycle()">Rapid Cycle (10x)</button>
+    <div id="dynamic-frame-container"></div>
+    <script>
+      let dynFrameCount = 0;
+      window.createIframe = function() {
+        dynFrameCount++;
+        const container = document.getElementById('dynamic-frame-container');
+        const iframe = document.createElement('iframe');
+        iframe.id = 'dyn-frame-' + dynFrameCount;
+        iframe.width = '100%';
+        iframe.height = '100';
+        iframe.style.border = '2px solid red';
+        iframe.style.marginTop = '5px';
+        iframe.srcdoc = `<html><body style="padding:5px;font-family:sans-serif;"><h4>Dynamic Frame #${dynFrameCount}</h4><input placeholder="Dynamic input ${dynFrameCount}" /></body></html>`;
+        container.appendChild(iframe);
+        log('Dynamic iframe #' + dynFrameCount + ' created');
+      };
+      window.destroyIframe = function() {
+        const container = document.getElementById('dynamic-frame-container');
+        if (container.lastChild) {
+          const id = container.lastChild.id;
+          container.lastChild.remove();
+          log('Dynamic iframe removed: ' + id);
+        }
+      };
+      window.rapidIframeCycle = function() {
+        for (let i = 0; i < 10; i++) {
+          setTimeout(() => {
+            createIframe();
+            setTimeout(() => destroyIframe(), 200);
+          }, i * 400);
+        }
+        log('Rapid iframe cycle started (10x)');
+      };
+    </script>
+  </div>
+
+  <!-- 8. Cross-origin iframes -->
+  <div class="section">
+    <h2>8. Cross-origin iframes (mixed)</h2>
+    <iframe id="xorigin-1" src="https://example.com" width="50%" style="display:inline-block;" sandbox="allow-scripts"></iframe>
+    <iframe id="xorigin-2" src="https://httpbin.org/forms/post" width="49%" style="display:inline-block;" sandbox="allow-scripts allow-forms"></iframe>
+  </div>
+
+  <!-- 9. iframe with Shadow DOM inside -->
+  <div class="section">
+    <h2>9. iframe + Shadow DOM combo</h2>
+    <iframe id="iframe-shadow" srcdoc="
+      <html><body style='padding:10px;font-family:sans-serif;'>
+        <h3>iframe with Shadow DOM inside</h3>
+        <div id='iframe-shadow-host'></div>
+        <script>
+          const host = document.getElementById('iframe-shadow-host');
+          const shadow = host.attachShadow({ mode: 'open' });
+          shadow.innerHTML = '<div style=\"padding:8px;background:#ffe0b2;border-radius:4px;\"><input placeholder=\"Shadow in iframe\" /><button>Shadow Button</button></div>';
+        <\/script>
+      </body></html>
+    "></iframe>
+  </div>
+
+  <!-- 10. Popups & data URIs -->
+  <div class="section">
+    <h2>10. Data URI / Blob URL / about:blank iframes</h2>
+    <iframe id="data-uri-frame" src="data:text/html,<html><body style='padding:10px;font-family:sans-serif;'><h3>Data URI iframe</h3><input placeholder='data uri input' /></body></html>"></iframe>
+    <div id="blob-container"></div>
+    <script>
+      const blob = new Blob([`<html><body style="padding:10px;font-family:sans-serif;"><h3>Blob URL iframe</h3><input placeholder="blob input" /></body></html>`], { type: 'text/html' });
+      const blobUrl = URL.createObjectURL(blob);
+      const blobFrame = document.createElement('iframe');
+      blobFrame.src = blobUrl;
+      blobFrame.width = '100%';
+      blobFrame.height = '120';
+      blobFrame.style.border = '2px solid green';
+      blobFrame.style.marginTop = '5px';
+      document.getElementById('blob-container').appendChild(blobFrame);
+      log('Blob URL iframe created: ' + blobUrl);
+    </script>
+  </div>
+
+  <!-- 11. Auto-navigate iframe (simulates SPA) -->
+  <div class="section">
+    <h2>11. Auto-navigating iframe (simulates SPA, every 3s)</h2>
+    <iframe id="spa-frame" srcdoc="
+      <html><body style='padding:10px;font-family:sans-serif;background:#efebe9;'>
+        <h3>SPA Simulator</h3>
+        <div id='spa-content'>Page 1</div>
+        <script>
+          let page = 1;
+          setInterval(() => {
+            page++;
+            document.getElementById('spa-content').innerHTML = '<div>Page ' + page + ' (navigated at ' + new Date().toLocaleTimeString() + ')</div><input placeholder=\"Page ' + page + ' input\" />';
+            history.pushState({}, '', '?page=' + page);
+          }, 3000);
+        <\/script>
+      </body></html>
+    "></iframe>
+  </div>
+
+  <!-- 12. Stress: Rapid DOM mutations -->
+  <div class="section">
+    <h2>12. Stress test - Rapid DOM mutations</h2>
+    <button onclick="startStress()">Start Stress (1000 mutations/s)</button>
+    <button onclick="stopStress()">Stop</button>
+    <div id="stress-area" style="min-height:60px;padding:10px;background:#fafafa;border-radius:4px;font-size:12px;"></div>
+    <script>
+      let stressInterval = null;
+      let stressCount = 0;
+      window.startStress = function() {
+        if (stressInterval) return;
+        stressInterval = setInterval(() => {
+          stressCount++;
+          const area = document.getElementById('stress-area');
+          const div = document.createElement('span');
+          div.textContent = stressCount + ' ';
+          area.appendChild(div);
+          if (area.children.length > 200) area.firstChild.remove();
+        }, 1);
+        log('Stress test started');
+      };
+      window.stopStress = function() {
+        clearInterval(stressInterval);
+        stressInterval = null;
+        log('Stress test stopped after ' + stressCount + ' mutations');
+      };
+    </script>
+  </div>
+
+</body>
+</html>

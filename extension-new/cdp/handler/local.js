@@ -135,6 +135,39 @@ var LocalHandler = (function() {
     return {};
   }
 
+  function tabGetMuteStatus(params) {
+    var cdpOnly = params && params.cdpOnly;
+    var attachedTabIds = State.getAttachedTabIds();
+
+    return new Promise(function(resolve) {
+      chrome.tabs.query({}, function(tabs) {
+        if (chrome.runtime.lastError) {
+          resolve({ tabs: [] });
+          return;
+        }
+
+        var result = tabs;
+        if (cdpOnly) {
+          result = tabs.filter(function(t) {
+            return attachedTabIds.indexOf(t.id) !== -1;
+          });
+        }
+
+        resolve({
+          tabs: result.map(function(tab) {
+            return {
+              id: tab.id,
+              url: tab.url || '',
+              title: tab.title || '',
+              muted: tab.mutedInfo ? tab.mutedInfo.muted : false,
+              mutedReason: tab.mutedInfo ? (tab.mutedInfo.reason || '') : ''
+            };
+          })
+        });
+      });
+    });
+  }
+
   function getTargetInfos() {
     return chrome.debugger.getTargets().then(function(targets) {
       // 为每个有 tabId 的 target 查询 openerTabId
@@ -274,6 +307,7 @@ var LocalHandler = (function() {
     emptyObject: emptyObject,
     getTargetInfos: getTargetInfos,
     getTargetInfoById: getTargetInfoById,
-    mapToTargetInfo: mapToTargetInfo
+    mapToTargetInfo: mapToTargetInfo,
+    tabGetMuteStatus: tabGetMuteStatus
   };
 })();

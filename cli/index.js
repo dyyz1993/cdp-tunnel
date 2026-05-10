@@ -358,64 +358,83 @@ program
 program
   .command('update')
   .description('自动更新 cdp-tunnel 并重启服务')
-  .option('-p, --port <port>', '重启时指定端口', parseInt)
-  .option('-w, --watchdog', '重启时启用看门狗')
+  .option('-p, --port <port>', '指定端口', parseInt)
+  .option('-w, --watchdog', '启用看门狗')
   .action(async (options) => {
     const config = getConfig();
     const wasRunning = isServerRunning();
     const savedPort = options.port || config.port;
     const savedWatchdog = options.watchdog;
-
-    console.log('');
-    log('cyan', '⬆  正在检查更新...');
-
+    
     try {
-      const beforeVersion = execSync('npm view cdp-tunnel version', { encoding: 'utf8' }).trim();
-      const localVersion = require(path.join(__dirname, '..', 'package.json')).version;
+      log('cyan', '🔍 检查更新...');
+      let latestVersion;
+      try {
+        latestVersion = execSync('npm view cdp-tunnel version', { 
+          encoding: 'utf8', 
+          timeout: 30000
+        }).trim();
+      } catch (err) {
+        log('red', '❌ 无法连接 npm registry: ' + err.message);
+        process.exit(1);
+      }
+      
+      const localVersion = JSON.parse(fs.readFileSync(
+        path.join(__dirname, '..', 'package.json'), 'utf8'
+      )).version;
+      
       log('gray', '  当前版本: ' + localVersion);
-      log('gray', '  最新版本: ' + beforeVersion);
-
+      log('gray', '  最新版本: ' + latestVersion);
+      
+      if (localVersion === latestVersion) {
+        log('green', '✅ 已是最新版本 (' + localVersion + ')');
+        if (wasRunning) {
+          log('cyan', '  服务器仍在运行中');
+        }
+        process.exit(0);
+      }
+      
       if (wasRunning) {
-        log('yellow', '  正在停止服务器...');
-        try {
-          const pid = getServerPid();
-          process.kill(pid, 'SIGTERM');
-          fs.unlinkSync(PID_FILE);
+        log('yellow', '⏸ 停止服务器...');
+        const pid = getServerPid();
+        if (pid) {
+          try { process.kill(pid, 'SIGTERM'); } catch {}
           await new Promise(r => setTimeout(r, 1500));
-          log('green', '  ✓ 服务器已停止');
-        } catch (e) {
-          log('yellow', '  ⚠ 停止服务器失败: ' + e.message);
         }
       }
-
-      log('cyan', '  正在更新...');
-      execSync('npm update -g cdp-tunnel', { stdio: 'inherit' });
-
-      const afterVersion = require(path.join(__dirname, '..', 'package.json')).version;
-      if (afterVersion !== localVersion) {
-        log('green', '  ✓ 已更新: ' + localVersion + ' → ' + afterVersion);
+      
+      log('cyan', '📦 更新中 (' + localVersion + ' → ' + latestVersion + ')...');
+      try {
+        execSync('npm update -g cdp-tunnel', { 
+          stdio: 'inherit',
+          timeout: 120000
+        });
+      } catch (err) {
+        log('red', '❌ 更新失败: ' + err.message);
+        process.exit(1);
+      }
+      
+      const newVersion = JSON.parse(fs.readFileSync(
+        path.join(__dirname, '..', 'package.json'), 'utf8'
+      )).version;
+      
+      if (newVersion !== localVersion) {
+        log('green', '✅ 已更新: ' + localVersion + ' → ' + newVersion);
       } else {
-        log('green', '  ✓ 已是最新版本');
+        log('yellow', '⚠ 版本未变化，可能需要手动更新');
       }
-
-      ensureConfigDir();
-      cleanupLogFile();
-      startServer(savedPort, savedWatchdog);
-      log('green', '  ✓ 服务器已重启 (端口: ' + savedPort + ')');
-      console.log('');
-    } catch (e) {
-      log('red', '✗ 更新失败: ' + e.message);
-      console.log('');
+      
       if (wasRunning) {
-        log('yellow', '正在尝试恢复服务器...');
-        try {
-          ensureConfigDir();
-          startServer(savedPort, savedWatchdog);
-          log('green', '✓ 服务器已恢复');
-        } catch (re) {
-          log('red', '✗ 恢复失败，请手动启动: cdp-tunnel start');
-        }
+        log('cyan', '🔄 重启服务器...');
+        startServer(savedPort, savedWatchdog, config.autoRestart);
+        log('green', '✅ 服务器已重启');
+      } else {
+        log('cyan', '  运行 cdp-tunnel start 启动服务器');
       }
+      
+      process.exit(0);
+    } catch (err) {
+      log('red', '❌ 更新出错: ' + err.message);
       process.exit(1);
     }
   });
@@ -575,5 +594,20 @@ program
       console.log('用法: cdp-tunnel config <get|set> [key] [value]');
     }
   });
+
+program.addHelpText('after', `
+
+常用命令:
+  $ cdp-tunnel start              启动服务（自动启动 Chrome）
+  $ cdp-tunnel start --auto-restart   Chrome 断连时自动重启
+  $ cdp-tunnel start --watchdog       服务崩溃时自动重启
+  $ cdp-tunnel status             查看状态
+  $ cdp-tunnel update             检查并更新
+  $ cdp-tunnel extension          安装 Chrome 扩展
+
+快速开始:
+  $ npm install -g cdp-tunnel
+  $ cdp-tunnel start              # 一行命令搞定！
+`);
 
 program.parse();

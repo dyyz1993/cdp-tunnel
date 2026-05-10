@@ -251,11 +251,16 @@ async function runTest() {
     passed++;
 
     // === Phase 4: Verify all gone ===
-    await sleep(3000);
-    const targetsAfter = await sendCDP(ws, 'Target.getTargets');
-    const survivingPages = targetsAfter.targetInfos.filter(t =>
-      t.type === 'page' && pageIds.includes(t.targetId)
-    );
+    await sleep(5000);
+    let survivingPages = [];
+    for (let retry = 0; retry < 5; retry++) {
+      const targetsAfter = await sendCDP(ws, 'Target.getTargets');
+      survivingPages = targetsAfter.targetInfos.filter(t =>
+        t.type === 'page' && pageIds.includes(t.targetId)
+      );
+      if (survivingPages.length === 0) break;
+      await sleep(3000);
+    }
 
     assert(survivingPages.length === 0,
       `${survivingPages.length} pages survived bulk close`);

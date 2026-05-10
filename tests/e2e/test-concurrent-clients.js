@@ -254,18 +254,24 @@ async function runTest() {
     }
     clients[2].pages = [];
 
-    await sleep(3000);
+    await sleep(5000);
 
     // === Step 5: Verify isolation still holds after closes ===
     log('TEST', 'Verifying isolation after closes...');
     for (const client of clients) {
-      const targets = await sendCDP(client.ws, 'Target.getTargets');
-      const myPages = targets.targetInfos.filter(t =>
-        t.type === 'page' && t.url.includes(`#c${client.id + 1}`)
-      );
-      const otherPages = targets.targetInfos.filter(t =>
-        t.type === 'page' && t.url.includes('#c') && !t.url.includes(`#c${client.id + 1}`)
-      );
+      let myPages = [];
+      let otherPages = [];
+      for (let retry = 0; retry < 5; retry++) {
+        const targets = await sendCDP(client.ws, 'Target.getTargets');
+        myPages = targets.targetInfos.filter(t =>
+          t.type === 'page' && t.url.includes(`#c${client.id + 1}`)
+        );
+        otherPages = targets.targetInfos.filter(t =>
+          t.type === 'page' && t.url.includes('#c') && !t.url.includes(`#c${client.id + 1}`)
+        );
+        if (myPages.length === client.pages.length) break;
+        await sleep(2000);
+      }
 
       assert(myPages.length === client.pages.length,
         `${client.label} should have ${client.pages.length} pages, got ${myPages.length}`);

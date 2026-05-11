@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.1] - 2026-05-12
+### Fixed
+- CLI 更新命令改用 `npm install -g cdp-tunnel@latest`，修复 `npm update -g` 偶发的 `Cannot read properties of null` 错误
+
 ## [2.5.0] - 2026-05-12
 ### Added
 - 多客户端隔离：CDP 客户端只能看到自己创建的 tab（`Target.getTargets` 过滤）

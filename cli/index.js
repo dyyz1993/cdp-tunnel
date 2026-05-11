@@ -443,9 +443,9 @@ program
       
       log('cyan', '📦 更新中 (' + localVersion + ' → ' + latestVersion + ')...');
       try {
-        execSync('npm update -g cdp-tunnel', { 
+        execSync('npm install -g cdp-tunnel@latest', { 
           stdio: 'inherit',
-          timeout: 120000
+          cwd: __dirname
         });
       } catch (err) {
         log('red', '❌ 更新失败: ' + err.message);

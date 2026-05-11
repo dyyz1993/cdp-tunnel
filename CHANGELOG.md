@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2025-05-11
+
+### Added
+- `preExistingTabIds` tracking: tabs opened by user BEFORE CDP connect are preserved on disconnect
+- `CDPUtils.buildGroupName` / `getGroupBaseName` / `findGroupByName` / `getGroupColorForClient` — unified group helpers
+- E2E test: `test-tab-group-isolation.js` — single client group + user tab survival
+- E2E test: `test-multi-client-group-isolation.js` — multi-client group isolation + user tab survival
+
+### Fixed
+- **User tabs no longer closed on CDP disconnect**: `emitAutoAttachForExistingTargets` marks pre-existing tabs instead of grouping them; disconnect only closes grouped (CDP-created) tabs
+- **Unified tab group naming**: `CDP #1 (N)` instead of inconsistent `CDP-<hash>` / `CDP-Automation` / `CDP-<timestamp>`
+- **Unified group lookup**: all 3 files (`special.js`, `background.js`, `websocket.js`) now use `CDPUtils.findGroupByName` (prefix match)
+- **Removed dead `popup.html` / `popup.js`** (no `default_popup` in manifest)
+
 ## [2.0.0] - 2025-05-11
 
 ### Added

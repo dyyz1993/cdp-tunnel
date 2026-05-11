@@ -132,34 +132,28 @@ var SpecialHandler = (function() {
       muteTabIfNeeded(tabId);
     }, 500);
 
-    var groupName;
     var groupClientId = clientId;
-
-    if (clientId) {
-      groupName = 'CDP-' + clientId.substring(0, 8);
-    } else {
+    if (!groupClientId) {
       var cdpClients = State.getCDPClients() || [];
       if (cdpClients.length > 0 && cdpClients[0] && cdpClients[0].id) {
-        groupName = 'CDP-' + cdpClients[0].id.substring(0, 8);
         groupClientId = cdpClients[0].id;
-      } else {
-        groupName = 'CDP-Automation';
       }
     }
+
+    if (!groupClientId) return;
+    var baseName = CDPUtils.getGroupBaseName(groupClientId);
     
     setTimeout(function() {
-      Logger.info('[TabGroup] Executing group operation after delay...');
+      Logger.info('[TabGroup] Executing group operation for:', baseName);
       
       chrome.tabGroups.query({}, function(allGroups) {
-        var groups = allGroups.filter(function(g) {
-          return g.title && g.title.indexOf(groupName) === 0;
-        });
-        if (groups.length > 0) {
-          chrome.tabs.group({ tabIds: tabId, groupId: groups[0].id }, function(result) {
+        var existing = CDPUtils.findGroupByName(allGroups, baseName);
+        if (existing) {
+          chrome.tabs.group({ tabIds: tabId, groupId: existing.id }, function(result) {
             if (chrome.runtime.lastError) {
               Logger.error('[TabGroup] Failed to add tab to group:', chrome.runtime.lastError.message);
             } else {
-              State.setGroupIdForClient(groupClientId, groups[0].id);
+              State.setGroupIdForClient(groupClientId, existing.id);
               updateTabGroupName(groupClientId);
             }
           });
@@ -170,12 +164,9 @@ var SpecialHandler = (function() {
               return;
             }
             if (groupId) {
-              var colors = ['blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'];
-              var colorIndex = Math.abs(CDPUtils.hashCode(groupName)) % colors.length;
-              
               chrome.tabGroups.update(groupId, {
-                title: groupName,
-                color: colors[colorIndex],
+                title: baseName,
+                color: CDPUtils.getGroupColorForClient(groupClientId),
                 collapsed: true
               }, function() {
                 if (chrome.runtime.lastError) {
@@ -201,9 +192,8 @@ var SpecialHandler = (function() {
     chrome.tabs.query({ groupId: groupId }, function(tabs) {
       if (chrome.runtime.lastError || !tabs) return;
       
-      var count = tabs.length;
-      var baseName = 'CDP-' + clientId.substring(0, 8);
-      var newName = baseName + ' (' + count + ')';
+      var baseName = CDPUtils.getGroupBaseName(clientId);
+      var newName = baseName + ' (' + tabs.length + ')';
       
       chrome.tabGroups.update(groupId, {
         title: newName
@@ -388,7 +378,7 @@ function checkTabVisibility(tabId) {
             if (clientId) {
               State.setTabIdToClientId(target.tabId, clientId);
             }
-            addTabToAutomationGroup(target.tabId, clientId);
+            State.addPreExistingTab(target.tabId);
 
             if (config.waitForDebuggerOnStart) {
               State.addPendingDebuggerTab(target.tabId);
@@ -410,7 +400,7 @@ function checkTabVisibility(tabId) {
               if (clientId) {
                 State.setTabIdToClientId(target.tabId, clientId);
               }
-              addTabToAutomationGroup(target.tabId, clientId);
+              State.addPreExistingTab(target.tabId);
 
               if (config.waitForDebuggerOnStart) {
                 State.addPendingDebuggerTab(target.tabId);

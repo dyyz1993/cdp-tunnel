@@ -199,6 +199,16 @@ var WebSocketManager = (function() {
             closeTabsByClientId(discClientId, resolve);
           });
         }).then(function() {
+          var preExistingTabs = State.getPreExistingTabs();
+          var clientPreExisting = preExistingTabs.filter(function(tabId) {
+            return State.getClientIdByTabId(tabId) === discClientId;
+          });
+          clientPreExisting.forEach(function(tabId) {
+            chrome.debugger.detach({ tabId: tabId }).catch(function() {});
+            State.removeAttachedTab(tabId);
+          });
+          State.clearPreExistingTabsForClient(discClientId);
+
           State.removeCDPClient(discClientId);
           if (State.getCDPClients().length === 0) {
             State.setHasConnectedClient(false);
@@ -261,26 +271,14 @@ var WebSocketManager = (function() {
         if (groupId) {
             closeGroupById(groupId, clientId, resolve);
         } else {
-            var groupName = 'CDP-' + clientId.substring(0, 8);
-            chrome.tabGroups.query({ title: groupName }, function(groups) {
-                if (!groups || groups.length === 0) {
-                    chrome.tabGroups.query({}, function(allGroups) {
-                        if (allGroups) {
-                            var match = allGroups.find(function(g) {
-                                return g.title && g.title.indexOf(groupName) === 0;
-                            });
-                            if (match) {
-                                closeGroupById(match.id, clientId, resolve);
-                            } else {
-                                Logger.info('[WS] No tab group found, closing tabs by clientId:', clientId);
-                                closeTabsByClientId(clientId, resolve);
-                            }
-                        } else {
-                            resolve();
-                        }
-                    });
+            var baseName = CDPUtils.getGroupBaseName(clientId);
+            chrome.tabGroups.query({}, function(allGroups) {
+                var match = CDPUtils.findGroupByName(allGroups, baseName);
+                if (match) {
+                    closeGroupById(match.id, clientId, resolve);
                 } else {
-                    closeGroupById(groups[0].id, clientId, resolve);
+                    Logger.info('[WS] No tab group found, closing tabs by clientId:', clientId);
+                    closeTabsByClientId(clientId, resolve);
                 }
             });
         }
@@ -321,7 +319,7 @@ var WebSocketManager = (function() {
     var tabsToClose = [];
     
     attachedTabs.forEach(function(tabId) {
-      if (State.getClientIdByTabId(tabId) === clientId) {
+      if (State.getClientIdByTabId(tabId) === clientId && !State.isPreExistingTab(tabId)) {
         tabsToClose.push(tabId);
       }
     });

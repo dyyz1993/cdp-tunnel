@@ -27,10 +27,49 @@ var CDPUtils = (function() {
     return hash;
   }
 
+  var GROUP_COLORS = ['blue', 'cyan', 'green', 'yellow', 'orange', 'red', 'pink', 'purple'];
+
+  function getGroupColorForClient(clientId) {
+    var idx = Math.abs(hashCode(clientId)) % GROUP_COLORS.length;
+    return GROUP_COLORS[idx];
+  }
+
+  function getClientIndex(clientId) {
+    var clients = (typeof State !== 'undefined') ? (State.getCDPClients() || []) : [];
+    for (var i = 0; i < clients.length; i++) {
+      if (clients[i].id === clientId) return i + 1;
+    }
+    return 0;
+  }
+
+  function buildGroupName(clientId) {
+    if (!clientId) return 'CDP';
+    var idx = getClientIndex(clientId);
+    return idx > 0 ? ('CDP #' + idx) : ('CDP-' + clientId.substring(0, 6));
+  }
+
+  function getGroupBaseName(clientId) {
+    return buildGroupName(clientId);
+  }
+
+  function findGroupByName(allGroups, baseName) {
+    for (var i = 0; i < allGroups.length; i++) {
+      var g = allGroups[i];
+      if (g.title && g.title.indexOf(baseName) === 0) return g;
+    }
+    return null;
+  }
+
   return {
     generateSessionId: generateSessionId,
     getChromeVersion: getChromeVersion,
     sleep: sleep,
-    hashCode: hashCode
+    hashCode: hashCode,
+    GROUP_COLORS: GROUP_COLORS,
+    getGroupColorForClient: getGroupColorForClient,
+    getClientIndex: getClientIndex,
+    buildGroupName: buildGroupName,
+    getGroupBaseName: getGroupBaseName,
+    findGroupByName: findGroupByName
   };
 })();

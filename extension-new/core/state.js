@@ -24,7 +24,8 @@ var State = (function() {
     clientIdToTabId: new Map(),
     clientIdToSessionId: new Map(),
     tabIdToClientId: new Map(),
-    clientIdToGroupId: new Map()
+    clientIdToGroupId: new Map(),
+    preExistingTabIds: new Set()
   };
 
   function mapSession(sessionId, tabId, targetId) {
@@ -264,6 +265,7 @@ var State = (function() {
     _state.hasConnectedClient = false;
     _state.tabIdToClientId.clear();
     _state.clientIdToGroupId.clear();
+    _state.preExistingTabIds.clear();
   }
 
   function cleanupAllTabs() {
@@ -344,6 +346,30 @@ var State = (function() {
 
   function removeGroupForClient(clientId) {
     _state.clientIdToGroupId.delete(clientId);
+  }
+
+  function addPreExistingTab(tabId) {
+    _state.preExistingTabIds.add(tabId);
+  }
+
+  function isPreExistingTab(tabId) {
+    return _state.preExistingTabIds.has(tabId);
+  }
+
+  function getPreExistingTabs() {
+    return Array.from(_state.preExistingTabIds);
+  }
+
+  function removePreExistingTab(tabId) {
+    _state.preExistingTabIds.delete(tabId);
+  }
+
+  function clearPreExistingTabsForClient(clientId) {
+    _state.preExistingTabIds.forEach(function(tabId) {
+      if (State.getClientIdByTabId(tabId) === clientId) {
+        _state.preExistingTabIds.delete(tabId);
+      }
+    });
   }
 
   function getTabIdByClientId(clientId) {
@@ -448,6 +474,11 @@ var State = (function() {
     getClientIdByTabId: getClientIdByTabId,
     setGroupIdForClient: setGroupIdForClient,
     getGroupIdForClient: getGroupIdForClient,
-    removeGroupForClient: removeGroupForClient
+    removeGroupForClient: removeGroupForClient,
+    addPreExistingTab: addPreExistingTab,
+    isPreExistingTab: isPreExistingTab,
+    getPreExistingTabs: getPreExistingTabs,
+    removePreExistingTab: removePreExistingTab,
+    clearPreExistingTabsForClient: clearPreExistingTabsForClient
   };
 })();

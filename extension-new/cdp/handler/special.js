@@ -132,7 +132,9 @@ var SpecialHandler = (function() {
   function addTabToAutomationGroup(tabId, clientId) {
     Logger.info('[TabGroup] Starting addTabToAutomationGroup for tabId:', tabId, 'clientId:', clientId);
 
-    muteTabIfNeeded(tabId);
+    setTimeout(function() {
+      muteTabIfNeeded(tabId);
+    }, 200);
 
     var groupClientId = clientId;
     if (!groupClientId) {
@@ -141,44 +143,46 @@ var SpecialHandler = (function() {
     }
     var baseName = CDPUtils.getGroupBaseName(groupClientId);
     
-    Logger.info('[TabGroup] Executing group operation for:', baseName);
-    
-    chrome.tabGroups.query({}, function(allGroups) {
-      var existing = CDPUtils.findGroupByName(allGroups, baseName);
-      if (existing) {
-        chrome.tabs.group({ tabIds: tabId, groupId: existing.id }, function(result) {
-          if (chrome.runtime.lastError) {
-            Logger.error('[TabGroup] Failed to add tab to group:', chrome.runtime.lastError.message);
-          } else {
-            State.setGroupIdForClient(groupClientId, existing.id);
-            updateTabGroupName(groupClientId);
-            Logger.info('[TabGroup] Tab', tabId, 'added to existing group:', existing.id);
-          }
-        });
-      } else {
-        chrome.tabs.group({ tabIds: tabId }, function(groupId) {
-          if (chrome.runtime.lastError) {
-            Logger.error('[TabGroup] Failed to create group:', chrome.runtime.lastError.message);
-            return;
-          }
-          if (groupId) {
-            chrome.tabGroups.update(groupId, {
-              title: baseName,
-              color: CDPUtils.getGroupColorForClient(groupClientId),
-              collapsed: true
-            }, function() {
-              if (chrome.runtime.lastError) {
-                Logger.error('[TabGroup] Failed to update group:', chrome.runtime.lastError.message);
-              } else {
-                State.setGroupIdForClient(groupClientId, groupId);
-                updateTabGroupName(groupClientId);
-                Logger.info('[TabGroup] Created new group:', groupId, 'with tab:', tabId);
-              }
-            });
-          }
-        });
-      }
-    });
+    setTimeout(function() {
+      Logger.info('[TabGroup] Executing group operation for:', baseName);
+      
+      chrome.tabGroups.query({}, function(allGroups) {
+        var existing = CDPUtils.findGroupByName(allGroups, baseName);
+        if (existing) {
+          chrome.tabs.group({ tabIds: tabId, groupId: existing.id }, function(result) {
+            if (chrome.runtime.lastError) {
+              Logger.error('[TabGroup] Failed to add tab to group:', chrome.runtime.lastError.message);
+            } else {
+              State.setGroupIdForClient(groupClientId, existing.id);
+              updateTabGroupName(groupClientId);
+              Logger.info('[TabGroup] Tab', tabId, 'added to existing group:', existing.id);
+            }
+          });
+        } else {
+          chrome.tabs.group({ tabIds: tabId }, function(groupId) {
+            if (chrome.runtime.lastError) {
+              Logger.error('[TabGroup] Failed to create group:', chrome.runtime.lastError.message);
+              return;
+            }
+            if (groupId) {
+              chrome.tabGroups.update(groupId, {
+                title: baseName,
+                color: CDPUtils.getGroupColorForClient(groupClientId),
+                collapsed: true
+              }, function() {
+                if (chrome.runtime.lastError) {
+                  Logger.error('[TabGroup] Failed to update group:', chrome.runtime.lastError.message);
+                } else {
+                  State.setGroupIdForClient(groupClientId, groupId);
+                  updateTabGroupName(groupClientId);
+                  Logger.info('[TabGroup] Created new group:', groupId, 'with tab:', tabId);
+                }
+              });
+            }
+          });
+        }
+      });
+    }, 500);
   }
 
   function updateTabGroupName(clientId) {

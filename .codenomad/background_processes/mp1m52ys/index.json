@@ -1,0 +1,16 @@
+[
+  {
+    "id": "proc_2026-05-11T1950_4e1cf0",
+    "workspaceId": "mp1m52ys",
+    "title": "Test isolation",
+    "command": "cd /Users/xuyingzhou/Project/study-web/cdp-tunnel2 && timeout 140 node tests/e2e/test-client-isolation.js 2>&1; echo \"EXIT_CODE=$?\"",
+    "cwd": "/Users/xuyingzhou/Project/study-web/cdp-tunnel2",
+    "status": "stopped",
+    "pid": 13216,
+    "startedAt": "2026-05-11T19:50:26.617Z",
+    "outputSizeBytes": 1327,
+    "terminalReason": "finished",
+    "exitCode": 0,
+    "stoppedAt": "2026-05-11T19:51:02.068Z"
+  }
+]

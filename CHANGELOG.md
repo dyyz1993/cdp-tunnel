@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.2] - 2026-05-12
+### Fixed
+- 恢复 `addTabToAutomationGroup` 的 `setTimeout(500)`，修复 tab 刚创建时 `chrome.tabs.group` 因 tab 未完全初始化而失败的问题
+
 ## [2.5.1] - 2026-05-12
 ### Fixed
 - CLI 更新命令改用 `npm install -g cdp-tunnel@latest`，修复 `npm update -g` 偶发的 `Cannot read properties of null` 错误

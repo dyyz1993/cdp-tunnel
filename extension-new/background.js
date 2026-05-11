@@ -158,10 +158,10 @@ importScripts('features/automation-badge.js');
     }
     
     var openerTabId = tab.openerTabId;
-    var isOpenerControlled = openerTabId && State.isTabAttached(openerTabId);
+    var isOpenerControlled = openerTabId && State.isTabAttached(openerTabId) && !State.isPreExistingTab(openerTabId);
     
-    // 只有当 opener 被 CDP 控制时才跟踪新页面
-    // 这样可以避免跟踪用户手动点击链接打开的页面
+    // 只有当 opener 是 CDP 主动管理的 tab 时才跟踪新页面
+    // pre-existing tab 虽然也 attach 了 debugger，但属于用户 tab，不应继承 CDP 控制
     if (!openerTabId) {
       Logger.info('[Tabs] Tab has no opener, skipping. tabId:', tabId);
       return;

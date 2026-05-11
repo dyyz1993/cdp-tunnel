@@ -672,16 +672,6 @@ function handlePluginConnection(ws, clientInfo) {
             totalClients: clientConnections.size
         });
         
-        logDisconnect('PLUGIN_DISCONNECTED', {
-            pluginId: id,
-            code, reason: reason?.toString() || 'none',
-            remainingPlugins: pluginConnections.size,
-            affectedClients: affectedClients.map(c => c),
-            uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
-            activeSessions: sessionToClientId.size,
-            pendingRequests: pendingAttachRequests.size
-        });
-        
         if (pluginConnections.size === 0) {
             updateExtensionState(false);
         }
@@ -709,6 +699,16 @@ function handlePluginConnection(ws, clientInfo) {
             }
         });
         
+        logDisconnect('PLUGIN_DISCONNECTED', {
+            pluginId: id,
+            code, reason: reason?.toString() || 'none',
+            remainingPlugins: pluginConnections.size,
+            affectedClients,
+            uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
+            activeSessions: sessionToClientId.size,
+            pendingRequests: pendingAttachRequests.size
+        });
+
         if (affectedClients.length > 0) {
             logConnectionEvent('PLUGIN_DISCONNECT_AFFECTED_CLIENTS', { pluginId: id, affectedClients });
         }

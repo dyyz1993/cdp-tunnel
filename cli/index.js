@@ -595,6 +595,109 @@ program
     }
   });
 
+program
+  .command('diagnose')
+  .description('诊断 CDP Tunnel 连接问题')
+  .option('-p, --port <port>', '指定端口', parseInt)
+  .action(async (options) => {
+    const config = getConfig();
+    const port = options.port || config.port || 9221;
+    const http = require('http');
+
+    console.log('');
+    log('bold', '🔍 CDP Tunnel 诊断');
+    console.log('');
+
+    const running = isServerRunning();
+    log(running ? 'green' : 'red', `  1. Proxy Server: ${running ? '运行中' : '❌ 未运行'}`);
+    if (!running) {
+      log('yellow', '     → 运行 cdp-tunnel start 启动服务器');
+    }
+
+    let httpOk = false;
+    try {
+      const result = await new Promise((resolve, reject) => {
+        http.get(`http://localhost:${port}/json/version`, res => {
+          let data = '';
+          res.on('data', chunk => data += chunk);
+          res.on('end', () => resolve(JSON.parse(data)));
+        }).on('error', reject);
+      });
+      httpOk = true;
+      log('green', `  2. HTTP 端点: 正常 (Browser: ${result.Browser || 'unknown'})`);
+    } catch (err) {
+      log('red', `  2. HTTP 端点: ❌ ${err.message}`);
+    }
+
+    const extStatus = checkChromeExtension();
+    log(extStatus.connected ? 'green' : 'red', `  3. Chrome 扩展: ${extStatus.connected ? '已连接' : '❌ 未连接'}`);
+    if (!extStatus.connected) {
+      log('yellow', '     → 点击浏览器工具栏上的 CDP Bridge 图标');
+      log('yellow', '     → 或运行 cdp-tunnel extension 安装扩展');
+    }
+
+    if (httpOk) {
+      try {
+        const targets = await new Promise((resolve, reject) => {
+          http.get(`http://localhost:${port}/json/list`, res => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => resolve(JSON.parse(data)));
+          }).on('error', reject);
+        });
+        log('green', `  4. 可用 Targets: ${targets.length} 个`);
+        targets.forEach((t, i) => {
+          log('gray', `     ${i + 1}. ${t.title || t.url || 'unknown'} (${t.type})`);
+        });
+      } catch (err) {
+        log('red', `  4. Targets: ❌ ${err.message}`);
+      }
+    }
+
+    const { isChromeRunning, findChromePath } = require('./chrome-manager');
+    const chromeRunning = isChromeRunning();
+    log(chromeRunning ? 'green' : 'yellow', `  5. Chrome 进程: ${chromeRunning ? '运行中' : '未运行'}`);
+
+    if (chromeRunning) {
+      const chromePath = findChromePath();
+      if (chromePath) {
+        log('gray', `     路径: ${chromePath}`);
+      }
+    }
+
+    if (httpOk && extStatus.connected) {
+      log('cyan', '  6. Playwright 连接测试...');
+      try {
+        const { chromium } = require('playwright');
+        const browser = await chromium.connectOverCDP(`http://localhost:${port}`, {
+          timeout: 10000
+        });
+        const contexts = browser.contexts();
+        log('green', `     ✅ 连接成功! ${contexts.length} 个上下文, 共 ${contexts.reduce((sum, ctx) => sum + ctx.pages().length, 0)} 个页面`);
+        await browser.close();
+      } catch (err) {
+        if (err.code === 'MODULE_NOT_FOUND') {
+          log('gray', '     ⏭ 跳过 (playwright 未安装)');
+        } else {
+          log('red', `     ❌ ${err.message}`);
+          log('yellow', '     → 检查 Chrome 是否有多个实例在运行');
+          log('yellow', '     → 尝试关闭所有 Chrome 后重新运行 cdp-tunnel start');
+        }
+      }
+    }
+
+    console.log('');
+    if (running && httpOk && extStatus.connected) {
+      log('green', '✅ 一切正常! 连接 ws://localhost:' + port + '/devtools/browser/...');
+      log('cyan', '   Playwright: chromium.connectOverCDP("http://localhost:' + port + '")');
+    } else {
+      log('yellow', '⚠️ 有问题需要修复，请根据上面的提示操作');
+    }
+    console.log('');
+
+    process.exit(0);
+  });
+
 program.addHelpText('after', `
 
 常用命令:
@@ -603,6 +706,7 @@ program.addHelpText('after', `
   $ cdp-tunnel start --watchdog       服务崩溃时自动重启
   $ cdp-tunnel status             查看状态
   $ cdp-tunnel update             检查并更新
+  $ cdp-tunnel diagnose          诊断连接问题
   $ cdp-tunnel extension          安装 Chrome 扩展
 
 快速开始:

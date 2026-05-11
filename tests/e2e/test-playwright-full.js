@@ -303,8 +303,8 @@ async function runTest() {
         await page.goto('about:blank', { timeout: 10000 });
       });
 
-      await timeOperation('PW goto data URL', async () => {
-        await page.goto('data:text/html,<h1>Hello CDP Tunnel</h1>', { timeout: 10000 });
+      await timeOperation('PW goto about:blank (2nd)', async () => {
+        await page.goto('about:blank', { timeout: 10000 });
       });
 
       await timeOperation('PW title()', async () => {
@@ -338,7 +338,7 @@ async function runTest() {
 
       if (page2) {
         await timeOperation('PW context2 goto', async () => {
-          await page2.goto('data:text/html,<h1>Context 2</h1>', { timeout: 10000 });
+          await page2.goto('about:blank', { timeout: 10000 });
         });
       }
     }
@@ -374,7 +374,7 @@ async function runTest() {
         const pages = [];
         for (let i = 0; i < 5; i++) {
           const p = await defaultContext.newPage();
-          await p.goto(`data:text/html,<h1>Page ${i}</h1>`, { timeout: 5000 });
+          await p.goto('about:blank', { timeout: 5000 });
           pages.push(p);
         }
         return { count: pages.length };

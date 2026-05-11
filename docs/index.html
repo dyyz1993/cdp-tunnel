@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CDP Tunnel — Bridge Chrome's Debugger API to WebSocket</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0a0a0f;--surface:#12121a;--surface2:#1a1a26;--border:#1e1e2e;--text:#e4e4e7;--text2:#a1a1aa;--text3:#71717a;--accent:#3b82f6;--accent2:#60a5fa;--green:#22c55e;--radius:12px}
+.light{--bg:#f8f9fa;--surface:#fff;--surface2:#f1f3f5;--border:#dee2e6;--text:#1a1a2e;--text2:#495057;--text3:#868e96}
+html{scroll-behavior:smooth}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;overflow-x:hidden}
+a{color:var(--accent2);text-decoration:none}
+code,pre{font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace}
+.fade{opacity:0;transform:translateY(30px);transition:opacity .6s ease,transform .6s ease}
+.fade.visible{opacity:1;transform:none}
+
+nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px}
+.light nav{background:rgba(248,249,250,.9)}
+nav .logo{font-weight:700;font-size:18px;color:var(--accent2)}
+nav .links{display:flex;gap:24px;align-items:center}
+nav .links a{color:var(--text2);font-size:14px;transition:color .2s}
+nav .links a:hover{color:var(--accent2)}
+.theme-btn{background:none;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:4px 10px;cursor:pointer;font-size:16px;line-height:1}
+
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:120px 24px 80px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:800px;background:radial-gradient(circle,rgba(59,130,246,.12) 0%,transparent 70%);pointer-events:none}
+.hero h1{font-size:clamp(2.4rem,6vw,4.2rem);font-weight:800;letter-spacing:-.03em;margin-bottom:16px}
+.hero h1 span{background:linear-gradient(135deg,var(--accent2),var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero p{font-size:clamp(1rem,2.5vw,1.25rem);color:var(--text2);max-width:640px;margin-bottom:40px}
+.btns{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 24px;border-radius:var(--radius);font-size:15px;font-weight:600;border:none;cursor:pointer;transition:transform .15s,box-shadow .15s}
+.btn:hover{transform:translateY(-2px)}
+.btn:active{transform:translateY(0)}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 4px 24px rgba(59,130,246,.3)}
+.btn-primary:hover{box-shadow:0 6px 32px rgba(59,130,246,.4)}
+.btn-outline{background:transparent;color:var(--text);border:1px solid var(--border)}
+.btn-outline:hover{border-color:var(--accent)}
+
+.badge{display:inline-flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:13px;color:var(--text2);margin-bottom:24px}
+.badge svg{width:16px;height:16px}
+
+section{padding:80px 24px;max-width:1100px;margin:0 auto}
+section h2{font-size:clamp(1.6rem,3.5vw,2.2rem);text-align:center;margin-bottom:48px;letter-spacing:-.02em}
+section h2 span{color:var(--accent2)}
+
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:28px;transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--accent);transform:translateY(-3px)}
+.card .icon{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--green));display:flex;align-items:center;justify-content:center;margin-bottom:16px}
+.card .icon svg{width:20px;height:20px;color:#fff;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.card h3{font-size:17px;margin-bottom:8px}
+.card p{font-size:14px;color:var(--text2);line-height:1.6}
+
+.terminal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.terminal-bar{background:var(--surface2);padding:10px 16px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)}
+.terminal-dot{width:10px;height:10px;border-radius:50%}
+.terminal-dot:nth-child(1){background:#ef4444}
+.terminal-dot:nth-child(2){background:#eab308}
+.terminal-dot:nth-child(3){background:#22c55e}
+.terminal pre{padding:20px;font-size:13px;line-height:1.8;overflow-x:auto;color:var(--text2)}
+.terminal pre .cmd{color:var(--accent2)}
+.terminal pre .cmt{color:var(--text3)}
+
+.code-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px}
+.code-block{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;overflow-x:auto}
+.code-block h4{font-size:14px;color:var(--accent2);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.code-block pre{font-size:13px;line-height:1.7;color:var(--text2)}
+.code-block .kw{color:#c084fc}
+.code-block .fn{color:#60a5fa}
+.code-block .str{color:#34d399}
+.code-block .cmt{color:var(--text3)}
+
+.arch-flow{display:flex;flex-direction:column;align-items:center;gap:0;text-align:center}
+.arch-flow .flow-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;margin:6px 0}
+.arch-flow .node{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;white-space:nowrap}
+.arch-flow .node.accent{border-color:var(--accent);color:var(--accent2)}
+.arch-flow .arrow{color:var(--text3);font-size:20px}
+
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:12px 16px;text-align:left;border-bottom:1px solid var(--border)}
+th{color:var(--text2);font-weight:600;background:var(--surface)}
+td{color:var(--text)}
+.check{color:var(--green);font-weight:700}
+.cross{color:#ef4444;font-weight:700}
+
+footer{border-top:1px solid var(--border);padding:40px 24px;text-align:center;color:var(--text3);font-size:14px}
+footer .foot-links{display:flex;gap:20px;justify-content:center;margin-bottom:16px}
+footer .foot-links a{color:var(--text2)}
+footer .foot-links a:hover{color:var(--accent2)}
+footer p:last-child{margin-top:8px;font-size:13px}
+
+@media(max-width:640px){
+  nav .links a:not(.theme-btn){display:none}
+  .hero{padding:100px 16px 60px}
+  section{padding:48px 16px}
+  .code-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<nav>
+  <div class="logo">CDP Tunnel</div>
+  <div class="links">
+    <a href="#features">Features</a>
+    <a href="#quickstart">Quick Start</a>
+    <a href="#examples">Examples</a>
+    <a href="#compare">Compare</a>
+    <button class="theme-btn" id="themeToggle" aria-label="Toggle theme">&#9788;</button>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="badge fade"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zm3.25 8.75h-2.5v2.5a.75.75 0 01-1.5 0v-2.5h-2.5a.75.75 0 010-1.5h2.5v-2.5a.75.75 0 011.5 0v2.5h2.5a.75.75 0 010 1.5z"/></svg> v2.0.0 &middot; Apache-2.0</div>
+  <h1 class="fade">Control <span>Your Browser</span><br>with Playwright &amp; Puppeteer</h1>
+  <p class="fade">Bridge Chrome's debugger API to WebSocket. Keep your login state, cookies, and extensions — no fresh profiles.</p>
+  <div class="btns fade">
+    <a class="btn btn-primary" href="#quickstart">npm i -g cdp-tunnel</a>
+    <a class="btn btn-outline" href="https://github.com/dyyz1993/cdp-tunnel" target="_blank">
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+  </div>
+</section>
+
+<section id="features">
+  <h2 class="fade">Why <span>CDP Tunnel</span>?</h2>
+  <div class="features">
+    <div class="card fade">
+      <div class="icon"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+      <h3>Zero Config</h3>
+      <p>One command <code>cdp-tunnel start</code> auto-launches Chrome with the extension. No flags, no setup.</p>
+    </div>
+    <div class="card fade">
+      <div class="icon"><svg viewBox="0 0 24 24"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg></div>
+      <h3>Playwright &amp; Puppeteer</h3>
+      <p>Drop-in compatible. Just connect to <code>http://localhost:9221</code> — works with both frameworks.</p>
+    </div>
+    <div class="card fade">
+      <div class="icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>
+      <h3>Multi-Client Isolation</h3>
+      <p>Multiple automation clients, each with isolated tab groups. No interference between sessions.</p>
+    </div>
+    <div class="card fade">
+      <div class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10A15.3 15.3 0 0112 2z"/></svg></div>
+      <h3>Your Real Browser</h3>
+      <p>Keep your login state, cookies, and extensions. No fresh profiles — automate your actual browser.</p>
+    </div>
+    <div class="card fade">
+      <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+      <h3>Auto Recovery</h3>
+      <p><code>--watchdog</code> crash recovery and <code>--auto-restart</code> Chrome restart. Your automation keeps running.</p>
+    </div>
+    <div class="card fade">
+      <div class="icon"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>
+      <h3>6-Step Diagnose</h3>
+      <p><code>cdp-tunnel diagnose</code> finds and fixes common issues automatically. Six health checks in one command.</p>
+    </div>
+  </div>
+</section>
+
+<section id="quickstart">
+  <h2 class="fade">Quick <span>Start</span></h2>
+  <div class="terminal fade">
+    <div class="terminal-bar"><div class="terminal-dot"></div><div class="terminal-dot"></div><div class="terminal-dot"></div></div>
+    <pre><span class="cmd">$</span> npm i -g cdp-tunnel
+
+<span class="cmd">$</span> cdp-tunnel start              <span class="cmt"># Start proxy + launch Chrome</span>
+<span class="cmd">$</span> cdp-tunnel start --watchdog   <span class="cmt"># With crash recovery</span>
+<span class="cmd">$</span> cdp-tunnel start --auto-restart  <span class="cmt"># Auto-restart Chrome</span>
+<span class="cmd">$</span> cdp-tunnel status             <span class="cmt"># Check server &amp; extension</span>
+<span class="cmd">$</span> cdp-tunnel diagnose           <span class="cmt"># 6-step health check</span>
+<span class="cmd">$</span> cdp-tunnel update             <span class="cmt"># Auto-update + restart</span>
+<span class="cmd">$</span> cdp-tunnel stop               <span class="cmt"># Stop everything</span></pre>
+  </div>
+</section>
+
+<section id="examples">
+  <h2 class="fade">Code <span>Examples</span></h2>
+  <div class="code-grid">
+    <div class="code-block fade">
+      <h4><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="16 3 21 3 21 8"/></svg> Playwright</h4>
+<pre><span class="kw">const</span> { chromium } = <span class="fn">require</span>(<span class="str">'playwright'</span>);
+
+<span class="cmt">// Connect to your real browser</span>
+<span class="kw">const</span> browser = <span class="kw">await</span> chromium.<span class="fn">connectOverCDP</span>(
+  <span class="str">'http://localhost:9221'</span>
+);
+<span class="kw">const</span> page = <span class="kw">await</span> browser.<span class="fn">newPage</span>();
+<span class="kw">await</span> page.<span class="fn">goto</span>(<span class="str">'https://example.com'</span>);</pre>
+    </div>
+    <div class="code-block fade">
+      <h4><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Puppeteer</h4>
+<pre><span class="kw">const</span> puppeteer = <span class="fn">require</span>(<span class="str">'puppeteer-core'</span>);
+
+<span class="cmt">// Same idea, different API</span>
+<span class="kw">const</span> browser = <span class="kw">await</span> puppeteer.<span class="fn">connect</span>({
+  browserURL: <span class="str">'http://localhost:9221'</span>
+});
+
+<span class="cmt">// Use your existing profile</span>
+<span class="kw">const</span> pages = <span class="kw">await</span> browser.<span class="fn">pages</span>();</pre>
+    </div>
+  </div>
+</section>
+
+<section id="architecture">
+  <h2 class="fade">How It <span>Works</span></h2>
+  <div class="arch-flow fade">
+    <div class="flow-row">
+      <div class="node">Playwright / Puppeteer</div>
+      <div class="arrow">&rarr;</div>
+      <div class="node accent">localhost:9221</div>
+      <div class="arrow">&rarr;</div>
+      <div class="node">CDP Tunnel Proxy</div>
+    </div>
+    <div style="color:var(--text3);font-size:24px">&#8595;</div>
+    <div class="flow-row">
+      <div class="node accent">Chrome Extension</div>
+      <div class="arrow">&rarr;</div>
+      <div class="node">chrome.debugger API</div>
+      <div class="arrow">&rarr;</div>
+      <div class="node">Your Real Chrome</div>
+    </div>
+  </div>
+</section>
+
+<section id="compare">
+  <h2 class="fade">Feature <span>Comparison</span></h2>
+  <div class="table-wrap fade">
+    <table>
+      <thead>
+        <tr><th>Feature</th><th>CDP Tunnel</th><th>Native CDP</th><th>Puppeteer launch()</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Keep login state</td><td class="check">&#10003;</td><td class="cross">&#10007;</td><td class="cross">&#10007;</td></tr>
+        <tr><td>Keep extensions</td><td class="check">&#10003;</td><td class="cross">&#10007;</td><td class="cross">&#10007;</td></tr>
+        <tr><td>Multi-client</td><td class="check">&#10003;</td><td class="cross">&#10007;</td><td class="cross">&#10007;</td></tr>
+        <tr><td>Auto recovery</td><td class="check">&#10003;</td><td class="cross">&#10007;</td><td class="cross">&#10007;</td></tr>
+        <tr><td>Zero config</td><td class="check">&#10003;</td><td class="cross">&#10007;</td><td class="cross">&#10007;</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <div class="foot-links">
+    <a href="https://github.com/dyyz1993/cdp-tunnel" target="_blank">GitHub</a>
+    <a href="https://www.npmjs.com/package/cdp-tunnel" target="_blank">npm</a>
+    <a href="https://github.com/dyyz1993/cdp-tunnel/blob/main/LICENSE">Apache-2.0 License</a>
+  </div>
+  <p>Made with &hearts; for the automation community</p>
+</footer>
+
+<script>
+(function(){
+  var t=document.getElementById('themeToggle');
+  var d=document.documentElement;
+  var dark=true;
+  t.onclick=function(){
+    dark=!dark;
+    d.classList.toggle('light');
+    t.innerHTML=dark?'&#9788;':'&#9790;';
+  };
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){e.target.classList.add('visible');obs.unobserve(e.target)}
+    });
+  },{threshold:0.1});
+  document.querySelectorAll('.fade').forEach(function(el){obs.observe(el)});
+})();
+</script>
+</body>
+</html>

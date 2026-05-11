@@ -1,7 +1,7 @@
 {
   "name": "cdp-tunnel",
-  "version": "1.7.0",
-  "description": "Chrome Extension CDP Proxy - 通过 Chrome 扩展将 chrome.debugger API 暴露为 WebSocket 端点",
+  "version": "2.0.0",
+  "description": "Bridge Chrome's debugger API to WebSocket — control your existing browser with Playwright/Puppeteer via CDP",
   "main": "server/proxy-server.js",
   "bin": "./cli/index.js",
   "scripts": {
@@ -19,12 +19,30 @@
   "keywords": [
     "cdp",
     "chrome-devtools-protocol",
+    "cdp-proxy",
     "playwright",
     "puppeteer",
-    "chrome-extension"
+    "chrome-extension",
+    "browser-automation",
+    "web-scraping",
+    "remote-debugging",
+    "websocket",
+    "testing",
+    "browser-control"
   ],
   "author": "dyyz1993",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dyyz1993/cdp-tunnel.git"
+  },
+  "homepage": "https://github.com/dyyz1993/cdp-tunnel#readme",
+  "bugs": {
+    "url": "https://github.com/dyyz1993/cdp-tunnel/issues"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "files": [
     "server/",
     "cli/",

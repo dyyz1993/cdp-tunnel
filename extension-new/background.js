@@ -13,17 +13,6 @@ importScripts('cdp/index.js');
 importScripts('features/screencast.js');
 importScripts('features/automation-badge.js');
 
-// 为字符串添加hashCode方法（用于生成颜色索引）
-String.prototype.hashCode = function() {
-  var hash = 0;
-  for (var i = 0; i < this.length; i++) {
-    var char = this.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  return hash;
-};
-
 (function() {
   'use strict';
 
@@ -271,7 +260,7 @@ String.prototype.hashCode = function() {
                 if (groupId) {
                   // 为不同的组使用不同的颜色
                   var colors = ['blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'];
-                  var colorIndex = Math.abs(groupName.hashCode ? groupName.hashCode() : 0) % colors.length;
+                  var colorIndex = Math.abs(CDPUtils.hashCode(groupName)) % colors.length;
                   var groupColor = colors[colorIndex];
                   
                   chrome.tabGroups.update(groupId, {

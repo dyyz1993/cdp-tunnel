@@ -171,7 +171,7 @@ var SpecialHandler = (function() {
             }
             if (groupId) {
               var colors = ['blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'];
-              var colorIndex = Math.abs(groupName.hashCode ? groupName.hashCode() : 0) % colors.length;
+              var colorIndex = Math.abs(CDPUtils.hashCode(groupName)) % colors.length;
               
               chrome.tabGroups.update(groupId, {
                 title: groupName,
@@ -217,17 +217,6 @@ var SpecialHandler = (function() {
     });
   }
   
-  // 为字符串添加hashCode方法（用于生成颜色索引）
-  String.prototype.hashCode = function() {
-    var hash = 0;
-    for (var i = 0; i < this.length; i++) {
-      var char = this.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32bit integer
-    }
-    return hash;
-  };
-
   function targetActivateTarget(context) {
     var params = context.params;
     var targetId = params && params.targetId;

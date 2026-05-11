@@ -17,9 +17,20 @@ var CDPUtils = (function() {
     });
   }
 
+  function hashCode(str) {
+    var hash = 0;
+    for (var i = 0; i < str.length; i++) {
+      var char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    return hash;
+  }
+
   return {
     generateSessionId: generateSessionId,
     getChromeVersion: getChromeVersion,
-    sleep: sleep
+    sleep: sleep,
+    hashCode: hashCode
   };
 })();

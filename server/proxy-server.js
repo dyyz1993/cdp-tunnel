@@ -226,10 +226,11 @@ async function handleHttpRequest(req, res) {
     
     if (url.pathname === '/json/version' || url.pathname === '/json/version/') {
         const payload = {
-            Browser: 'CDP Bridge',
+            Browser: `Chrome/131.0.6778.86`,
             'Protocol-Version': '1.3',
-            'User-Agent': 'Chrome',
-            'V8-Version': '',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Safari/537.36',
+            'V8-Version': '13.1.201.8',
+            'WebKit-Version': '537.36',
             webSocketDebuggerUrl: buildWebSocketDebuggerUrl(req)
         };
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -255,7 +256,9 @@ async function handleHttpRequest(req, res) {
             })
             .map(t => ({
                 description: '',
-                devtoolsFrontendUrl: '',
+                devtoolsFrontendUrl: `devtools://devtools/bundled/inspector.html?ws=${getHost(req)}/devtools/page/${t.targetId}`,
+                devtoolsFrontendUrlCompat: `devtools://devtools/bundled/inspector.html?ws=${getHost(req)}/devtools/page/${t.targetId}`,
+                faviconUrl: '',
                 id: t.targetId,
                 title: t.title || '',
                 type: t.type,

@@ -115,8 +115,6 @@ var SpecialHandler = (function() {
         // 将标签页添加到CDP Automation组，使用对应的clientId
         addTabToAutomationGroup(tab.id, clientId);
 
-        var targetId = String(tab.id);
-        State.addEmittedTarget(targetId);
         getTargetIdByTabId(tab.id).then(function(targetId) {
           return emitAutoAttachEvents(tab.id, targetId, browserContextId).then(function() {
             resolve({ targetId: targetId });

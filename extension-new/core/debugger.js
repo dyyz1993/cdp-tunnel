@@ -204,6 +204,10 @@ var DebuggerManager = (function() {
       return;
     }
 
+    if (method === 'Target.targetCreated' || method === 'Target.attachedToTarget' || method === 'Target.targetDestroyed') {
+      return;
+    }
+
     var sessionId = State.findSessionByTabId(source.tabId);
     Logger.info('[Event] method=' + method + ' tabId=' + source.tabId + ' sessionId=' + (sessionId || 'null'));
     

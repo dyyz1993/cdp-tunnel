@@ -1,0 +1,109 @@
+
+=== Stress Test: 3 Clients × 10+ Ops (port 17998) ===
+
+[21:51:34] [SETUP] Ready
+[21:51:35] [CLIENT_A] Connected, groupId=null
+[21:51:36] [CLIENT_B] Connected, groupId=null
+[21:51:37] [CLIENT_C] Connected, groupId=null
+[21:51:39] [PHASE1] Each client creates 4 tabs...
+[21:51:39] [CLIENT_A]   Created tab 1/4: 08051B633E3E1B06
+[21:51:40] [CLIENT_A]   Created tab 2/4: 138B1BE20A4606B8
+[21:51:40] [CLIENT_A]   Created tab 3/4: 5A2A21BE927EAF90
+[21:51:42] [CLIENT_A]   Created tab 4/4: C7B5852B180C5E65
+[21:51:44] [CLIENT_A]   GroupInfo: groupId=1157284008, 4 tabs
+[21:51:44] [CLIENT_B]   Created tab 1/4: F79A95935585F3C5
+[21:51:45] [CLIENT_B]   Created tab 2/4: EE0F14DD02E33890
+[21:51:45] [CLIENT_B]   Created tab 3/4: 63AFAFF4C601C8E0
+[21:51:46] [CLIENT_B]   Created tab 4/4: 91814FA83D279240
+[21:51:48] [CLIENT_B]   GroupInfo: groupId=1347655464, 4 tabs
+[21:51:48] [CLIENT_C]   Created tab 1/4: 360F07ADFB2002DF
+[21:51:48] [CLIENT_C]   Created tab 2/4: 93A207FF61652927
+[21:51:49] [CLIENT_C]   Created tab 3/4: 7B2B97E3A28AFC80
+[21:51:50] [CLIENT_C]   Created tab 4/4: D4DC5E0C6351B998
+[21:51:52] [CLIENT_C]   GroupInfo: groupId=1998578541, 4 tabs
+[21:51:55] [CHECK] Verifying isolation after Phase 1...
+[21:51:55] [CLIENT_A] Target.getTargets → 4 pages
+[21:51:55] [CLIENT_A]   08051B633E3E1B06 — about:blank
+[21:51:55] [CLIENT_A]   5A2A21BE927EAF90 — about:blank
+[21:51:55] [CLIENT_A]   C7B5852B180C5E65 — about:blank
+[21:51:55] [CLIENT_A]   138B1BE20A4606B8 — about:blank
+[21:51:55] [PASS] CLIENT_A: sees 4/4 own tabs
+[21:51:55] [PASS] CLIENT_A: sees 0 other-client tabs (want 0)
+[21:51:55] [CLIENT_B] Target.getTargets → 4 pages
+[21:51:55] [CLIENT_B]   91814FA83D279240 — about:blank
+[21:51:55] [CLIENT_B]   EE0F14DD02E33890 — about:blank
+[21:51:55] [CLIENT_B]   F79A95935585F3C5 — about:blank
+[21:51:55] [CLIENT_B]   63AFAFF4C601C8E0 — about:blank
+[21:51:55] [PASS] CLIENT_B: sees 4/4 own tabs
+[21:51:55] [PASS] CLIENT_B: sees 0 other-client tabs (want 0)
+[21:51:55] [CLIENT_C] Target.getTargets → 4 pages
+[21:51:55] [CLIENT_C]   7B2B97E3A28AFC80 — about:blank
+[21:51:55] [CLIENT_C]   93A207FF61652927 — about:blank
+[21:51:55] [CLIENT_C]   360F07ADFB2002DF — about:blank
+[21:51:55] [CLIENT_C]   D4DC5E0C6351B998 — about:blank
+[21:51:55] [PASS] CLIENT_C: sees 4/4 own tabs
+[21:51:55] [PASS] CLIENT_C: sees 0 other-client tabs (want 0)
+[21:51:55] [PHASE2] Each client closes 2 tabs, creates 2 more...
+[21:51:55] [CLIENT_A]   Closed: 08051B633E3E1B06
+[21:51:55] [CLIENT_A]   Closed: 138B1BE20A4606B8
+[21:51:58] [CLIENT_B]   Closed: F79A95935585F3C5
+[21:51:59] [CLIENT_B]   Closed: EE0F14DD02E33890
+[21:52:02] [CLIENT_C]   Closed: 360F07ADFB2002DF
+[21:52:02] [CLIENT_C]   Closed: 93A207FF61652927
+[21:52:05] [CHECK] Verifying isolation after Phase 2...
+[21:52:05] [CLIENT_A] Target.getTargets → 4 pages
+[21:52:05] [CLIENT_A]   977625025E5282D5 — about:blank
+[21:52:05] [CLIENT_A]   C7B5852B180C5E65 — about:blank
+[21:52:05] [CLIENT_A]   2D94908C89EB0230 — about:blank
+[21:52:05] [CLIENT_A]   5A2A21BE927EAF90 — about:blank
+[21:52:05] [PASS] CLIENT_A: sees 4/4 own tabs (after close+create)
+[21:52:05] [PASS] CLIENT_A: 0 other-client tabs (want 0)
+[21:52:05] [CLIENT_B] Target.getTargets → 4 pages
+[21:52:05] [CLIENT_B]   91814FA83D279240 — about:blank
+[21:52:05] [CLIENT_B]   F5F85B0F2A042967 — about:blank
+[21:52:05] [CLIENT_B]   298A07642237CDDE — about:blank
+[21:52:05] [CLIENT_B]   63AFAFF4C601C8E0 — about:blank
+[21:52:05] [PASS] CLIENT_B: sees 4/4 own tabs (after close+create)
+[21:52:05] [PASS] CLIENT_B: 0 other-client tabs (want 0)
+[21:52:05] [CLIENT_C] Target.getTargets → 4 pages
+[21:52:05] [CLIENT_C]   81F5FF8800881311 — about:blank
+[21:52:05] [CLIENT_C]   D4DC5E0C6351B998 — about:blank
+[21:52:05] [CLIENT_C]   7B2B97E3A28AFC80 — about:blank
+[21:52:05] [CLIENT_C]   42FE759AA24EF2B2 — about:blank
+[21:52:05] [PASS] CLIENT_C: sees 4/4 own tabs (after close+create)
+[21:52:05] [PASS] CLIENT_C: 0 other-client tabs (want 0)
+[21:52:05] [PHASE3] Interleaved operations: create, close, group check...
+[21:52:11] [CHECK] Final isolation verification...
+[21:52:11] [CLIENT_A] Target.getTargets → 4 pages
+[21:52:11] [CLIENT_A]   977625025E5282D5 — about:blank
+[21:52:11] [CLIENT_A]   69BCF006B198CE55 — about:blank
+[21:52:11] [CLIENT_A]   347ED3C87A994081 — about:blank
+[21:52:11] [CLIENT_A]   26593876E3588C8F — about:blank
+[21:52:11] [PASS] CLIENT_A: final check sees 4/4 own tabs
+[21:52:11] [PASS] CLIENT_A: 0 other-client tabs leaked
+[21:52:11] [CLIENT_B] Target.getTargets → 4 pages
+[21:52:11] [CLIENT_B]   48DCC073EE896AC2 — about:blank
+[21:52:11] [CLIENT_B]   298A07642237CDDE — about:blank
+[21:52:11] [CLIENT_B]   4AF4E07E8C8E3E7F — about:blank
+[21:52:11] [CLIENT_B]   2A4988E9163D859E — about:blank
+[21:52:11] [PASS] CLIENT_B: final check sees 4/4 own tabs
+[21:52:11] [PASS] CLIENT_B: 0 other-client tabs leaked
+[21:52:11] [CLIENT_C] Target.getTargets → 4 pages
+[21:52:11] [CLIENT_C]   81F5FF8800881311 — about:blank
+[21:52:11] [CLIENT_C]   216AC62A4F755F18 — about:blank
+[21:52:11] [CLIENT_C]   CA08F1E61B0B9FBE — about:blank
+[21:52:11] [CLIENT_C]   925393BBB7B21910 — about:blank
+[21:52:11] [PASS] CLIENT_C: final check sees 4/4 own tabs
+[21:52:11] [PASS] CLIENT_C: 0 other-client tabs leaked
+[21:52:11] [PHASE4] Checking group IDs are unique per client...
+[21:52:11] [CLIENT_A]   Group: 1157284008, baseName: CDP-clxcw8gz
+[21:52:11] [CLIENT_B]   Group: 1347655464, baseName: CDP-6dtds63k
+[21:52:11] [CLIENT_C]   Group: 1998578541, baseName: CDP-ma8wmjim
+[21:52:11] [PASS] 3/3 unique groups (each client should have its own)
+[21:52:11] [PHASE5] Cross-client attack tests: try to close/attach other client tabs...
+
+FATAL: T:Target.closeTarget
+
+=== STRESS TEST: 19 passed, 1 failed ===
+
+EXIT=1

@@ -890,10 +890,12 @@ function handleClientConnection(ws, clientInfo, customClientId = null) {
 
         // 为每个请求分配全局唯一 ID，避免多客户端 ID 冲突
         let modifiedData = data;
+        let originalId = null;
+        let globalId = null;
         if (parsed && parsed.id !== undefined) {
-            const originalId = parsed.id;
+            originalId = parsed.id;
             globalRequestIdCounter++;
-            const globalId = globalRequestIdCounter;
+            globalId = globalRequestIdCounter;
             
             // 保存映射：全局ID -> {clientId, originalId, sessionId}
             // 如果请求有 sessionId，也保存它，用于响应路由
@@ -922,11 +924,36 @@ function handleClientConnection(ws, clientInfo, customClientId = null) {
             }
             console.log(`[PENDING CREATE TARGET] Request id=${parsed.id} from client=${id}`);
         }
-        if (parsed && parsed.method === 'Target.closeTarget' && parsed.id !== undefined) {
-            const currentMapping = globalRequestIdMap.get(parsed.id);
-            if (currentMapping) {
-                currentMapping.method = 'Target.closeTarget';
-                currentMapping.closeTargetId = parsed.params?.targetId;
+        if (parsed && parsed.id !== undefined) {
+            if (parsed.method === 'Target.closeTarget') {
+                const targetId = parsed.params?.targetId;
+                const ownerClient = targetId ? targetIdToClientId.get(targetId) : null;
+                if (ownerClient && ownerClient !== id) {
+                    console.log(`[BLOCKED] ${parsed.method} targetId=${targetId?.substring(0,8)} owner=${ownerClient?.substring(0,8)} requester=${id?.substring(0,8)} — not owner`);
+                    const errMsg = JSON.stringify({
+                        id: originalId,
+                        error: { code: -32000, message: 'Target is owned by another client' }
+                    });
+                    safeSend(ws, errMsg, 'client');
+                    return;
+                }
+                const currentMapping = globalRequestIdMap.get(parsed.id);
+                if (currentMapping) {
+                    currentMapping.method = 'Target.closeTarget';
+                    currentMapping.closeTargetId = targetId;
+                }
+            } else if (parsed.method === 'Target.attachToTarget') {
+                const targetId = parsed.params?.targetId;
+                const ownerClient = targetId ? targetIdToClientId.get(targetId) : null;
+                if (ownerClient && ownerClient !== id) {
+                    console.log(`[BLOCKED] ${parsed.method} targetId=${targetId?.substring(0,8)} owner=${ownerClient?.substring(0,8)} requester=${id?.substring(0,8)} — not owner`);
+                    const errMsg = JSON.stringify({
+                        id: originalId,
+                        error: { code: -32000, message: 'Target is owned by another client' }
+                    });
+                    safeSend(ws, errMsg, 'client');
+                    return;
+                }
             }
         }
         

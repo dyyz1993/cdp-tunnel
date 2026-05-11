@@ -109,5 +109,33 @@
     "terminalReason": "finished",
     "exitCode": 0,
     "stoppedAt": "2026-05-11T21:44:01.580Z"
+  },
+  {
+    "id": "proc_2026-05-11T2151_73593e",
+    "workspaceId": "mp1ost8ue64325c7",
+    "title": "Stress + Attack",
+    "command": "cd /Users/xuyingzhou/Project/study-web/cdp-tunnel2 && timeout 300 node tests/e2e/test-stress-isolation.js 2>&1; echo \"EXIT=$?\"",
+    "cwd": "/Users/xuyingzhou/Project/study-web/cdp-tunnel2",
+    "status": "stopped",
+    "pid": 22977,
+    "startedAt": "2026-05-11T21:51:25.319Z",
+    "outputSizeBytes": 5802,
+    "terminalReason": "finished",
+    "exitCode": 0,
+    "stoppedAt": "2026-05-11T21:52:31.697Z"
+  },
+  {
+    "id": "proc_2026-05-11T2152_44ddb2",
+    "workspaceId": "mp1ost8ue64325c7",
+    "title": "Stress + Attack v2",
+    "command": "cd /Users/xuyingzhou/Project/study-web/cdp-tunnel2 && timeout 300 node tests/e2e/test-stress-isolation.js 2>&1; echo \"EXIT=$?\"",
+    "cwd": "/Users/xuyingzhou/Project/study-web/cdp-tunnel2",
+    "status": "stopped",
+    "pid": 33960,
+    "startedAt": "2026-05-11T21:52:59.133Z",
+    "outputSizeBytes": 13976,
+    "terminalReason": "finished",
+    "exitCode": 0,
+    "stoppedAt": "2026-05-11T21:54:13.293Z"
   }
 ]

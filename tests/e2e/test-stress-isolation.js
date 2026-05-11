@@ -222,8 +222,35 @@ async function run() {
     }
     assert(groupIds.size === clients.length, `${groupIds.size}/${clients.length} unique groups (each client should have its own)`);
 
-    // ── Phase 5: Kill one client, verify others unaffected ──
-    log('PHASE5', 'Killing client A, verifying B and C unaffected...');
+    // ── Phase 5: Cross-client attack tests ──
+    log('PHASE5', 'Cross-client attack tests: try to close/attach other client tabs...');
+    for (const attacker of clients) {
+      for (const target of clients) {
+        if (attacker === target) continue;
+        for (const tid of target.tabIds) {
+          // Try closeTarget on another client's tab
+          const closeR = await send(attacker.ws, 'Target.closeTarget', { targetId: tid });
+          const closeErr = closeR?.error || closeR?.error?.message;
+          log(attacker.label, `  closeTarget(${tid.substring(0, 16)}) → ${closeErr ? 'BLOCKED: ' + JSON.stringify(closeErr) : 'UNSAFE: allowed!'}`);
+
+          // Try attachToTarget on another client's tab
+          const attachR = await send(attacker.ws, 'Target.attachToTarget', { targetId: tid });
+          const attachErr = attachR?.error || attachR?.error?.message;
+          log(attacker.label, `  attachToTarget(${tid.substring(0, 16)}) → ${attachErr ? 'BLOCKED: ' + JSON.stringify(attachErr) : 'UNSAFE: allowed!'}`);
+        }
+      }
+    }
+    await sleep(2000);
+
+    // Verify no one's tabs were actually closed by the attack
+    for (const c of clients) {
+      const pages = await getPageTargets(c.ws, c.label);
+      const ownCount = pages.filter(p => c.tabIds.includes(p.targetId)).length;
+      assert(ownCount === c.tabIds.length, `${c.label}: after attack, still has ${ownCount}/${c.tabIds.length} tabs`);
+    }
+
+    // ── Phase 6: Kill one client, verify others unaffected ──
+    log('PHASE6', 'Killing client A, verifying B and C unaffected...');
     clients[0].ws.close();
     await sleep(8000);
 
@@ -234,8 +261,8 @@ async function run() {
       assert(ownCount === c.tabIds.length, `${c.label}: after A killed, sees ${ownCount}/${c.tabIds.length} own tabs`);
     }
 
-    // ── Phase 6: Kill remaining ──
-    log('PHASE6', 'Killing B, C and verifying cleanup...');
+    // ── Phase 7: Kill remaining ──
+    log('PHASE7', 'Killing B, C and verifying cleanup...');
     for (let i = 1; i < clients.length; i++) {
       clients[i].ws.close();
     }

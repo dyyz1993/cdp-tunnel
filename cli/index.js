@@ -204,11 +204,10 @@ function startServer(port, watchdog, autoRestart) {
       }
 
       console.log('');
-      log('yellow', '⚠ 服务器异常退出 (' + reason + ')，3 秒后自动重启...');
+      log('yellow', '⚠ 服务器异常退出 (' + reason + ')，5 秒后自动重启...');
       console.log('  重启次数: ' + restartTimestamps.length + '/' + MAX_RESTARTS + ' (60秒内)');
       console.log('');
 
-      // Kill any leftover process occupying the port before restarting
       try {
         const result = execSync(`lsof -ti:${port} 2>/dev/null || true`).toString().trim();
         if (result) {
@@ -220,7 +219,7 @@ function startServer(port, watchdog, autoRestart) {
         }
       } catch {}
 
-      setTimeout(() => startServer(port, true, autoRestart), 3000);
+      setTimeout(() => startServer(port, true, autoRestart), 5000);
     });
 
     process.on('SIGINT', () => {

@@ -1556,10 +1556,10 @@ setInterval(() => {
 
 // 优雅关闭
 process.on('SIGINT', () => {
-    console.log('\n[SERVER] Shutting down...');
+    console.log('\n[SERVER] Shutting down (SIGINT)...');
+    logCDP('SERVER', 'Shutting down (SIGINT)');
     clearInterval(heartbeatInterval);
 
-    // 关闭所有连接
     pluginConnections.forEach(ws => ws.close(1001, 'Server shutting down'));
     clientConnections.forEach(ws => ws.close(1001, 'Server shutting down'));
 
@@ -1571,17 +1571,35 @@ process.on('SIGINT', () => {
 });
 
 process.on('SIGTERM', () => {
+    console.log('[SERVER] Shutting down (SIGTERM)...');
+    logCDP('SERVER', 'Shutting down (SIGTERM)');
     flushAllLogs();
     process.exit(0);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('[FATAL] Uncaught exception:', err.message, err.stack);
+    logCDP('FATAL', `Uncaught exception: ${err.message}\n${err.stack}`);
+    flushAllLogs();
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+    console.error('[FATAL] Unhandled rejection:', reason);
+    logCDP('FATAL', `Unhandled rejection: ${reason}`);
 });
 
 server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
         console.error(`[FATAL] Port ${PORT} is already in use. Is another cdp-tunnel running?`);
         console.error(`  Run "cdp-tunnel stop" first, or kill the process on port ${PORT}.`);
+        logCDP('FATAL', `Port ${PORT} already in use (EADDRINUSE)`);
+        flushAllLogs();
         process.exit(2);
     }
     console.error('[FATAL] Server error:', err.message);
+    logCDP('FATAL', `Server error: ${err.message}`);
+    flushAllLogs();
     process.exit(1);
 });
 

@@ -181,6 +181,16 @@ function startServer(port, watchdog, autoRestart) {
 
     child.on('exit', (code, signal) => {
       const now = Date.now();
+      const reason = signal ? `信号 ${signal}` : `退出码 ${code}`;
+      const logLine = `[${new Date().toISOString()}] [WATCHDOG] 服务器退出: ${reason}\n`;
+      fs.appendFileSync(LOG_FILE, logLine);
+
+      if (code === 0 && !signal) {
+        log('gray', '  服务器正常退出 (code=0)，不重启');
+        try { fs.unlinkSync(PID_FILE); } catch {}
+        process.exit(0);
+      }
+
       restartTimestamps = restartTimestamps.filter(t => now - t < RESTART_WINDOW);
       restartTimestamps.push(now);
 
@@ -193,7 +203,6 @@ function startServer(port, watchdog, autoRestart) {
         process.exit(1);
       }
 
-      const reason = signal ? `信号 ${signal}` : `退出码 ${code}`;
       console.log('');
       log('yellow', '⚠ 服务器异常退出 (' + reason + ')，3 秒后自动重启...');
       console.log('  重启次数: ' + restartTimestamps.length + '/' + MAX_RESTARTS + ' (60秒内)');

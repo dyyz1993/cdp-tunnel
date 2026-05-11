@@ -24,6 +24,9 @@ var WebSocketManager = (function() {
           State.clearReconnectTimer();
           processQueue();
           broadcastStateUpdate();
+          var extVersion = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest) 
+            ? chrome.runtime.getManifest().version : 'unknown';
+          send({ type: 'plugin-hello', version: extVersion });
         };
 
         ws.onclose = function(event) {

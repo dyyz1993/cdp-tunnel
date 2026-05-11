@@ -448,6 +448,21 @@ function handlePluginConnection(ws, clientInfo) {
             logConnectionEvent('KEEPALIVE_RECEIVED', { type: 'plugin', id: ws.id });
             return;
         }
+
+        if (parsed && parsed.type === 'plugin-hello') {
+            const extVersion = parsed.version || 'unknown';
+            ws.extVersion = extVersion;
+            const match = extVersion === PKG_VERSION;
+            const level = match ? 'info' : 'warn';
+            const label = match ? '✅' : '⚠️ VERSION MISMATCH';
+            const msg = `[VERSION CHECK] ${label} server=${PKG_VERSION} extension=${extVersion}`;
+            console.log(msg);
+            logCDP('VERSION', msg);
+            if (!match) {
+                console.log(`  ↳ Run "cdp-tunnel update" or reload the extension to sync versions`);
+            }
+            return;
+        }
         
         // 调试：打印所有收到的消息
         console.log(`[PLUGIN MSG] id=${parsed?.id} method=${parsed?.method || 'none'} type=${parsed?.type || 'none'} sessionId=${parsed?.sessionId?.substring(0,8) || 'none'}`);

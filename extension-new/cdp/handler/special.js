@@ -46,6 +46,7 @@ var SpecialHandler = (function() {
       if (isAlreadyAttached) {
         var newSessionId = CDPUtils.generateSessionId();
         State.mapSession(newSessionId, tabId, targetId);
+        muteTabIfNeeded(tabId);
         Logger.info('[CDP] Created additional session:', newSessionId, 'for tab:', tabId);
         return { sessionId: newSessionId };
       }

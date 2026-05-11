@@ -18,7 +18,7 @@ const program = new Command();
 program
   .name('cdp-tunnel')
   .description('Chrome DevTools Protocol Tunnel')
-  .version('1.0.0');
+  .version(require(path.join(__dirname, '..', 'package.json')).version);
 
 function log(color, ...args) {
   const colors = {

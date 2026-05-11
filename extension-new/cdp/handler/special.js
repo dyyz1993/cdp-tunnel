@@ -21,7 +21,7 @@ var SpecialHandler = (function() {
     });
 
     if (params && params.autoAttach) {
-      return emitAutoAttachForExistingTargets().then(function() {
+      return emitAutoAttachForExistingTargets(context).then(function() {
         return {};
       });
     }
@@ -354,9 +354,11 @@ function checkTabVisibility(tabId) {
   });
 }
 
-  function emitAutoAttachForExistingTargets() {
+  function emitAutoAttachForExistingTargets(context) {
+    var clientId = context ? context.clientId : null;
+    var config = State.getAutoAttachConfig();
+
     return chrome.debugger.getTargets().then(function(targets) {
-      var config = State.getAutoAttachConfig();
       var promises = [];
 
       Logger.info('[CDP] emitAutoAttachForExistingTargets: checking', targets.length, 'targets');
@@ -389,13 +391,14 @@ function checkTabVisibility(tabId) {
         EventBuilder.send('Target.targetCreated', { targetInfo: targetInfo });
 
         if (target.attached && isAttachedByUs) {
-          var promise = Promise.resolve();
-
-          promises.push(promise.then(function() {
+          promises.push(Promise.resolve().then(function() {
             var sessionId = CDPUtils.generateSessionId();
             State.mapSession(sessionId, target.tabId, targetId);
 
-            addTabToAutomationGroup(target.tabId);
+            if (clientId) {
+              State.setTabIdToClientId(target.tabId, clientId);
+            }
+            addTabToAutomationGroup(target.tabId, clientId);
 
             if (config.waitForDebuggerOnStart) {
               State.addPendingDebuggerTab(target.tabId);
@@ -404,9 +407,32 @@ function checkTabVisibility(tabId) {
             EventBuilder.send('Target.attachedToTarget', {
               sessionId: sessionId,
               targetInfo: Object.assign({}, targetInfo, { attached: true }),
-              waitingForDebugger: config.waitForDebuggerOnStart
+              waitingForDebugger: config.waitForDebuggerOnStart || false
             });
           }));
+        } else if (!target.attached) {
+          promises.push(
+            DebuggerManager.attach(target.tabId).then(function(attached) {
+              if (!attached) return;
+              var sessionId = CDPUtils.generateSessionId();
+              State.mapSession(sessionId, target.tabId, targetId);
+
+              if (clientId) {
+                State.setTabIdToClientId(target.tabId, clientId);
+              }
+              addTabToAutomationGroup(target.tabId, clientId);
+
+              if (config.waitForDebuggerOnStart) {
+                State.addPendingDebuggerTab(target.tabId);
+              }
+
+              EventBuilder.send('Target.attachedToTarget', {
+                sessionId: sessionId,
+                targetInfo: Object.assign({}, targetInfo, { attached: true }),
+                waitingForDebugger: config.waitForDebuggerOnStart || false
+              });
+            })
+          );
         }
       });
 

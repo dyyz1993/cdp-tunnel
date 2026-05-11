@@ -283,6 +283,15 @@ async function runTest() {
       });
     }
 
+    results.push(await timeOperation('PW pages() count > 0', async () => {
+      const ctx = browser.contexts()[0];
+      if (!ctx) throw new Error('No default context');
+      const pages = ctx.pages();
+      if (pages.length === 0) throw new Error('pages() returned empty array — existing pages not attached!');
+      log('DETAIL', `  ${pages.length} existing page(s) found`);
+      return pages;
+    }));
+
     // === Phase 4: Create New Page ===
     console.log('\n--- Phase 4: Create New Page ---');
 

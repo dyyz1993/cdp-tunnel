@@ -339,16 +339,20 @@ var WebSocketManager = (function() {
       return;
     }
     Logger.info('[WS] Closing ' + tabIds.length + ' attached tabs for clientId:', clientId);
+    var pending = tabIds.length;
     tabIds.forEach(function(tabId) {
       chrome.tabs.remove(tabId, function() {
         if (chrome.runtime.lastError) {
           Logger.info('[WS] Tab already closed:', tabId);
         }
+        chrome.debugger.detach({ tabId: tabId }).catch(function() {});
+        State.removeAttachedTab(tabId);
+        pending--;
+        if (pending === 0) {
+          resolve();
+        }
       });
-      chrome.debugger.detach({ tabId: tabId }).catch(function() {});
-      State.removeAttachedTab(tabId);
     });
-    resolve();
   }
 
   function handleServerRestart() {
@@ -372,17 +376,27 @@ var WebSocketManager = (function() {
     Logger.info('[WS] Browser.close received, cleaning up... clientId:', clientId);
     
     closeTabGroupByClientId(clientId).then(function() {
-      var attachedTabIds = State.getAttachedTabIds();
-      var promises = attachedTabIds.map(function(tabId) {
-          return chrome.debugger.detach({ tabId: tabId }).catch(function(e) {
-            Logger.info('[WS] Detach failed for tab', tabId, ':', e.message);
-          });
+      return new Promise(function(resolve) {
+        closeTabsByClientId(clientId, resolve);
       });
-      Promise.all(promises).then(function() {
+    }).then(function() {
+      var preExistingTabs = State.getPreExistingTabs();
+      var clientPreExisting = preExistingTabs.filter(function(tabId) {
+        return State.getClientIdByTabId(tabId) === clientId;
+      });
+      clientPreExisting.forEach(function(tabId) {
+        chrome.debugger.detach({ tabId: tabId }).catch(function() {});
+        State.removeAttachedTab(tabId);
+      });
+      State.clearPreExistingTabsForClient(clientId);
+
+      State.removeCDPClient(clientId);
+      if (State.getCDPClients().length === 0) {
         State.clearAllState();
         State.persist(null, false);
-        Logger.info('[WS] Browser.close cleanup complete');
-      });
+      }
+      broadcastStateUpdate();
+      Logger.info('[WS] Browser.close cleanup complete for client:', clientId);
     });
   }
 
@@ -398,7 +412,18 @@ var WebSocketManager = (function() {
     var cdpClients = State.getCDPClients() || [];
     var attachedTabIds = State.getAttachedTabIds();
     
+    if (attachedTabIds.length === 0) {
+      chrome.runtime.sendMessage({
+        type: 'stateUpdate',
+        connected: isConnected,
+        cdpClients: cdpClients,
+        attachedPages: []
+      }).catch(function() {});
+      return;
+    }
+
     var attachedPages = [];
+    var pending = attachedTabIds.length;
     attachedTabIds.forEach(function(tabId) {
       chrome.tabs.get(tabId, function(tab) {
         if (tab && !chrome.runtime.lastError) {
@@ -408,15 +433,17 @@ var WebSocketManager = (function() {
             url: tab.url || ''
           });
         }
+        pending--;
+        if (pending === 0) {
+          chrome.runtime.sendMessage({
+            type: 'stateUpdate',
+            connected: isConnected,
+            cdpClients: cdpClients,
+            attachedPages: attachedPages
+          }).catch(function() {});
+        }
       });
     });
-    
-    chrome.runtime.sendMessage({
-      type: 'stateUpdate',
-      connected: isConnected,
-      cdpClients: cdpClients,
-      attachedPages: attachedPages
-    }).catch(function() {});
   }
 
   function getQueueStats() {

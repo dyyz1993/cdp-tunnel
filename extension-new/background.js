@@ -124,11 +124,11 @@ importScripts('features/automation-badge.js');
     var sessionId = State.findSessionByTabId(tabId);
     if (sessionId) {
       var targetId = State.getTargetIdBySession(sessionId);
-      EventBuilder.send('Target.targetDestroyed', { targetId: targetId });
       EventBuilder.send('Target.detachedFromTarget', {
         sessionId: sessionId,
         targetId: targetId
       });
+      EventBuilder.send('Target.targetDestroyed', { targetId: targetId });
       State.unmapSession(sessionId);
       if (removedClientId) {
         SpecialHandler.updateTabGroupName(removedClientId);
@@ -138,6 +138,7 @@ importScripts('features/automation-badge.js');
     if (State.getCurrentTabId() === tabId) {
       State.persist(null, false);
     }
+    State.removeTabIdToClientId(tabId);
   });
 
   chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {

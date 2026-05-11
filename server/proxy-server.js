@@ -1017,6 +1017,20 @@ function handleClientConnection(ws, clientInfo, customClientId = null) {
         // 广播更新后的客户端列表
         broadcastClientList();
 
+        // 清理该 client 的所有映射
+        for (const [tId, cId] of targetIdToClientId.entries()) {
+            if (cId === id) targetIdToClientId.delete(tId);
+        }
+        for (const [bcId, cId] of browserContextToClientId.entries()) {
+            if (cId === id) browserContextToClientId.delete(bcId);
+        }
+        if (clientIdToBrowserContext.has(id)) {
+            clientIdToBrowserContext.delete(id);
+        }
+        for (const [gId, mapping] of globalRequestIdMap.entries()) {
+            if (mapping.clientId === id) globalRequestIdMap.delete(gId);
+        }
+
         // 清理配对关系
         if (ws.pairedPlugin) {
             ws.pairedPlugin.pairedClientId = null;

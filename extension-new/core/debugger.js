@@ -169,6 +169,7 @@ var DebuggerManager = (function() {
         Logger.error('[Debugger] Failed to detach from tab', tabId, ':', error.message);
         State.removeAttachedTab(tabId);
         AutomationBadge.remove(tabId);
+        Screencast.stopPolling(tabId);
       });
   }
 

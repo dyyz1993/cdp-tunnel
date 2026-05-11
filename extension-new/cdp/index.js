@@ -82,8 +82,8 @@ function routeCDPCommand(message) {
           resolve({ result: result });
         })
         .catch(function(error) {
-          Logger.error('[CDP] ERROR id=' + id + ' method=' + method + ' msg=' + error.message);
-          resolve({ error: { message: error.message } });
+          Logger.error('[CDP] ERROR id=' + id + ' method=' + method + ' msg=' + (error.message || error));
+          resolve({ error: { code: error.code || -32000, message: error.message || String(error) } });
         });
     } else {
       ForwardHandler.execute({ id: id, method: method, params: params, sessionId: sessionId, clientId: clientId })
@@ -92,8 +92,8 @@ function routeCDPCommand(message) {
           resolve({ result: result });
         })
         .catch(function(error) {
-          Logger.error('[CDP] ERROR id=' + id + ' method=' + method + ' msg=' + error.message + ' (forwarded)');
-          resolve({ error: { message: error.message } });
+          Logger.error('[CDP] ERROR id=' + id + ' method=' + method + ' msg=' + (error.message || error) + ' (forwarded)');
+          resolve({ error: { code: error.code || -32000, message: error.message || String(error) } });
         });
     }
   }).then(function(response) {

@@ -9,12 +9,12 @@ var ForwardHandler = (function() {
 
     if (!tabId) {
       Logger.warn('[Forward] No tabId for command:', method);
-      return Promise.resolve({});
+      return Promise.reject({ code: -32000, message: 'No target found for command: ' + method });
     }
 
     if (!State.isTabAttached(tabId)) {
       Logger.warn('[Forward] Tab not attached, skipping command:', method, 'tabId:', tabId);
-      return Promise.resolve({});
+      return Promise.reject({ code: -32000, message: 'Target is not attached' });
     }
 
     Logger.debug('[Forward]', method, '-> tabId:', tabId);

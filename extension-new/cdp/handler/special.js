@@ -228,16 +228,17 @@ var SpecialHandler = (function() {
     if (targetId) {
       var tabId = State.getTabIdByTargetId(targetId);
       if (tabId) {
-        State.removeAttachedTab(tabId);
         var closeClientId = State.getClientIdByTabId(tabId);
         return new Promise(function(resolve) {
           chrome.tabs.remove(tabId, function() {
+            State.removeAttachedTab(tabId);
             if (closeClientId) {
               updateTabGroupName(closeClientId);
             }
             resolve({ success: true });
           });
         }).catch(function() {
+          State.removeAttachedTab(tabId);
           return { success: true };
         });
       }

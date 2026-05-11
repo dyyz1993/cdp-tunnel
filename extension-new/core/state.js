@@ -342,6 +342,10 @@ var State = (function() {
     _state.tabIdToClientId.set(tabId, clientId);
   }
 
+  function removeTabIdToClientId(tabId) {
+    _state.tabIdToClientId.delete(tabId);
+  }
+
   function getClientIdByTabId(tabId) {
     return _state.tabIdToClientId.get(tabId);
   }
@@ -481,6 +485,7 @@ var State = (function() {
     clearAllState: clearAllState,
     cleanupAllTabs: cleanupAllTabs,
     setTabIdToClientId: setTabIdToClientId,
+    removeTabIdToClientId: removeTabIdToClientId,
     getClientIdByTabId: getClientIdByTabId,
     setGroupIdForClient: setGroupIdForClient,
     getGroupIdForClient: getGroupIdForClient,

@@ -16,7 +16,7 @@ const path = require('path');
 const os = require('os');
 const { execSync, spawn: spawnProcess } = require('child_process');
 const { CONFIG, BROWSER_ID, shouldLog } = require('./modules/config');
-const { logCDP, logEvent, clearLog, logStatus, logConnectionEvent, flushAllLogs } = require('./modules/logger');
+const { logCDP, logEvent, clearLog, logStatus, logConnectionEvent, flushAllLogs, logDisconnect } = require('./modules/logger');
 
 const PORT = CONFIG.PORT;
 const CONFIG_DIR = path.join(os.homedir(), '.cdp-tunnel');
@@ -154,11 +154,13 @@ const browserContextToClientId = new Map();
 const clientIdToBrowserContext = new Map();
 let globalRequestIdCounter = 0;
 
+const { version: PKG_VERSION } = require('../package.json');
+
 let cachedTargets = [];
 let lastTargetsUpdate = 0;
 
 console.log('='.repeat(60));
-console.log('  WebSocket CDP Proxy Server');
+console.log(`  WebSocket CDP Proxy Server v${PKG_VERSION}`);
 console.log('='.repeat(60));
 console.log(`  Server started on port ${PORT}`);
 console.log(`  - Plugin path: ws://localhost:${PORT}/plugin`);
@@ -670,6 +672,16 @@ function handlePluginConnection(ws, clientInfo) {
             totalClients: clientConnections.size
         });
         
+        logDisconnect('PLUGIN_DISCONNECTED', {
+            pluginId: id,
+            code, reason: reason?.toString() || 'none',
+            remainingPlugins: pluginConnections.size,
+            affectedClients: affectedClients.map(c => c),
+            uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
+            activeSessions: sessionToClientId.size,
+            pendingRequests: pendingAttachRequests.size
+        });
+        
         if (pluginConnections.size === 0) {
             updateExtensionState(false);
         }
@@ -963,6 +975,20 @@ function handleClientConnection(ws, clientInfo, customClientId = null) {
             totalPlugins: pluginConnections.size,
             totalClients: clientConnections.size
         });
+
+        const isUnexpected = code !== 1000 && code !== 1001;
+        if (isUnexpected) {
+            logDisconnect('CLIENT_DISCONNECTED_UNEXPECTED', {
+                clientId: id,
+                code, reason: reason?.toString() || 'none',
+                sessionsLost: sessionsToClean.length,
+                cdpMethodsUsed: ws.cdpTrace ? [...new Set(ws.cdpTrace)] : [],
+                uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
+                remainingClients: clientConnections.size,
+                pluginAlive: pluginConnections.size > 0,
+                pairedPluginId: ws.pairedPlugin?.id || null
+            });
+        }
         
         if (ws.cdpTrace && ws.cdpTrace.length && shouldLog('debug')) {
             const unique = [...new Set(ws.cdpTrace)];
@@ -1343,6 +1369,14 @@ const heartbeatInterval = setInterval(() => {
                 console.log(`[${now}] Plugin ${ws.id} not responding, terminating...`);
             }
             logConnectionEvent('HEARTBEAT_TIMEOUT', { type: 'plugin', id: ws.id });
+            logDisconnect('HEARTBEAT_TIMEOUT_PLUGIN', {
+                pluginId: ws.id,
+                pairedClientId: ws.pairedClientId || null,
+                uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
+                remainingPlugins: pluginConnections.size,
+                activeClients: clientConnections.size,
+                activeSessions: sessionToClientId.size
+            });
             pluginConnections.delete(ws);
             if (ws.pairedClientId) {
                 connectionPairs.delete(ws.pairedClientId);
@@ -1365,6 +1399,12 @@ const heartbeatInterval = setInterval(() => {
                 console.log(`[${now}] Client ${ws.id} not responding, terminating...`);
             }
             logConnectionEvent('HEARTBEAT_TIMEOUT', { type: 'client', id: ws.id });
+            logDisconnect('HEARTBEAT_TIMEOUT_CLIENT', {
+                clientId: ws.id,
+                uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
+                remainingClients: clientConnections.size,
+                pluginAlive: pluginConnections.size > 0
+            });
             clientConnections.delete(ws);
             clientById.delete(ws.id);
             if (ws.pairedPlugin) {

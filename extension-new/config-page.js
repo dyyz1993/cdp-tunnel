@@ -267,6 +267,12 @@
       chrome.storage.local.set({ autoMute: e.target.checked });
       addLog(e.target.checked ? '🔇 自动静音已开启' : '🔊 自动静音已关闭', 'action');
     });
+
+    var versionBadge = document.getElementById('versionBadge');
+    if (versionBadge) {
+      var manifest = chrome.runtime.getManifest();
+      versionBadge.textContent = 'v' + manifest.version;
+    }
     
     fetchState();
     

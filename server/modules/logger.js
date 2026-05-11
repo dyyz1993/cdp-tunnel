@@ -1,13 +1,17 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 const logDir = path.join(__dirname, '../../logs');
 if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir, { recursive: true });
 }
 
+const cdpDir = path.join(os.homedir(), '.cdp-tunnel');
+
 const logFile = path.join(logDir, 'cdp-debug.log');
 const statusLogFile = path.join(logDir, 'server-status.log');
+const disconnectLogFile = path.join(cdpDir, 'disconnect.log');
 
 const MAX_LOG_SIZE = 10 * 1024 * 1024;
 const MAX_LOG_FILES = 5;
@@ -114,6 +118,26 @@ function clearLog() {
     fs.writeFileSync(statusLogFile, '');
   } catch (e) {
     console.error('[LOGGER] Error clearing logs:', e.message);
+  }
+}
+
+function logDisconnect(event, details) {
+  const timestamp = new Date().toISOString();
+  const separator = '='.repeat(70);
+  const lines = [
+    separator,
+    `[${timestamp}] ${event}`,
+    JSON.stringify(details, null, 2),
+    ''
+  ].join('\n');
+  try {
+    const dir = path.dirname(disconnectLogFile);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.appendFileSync(disconnectLogFile, lines);
+  } catch (e) {
+    console.error('[LOGGER] Error writing disconnect log:', e.message);
   }
 }
 
@@ -249,5 +273,6 @@ module.exports = {
   logFile, 
   logStatus, 
   logConnectionEvent,
-  flushAllLogs
+  flushAllLogs,
+  logDisconnect
 };

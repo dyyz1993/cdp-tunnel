@@ -20,6 +20,21 @@ program
   .description('Chrome DevTools Protocol Tunnel')
   .version(require(path.join(__dirname, '..', 'package.json')).version);
 
+function syncExtensionVersion() {
+  try {
+    const pkgVersion = require(path.join(__dirname, '..', 'package.json')).version;
+    const manifestPath = path.join(__dirname, '..', 'extension-new', 'manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    if (manifest.version !== pkgVersion) {
+      manifest.version = pkgVersion;
+      manifest.description = `CDP Tunnel v${pkgVersion} — ${manifest.description.split('—')[1] || manifest.description}`.trim();
+      fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+    }
+  } catch {}
+}
+
+syncExtensionVersion();
+
 function log(color, ...args) {
   const colors = {
     green: '\x1b[32m',

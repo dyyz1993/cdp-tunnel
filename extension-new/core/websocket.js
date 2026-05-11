@@ -316,7 +316,6 @@ var WebSocketManager = (function() {
 
   function closeTabsByClientId(clientId, resolve) {
     var attachedTabs = State.getAttachedTabIds();
-    var groupId = State.getGroupIdForClient(clientId);
     var tabsToClose = [];
     
     attachedTabs.forEach(function(tabId) {
@@ -331,25 +330,7 @@ var WebSocketManager = (function() {
       return;
     }
 
-    if (groupId) {
-      chrome.tabs.query({ groupId: groupId }, function(groupTabs) {
-        if (chrome.runtime.lastError || !groupTabs) {
-          resolve();
-          return;
-        }
-        var groupTabIds = new Set(groupTabs.map(function(t) { return t.id; }));
-        var safeToClose = tabsToClose.filter(function(tabId) {
-          return groupTabIds.has(tabId);
-        });
-        var unsafeCount = tabsToClose.length - safeToClose.length;
-        if (unsafeCount > 0) {
-          Logger.info('[WS] Protecting ' + unsafeCount + ' tabs outside group from deletion');
-        }
-        doCloseTabs(safeToClose, clientId, resolve);
-      });
-    } else {
-      doCloseTabs(tabsToClose, clientId, resolve);
-    }
+    doCloseTabs(tabsToClose, clientId, resolve);
   }
 
   function doCloseTabs(tabIds, clientId, resolve) {

@@ -440,8 +440,6 @@ function checkTabVisibility(tabId) {
         var sessionId = CDPUtils.generateSessionId();
         State.mapSession(sessionId, tabId, targetId);
 
-        addTabToAutomationGroup(tabId);
-
         var config = State.getAutoAttachConfig();
         if (config.waitForDebuggerOnStart) {
           State.addPendingDebuggerTab(tabId);

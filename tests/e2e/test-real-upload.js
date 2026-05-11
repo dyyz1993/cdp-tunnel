@@ -130,7 +130,7 @@ function cleanup() {
 const FORM_HTML = `<!DOCTYPE html>
 <html><body>
 <form id="form">
-  <input type="file" id="upload" />
+  <input type="file" id="upload" multiple />
   <input type="text" id="name" placeholder="Name" />
   <input type="email" id="email" placeholder="Email" />
   <select id="country">

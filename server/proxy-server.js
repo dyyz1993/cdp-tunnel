@@ -506,8 +506,14 @@ function handlePluginConnection(ws, clientInfo) {
                 const sessionId = parsed.params?.sessionId;
                 
                 if (targetId && sessionId) {
-                    sessionToClientId.set(sessionId, targetId);
-                    console.log(`[SESSION MAPPED] sessionId=${sessionId?.substring(0,8) || 'none'} -> targetId=${targetId?.substring(0,8) || 'none'}`);
+                    const clientId = ws.pairedClientId;
+                    if (clientId) {
+                        sessionToClientId.set(sessionId, clientId);
+                        console.log(`[SESSION MAPPED] sessionId=${sessionId?.substring(0,8) || 'none'} -> clientId=${clientId?.substring(0,8) || 'none'}`);
+                    } else {
+                        sessionToClientId.set(sessionId, targetId);
+                        console.log(`[SESSION MAPPED] sessionId=${sessionId?.substring(0,8) || 'none'} -> targetId=${targetId?.substring(0,8) || 'none'} (no pairedClientId)`);
+                    }
                 }
             }
             
@@ -557,6 +563,12 @@ function handlePluginConnection(ws, clientInfo) {
                         browserContextToClientId.set(browserContextId, mapping.clientId);
                         clientIdToBrowserContext.set(mapping.clientId, browserContextId);
                         console.log(`[BROWSER CONTEXT MAPPED] browserContextId=${browserContextId} -> clientId=${mapping.clientId}`);
+                    }
+                    
+                    // 如果是 Target.attachToTarget 响应，建立 sessionId -> clientId 映射
+                    if (parsed.result?.sessionId && mapping.method === 'Target.attachToTarget') {
+                        sessionToClientId.set(parsed.result.sessionId, mapping.clientId);
+                        console.log(`[SESSION MAPPED from attach response] sessionId=${parsed.result.sessionId?.substring(0,8)} -> clientId=${mapping.clientId?.substring(0,8)}`);
                     }
                     
                     // 如果是 Target.createTarget 响应，先发送缓存的 Target.attachedToTarget 事件
@@ -867,7 +879,8 @@ function handleClientConnection(ws, clientInfo, customClientId = null) {
             globalRequestIdMap.set(globalId, { 
                 clientId: id, 
                 originalId: originalId,
-                sessionId: parsed.sessionId  // 保存请求的 sessionId
+                sessionId: parsed.sessionId,
+                method: parsed.method
             });
             
             // 修改请求ID为全局ID
@@ -875,12 +888,6 @@ function handleClientConnection(ws, clientInfo, customClientId = null) {
             modifiedData = JSON.stringify(parsed);
             
             console.log(`[REQUEST ID MAPPED] client=${id} original=${originalId} -> global=${globalId} sessionId=${parsed.sessionId?.substring(0,8) || 'none'}`);
-        }
-
-        // 记录 Target.attachToTarget 请求，用于后续建立 session -> clientId 映射
-        if (parsed && parsed.method === 'Target.attachToTarget' && parsed.id !== undefined) {
-            pendingAttachRequests.set(parsed.id, id);
-            console.log(`[PENDING ATTACH] Request id=${parsed.id} from client=${id}, pending size=${pendingAttachRequests.size}`);
         }
 
         // 记录 Target.createTarget 请求，用于后续建立 targetId -> clientId 映射

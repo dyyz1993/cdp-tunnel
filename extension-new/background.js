@@ -17,6 +17,7 @@ importScripts('features/automation-badge.js');
   'use strict';
 
   var keepAliveInterval = null;
+  var _initialized = false;
 
   function startKeepAlive() {
     if (keepAliveInterval) {
@@ -43,6 +44,11 @@ importScripts('features/automation-badge.js');
   }
 
   function init() {
+    if (_initialized) {
+      Logger.info('[Init] Already initialized, skipping');
+      return;
+    }
+    _initialized = true;
     Logger.info('[Init] CDP Bridge starting...');
 
     // 点击扩展图标时打开配置页面
@@ -204,6 +210,12 @@ importScripts('features/automation-badge.js');
         
         var sessionId = CDPUtils.generateSessionId();
         State.mapSession(sessionId, tabId, targetId);
+
+        var openerClientId = openerTabId ? State.getClientIdByTabId(openerTabId) : null;
+        if (openerClientId) {
+          State.setTabIdToClientId(tabId, openerClientId);
+          Logger.info('[Tabs] Mapped child tab', tabId, '-> clientId:', openerClientId);
+        }
         
         Config.getAutoMute(function(enabled) {
           if (enabled) {

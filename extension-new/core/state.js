@@ -38,6 +38,9 @@ var State = (function() {
     var tabId = _state.sessionIdToTabId.get(sessionId);
     _state.sessionIdToTabId.delete(sessionId);
     _state.sessionIdToTargetId.delete(sessionId);
+    if (tabId && !hasOtherSessionForTab(tabId)) {
+      _state.attachedTabIds.delete(tabId);
+    }
     return tabId;
   }
 
@@ -254,6 +257,7 @@ var State = (function() {
   function clearAllState() {
     clearSessionState();
     _state.attachedTabIds.clear();
+    _state.emittedTargets.clear();
     _state.screencastPollingSessions.clear();
     _state.browserContextIds = new Set(['default']);
     _state.autoAttachConfig = { 
@@ -265,7 +269,13 @@ var State = (function() {
     _state.hasConnectedClient = false;
     _state.tabIdToClientId.clear();
     _state.clientIdToGroupId.clear();
+    _state.clientIdToTabId.clear();
+    _state.clientIdToSessionId.clear();
     _state.preExistingTabIds.clear();
+    _state.pendingDebuggerTabs.clear();
+    _state.automatedTabs.clear();
+    _state.pendingCreatedTabUrls.clear();
+    _state.cdpClients = [];
   }
 
   function cleanupAllTabs() {

@@ -135,6 +135,19 @@ var LocalHandler = (function() {
     return {};
   }
 
+  function tabGetGroupInfo(context) {
+    var clientId = context.clientId;
+    var groupId = null;
+    var baseName = null;
+    try {
+      groupId = State.getGroupIdForClient(clientId);
+      baseName = CDPUtils.getGroupBaseName(clientId);
+    } catch (e) {
+      Logger.error('[TabGetGroupInfo] Error: ' + (e.message || e));
+    }
+    return Promise.resolve({ groupId: groupId, baseName: baseName, clientId: clientId });
+  }
+
   function tabGetMuteStatus(params) {
     var cdpOnly = params && params.cdpOnly;
     var attachedTabIds = State.getAttachedTabIds();
@@ -308,6 +321,7 @@ var LocalHandler = (function() {
     getTargetInfos: getTargetInfos,
     getTargetInfoById: getTargetInfoById,
     mapToTargetInfo: mapToTargetInfo,
-    tabGetMuteStatus: tabGetMuteStatus
+    tabGetMuteStatus: tabGetMuteStatus,
+    tabGetGroupInfo: tabGetGroupInfo
   };
 })();

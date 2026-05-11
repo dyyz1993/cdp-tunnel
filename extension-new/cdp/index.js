@@ -23,6 +23,7 @@ var CDP_HANDLERS = {
   'Target.attachToBrowserTarget': { type: 'LOCAL', handler: LocalHandler.targetAttachToBrowserTarget },
 
   'Tab.getMuteStatus': { type: 'LOCAL', handler: LocalHandler.tabGetMuteStatus },
+  'Tab.getGroupInfo': { type: 'LOCAL', handler: LocalHandler.tabGetGroupInfo },
 
   'SystemInfo.getInfo': { type: 'LOCAL', handler: LocalHandler.systemInfoGetInfo },
   'SystemInfo.getProcessInfo': { type: 'LOCAL', handler: LocalHandler.systemInfoGetProcessInfo },

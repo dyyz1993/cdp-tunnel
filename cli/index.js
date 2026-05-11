@@ -456,8 +456,9 @@ program
       
       if (wasRunning) {
         log('cyan', '🔄 重启服务器...');
-        startServer(savedPort, savedWatchdog, config.autoRestart);
-        log('green', '✅ 服务器已重启');
+        const child = startServer(savedPort, false, config.autoRestart);
+        child.unref();
+        log('green', '✅ 服务器已重启 (PID: ' + child.pid + ')');
       } else {
         log('cyan', '  运行 cdp-tunnel start 启动服务器');
       }

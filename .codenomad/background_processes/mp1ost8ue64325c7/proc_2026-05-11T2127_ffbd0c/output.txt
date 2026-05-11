@@ -1,2 +1,0 @@
-=== Test: Direct Group Creation Verification (port 34544) ===
-

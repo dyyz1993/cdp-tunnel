@@ -191,6 +191,7 @@ var WebSocketManager = (function() {
         Logger.info('[WS] Client connected, resuming event forwarding');
         State.setHasConnectedClient(true);
         State.addCDPClient(message.clientId, message.clientId);
+        startGroupMonitor();
         broadcastStateUpdate();
         break;
 
@@ -214,6 +215,7 @@ var WebSocketManager = (function() {
           State.removeCDPClient(discClientId);
           if (State.getCDPClients().length === 0) {
             State.setHasConnectedClient(false);
+            stopGroupMonitor();
           }
           broadcastStateUpdate();
         });
@@ -223,6 +225,11 @@ var WebSocketManager = (function() {
         Logger.info('[WS] Received client list:', message.clients);
         State.setCDPClients(message.clients || []);
         State.setHasConnectedClient((message.clients || []).length > 0);
+        if ((message.clients || []).length > 0) {
+          startGroupMonitor();
+        } else {
+          stopGroupMonitor();
+        }
         broadcastStateUpdate();
         break;
 
@@ -376,6 +383,49 @@ var WebSocketManager = (function() {
         }
       });
     });
+  }
+
+  var _groupMonitorTimer = null;
+
+  function startGroupMonitor() {
+    Logger.info('[Monitor] Starting group monitor...');
+    if (_groupMonitorTimer) clearInterval(_groupMonitorTimer);
+    _groupMonitorTimer = setInterval(function() {
+      var attached = State.getAttachedTabIds();
+      attached.forEach(function(tabId) {
+        var clientId = State.getClientIdByTabId(tabId);
+        if (!clientId) return;
+        if (State.isPreExistingTab(tabId)) return;
+        chrome.tabs.get(tabId, function(tab) {
+          if (chrome.runtime.lastError || !tab) return;
+          if (tab.groupId) return;
+          Logger.info('[Monitor] Tab', tabId, 'has no group, regrouping for client:', clientId);
+          var baseName = CDPUtils.getGroupBaseName(clientId);
+          var groupId = State.getGroupIdForClient(clientId);
+          if (groupId) {
+            chrome.tabs.group({ tabIds: tabId, groupId: groupId }, function() {});
+          } else {
+            chrome.tabs.group({ tabIds: tabId }, function(newGroupId) {
+              if (chrome.runtime.lastError || !newGroupId) return;
+              chrome.tabGroups.update(newGroupId, {
+                title: baseName,
+                color: CDPUtils.getGroupColorForClient(clientId),
+                collapsed: true
+              }, function() {
+                State.setGroupIdForClient(clientId, newGroupId);
+              });
+            });
+          }
+        });
+      });
+    }, 10000);
+  }
+
+  function stopGroupMonitor() {
+    if (_groupMonitorTimer) {
+      clearInterval(_groupMonitorTimer);
+      _groupMonitorTimer = null;
+    }
   }
 
   function handleServerRestart() {

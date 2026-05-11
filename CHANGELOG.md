@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.4] - 2026-05-12
+### Added
+- `startGroupMonitor()`: 每 10 秒扫描所有 attached tab，检测逃逸（有 clientId 但无 groupId）的 tab，自动强制归组
+
+### Fixed
+- Proxy 拦截跨客户端 `Target.closeTarget` 和 `Target.attachToTarget`，返回 `Target is owned by another client` 错误
+- `buildGroupName` 改用末尾 8 位随机后缀，确保各客户端组名唯一
+
 ## [2.5.3] - 2026-05-12
 ### Fixed
 - `buildGroupName` 改用 `clientId.substring(clientId.length - 8)` 取末尾随机后缀，修复所有 client 组名相同（都是 `CDP-client_1`）的问题

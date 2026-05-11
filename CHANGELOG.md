@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.5] - 2026-05-12
+### Changed
+- 分组逃逸监控间隔从 10 秒缩短为 5 秒，更快检测并修复逃逸 tab
+
 ## [2.5.4] - 2026-05-12
 ### Added
 - `startGroupMonitor()`: 每 10 秒扫描所有 attached tab，检测逃逸（有 clientId 但无 groupId）的 tab，自动强制归组

@@ -18,3 +18,8 @@
 [22:18:59] [B-AFTER]   8C8B9E65379CD9AC751C8C8C21A2A1C1 — about:blank
 [22:18:59] [PASS] Client B still sees only its own tab after A disconnect
 [22:18:59] [DISC-B] Disconnecting client B...
+[22:19:07] [FINAL] After all disconnect: 0 pages visible to new client
+[22:19:07] [PASS] No tabs visible to unowned client (user tabs hidden, CDP tabs cleaned)
+
+=== RESULTS: 4 passed, 0 failed ===
+

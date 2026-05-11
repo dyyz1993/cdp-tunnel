@@ -418,7 +418,7 @@ var WebSocketManager = (function() {
           }
         });
       });
-    }, 10000);
+    }, 5000);
   }
 
   function stopGroupMonitor() {

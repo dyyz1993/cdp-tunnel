@@ -316,6 +316,7 @@ var WebSocketManager = (function() {
 
   function closeTabsByClientId(clientId, resolve) {
     var attachedTabs = State.getAttachedTabIds();
+    var groupId = State.getGroupIdForClient(clientId);
     var tabsToClose = [];
     
     attachedTabs.forEach(function(tabId) {
@@ -329,10 +330,35 @@ var WebSocketManager = (function() {
       resolve();
       return;
     }
-    
-    Logger.info('[WS] Closing ' + tabsToClose.length + ' attached tabs for clientId:', clientId);
-    
-    tabsToClose.forEach(function(tabId) {
+
+    if (groupId) {
+      chrome.tabs.query({ groupId: groupId }, function(groupTabs) {
+        if (chrome.runtime.lastError || !groupTabs) {
+          resolve();
+          return;
+        }
+        var groupTabIds = new Set(groupTabs.map(function(t) { return t.id; }));
+        var safeToClose = tabsToClose.filter(function(tabId) {
+          return groupTabIds.has(tabId);
+        });
+        var unsafeCount = tabsToClose.length - safeToClose.length;
+        if (unsafeCount > 0) {
+          Logger.info('[WS] Protecting ' + unsafeCount + ' tabs outside group from deletion');
+        }
+        doCloseTabs(safeToClose, clientId, resolve);
+      });
+    } else {
+      doCloseTabs(tabsToClose, clientId, resolve);
+    }
+  }
+
+  function doCloseTabs(tabIds, clientId, resolve) {
+    if (tabIds.length === 0) {
+      resolve();
+      return;
+    }
+    Logger.info('[WS] Closing ' + tabIds.length + ' attached tabs for clientId:', clientId);
+    tabIds.forEach(function(tabId) {
       chrome.tabs.remove(tabId, function() {
         if (chrome.runtime.lastError) {
           Logger.info('[WS] Tab already closed:', tabId);
@@ -341,7 +367,6 @@ var WebSocketManager = (function() {
       chrome.debugger.detach({ tabId: tabId }).catch(function() {});
       State.removeAttachedTab(tabId);
     });
-    
     resolve();
   }
 

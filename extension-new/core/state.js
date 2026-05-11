@@ -285,7 +285,7 @@ var State = (function() {
           }
           
           var cdpGroups = groups.filter(function(g) {
-            return g.title && g.title.indexOf('CDP-') === 0;
+            return g.title && (g.title.indexOf('CDP-') === 0 || g.title.indexOf('CDP #') === 0);
           });
           
           if (cdpGroups.length === 0) {

@@ -104,6 +104,9 @@ function checkChromeExtension() {
 }
 
 function getExtensionPath() {
+  if (process.env.CDP_TUNNEL_DEV_EXT) {
+    return process.env.CDP_TUNNEL_DEV_EXT;
+  }
   const cliDir = __dirname;
   return path.join(cliDir, '..', 'extension-new');
 }

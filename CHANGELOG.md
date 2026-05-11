@@ -6,8 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [2.5.2] - 2026-05-12
+### Added
+- `addTabToAutomationGroup` 改用轮询方案：`chrome.tabs.get` 每 200ms 检查 tab 状态，加载完成后再分组（最多等 4 秒后强制分组），无需 setTimeout(500) 或 chrome.tabs.onUpdated
+
 ### Fixed
-- 恢复 `addTabToAutomationGroup` 的 `setTimeout(500)`，修复 tab 刚创建时 `chrome.tabs.group` 因 tab 未完全初始化而失败的问题
+- `addTabToAutomationGroup` 的分组操作改为等 tab 状态 `complete` 后再执行，确保 `chrome.tabs.group` 调用成功
 
 ## [2.5.1] - 2026-05-12
 ### Fixed

@@ -1,0 +1,3 @@
+=== Test: Client Isolation (port 39012) ===
+
+EXIT_CODE=124

@@ -142,47 +142,68 @@ var SpecialHandler = (function() {
       return;
     }
     var baseName = CDPUtils.getGroupBaseName(groupClientId);
-    
-    setTimeout(function() {
-      Logger.info('[TabGroup] Executing group operation for:', baseName);
-      
-      chrome.tabGroups.query({}, function(allGroups) {
-        var existing = CDPUtils.findGroupByName(allGroups, baseName);
-        if (existing) {
-          chrome.tabs.group({ tabIds: tabId, groupId: existing.id }, function(result) {
-            if (chrome.runtime.lastError) {
-              Logger.error('[TabGroup] Failed to add tab to group:', chrome.runtime.lastError.message);
-            } else {
-              State.setGroupIdForClient(groupClientId, existing.id);
-              updateTabGroupName(groupClientId);
-              Logger.info('[TabGroup] Tab', tabId, 'added to existing group:', existing.id);
-            }
-          });
+
+    var retries = 0;
+    var maxRetries = 20;
+    function tryGroup() {
+      chrome.tabs.get(tabId, function(tab) {
+        if (chrome.runtime.lastError || !tab) {
+          Logger.error('[TabGroup] Tab not found:', tabId, 'retries:', retries);
+          return;
+        }
+        if (tab.status === 'complete') {
+          Logger.info('[TabGroup] Tab ready, executing group operation for:', baseName);
+          doGroup(tabId, groupClientId, baseName);
+        } else if (retries < maxRetries) {
+          retries++;
+          Logger.info('[TabGroup] Tab not ready (', tab.status, '), retry', retries, '/', maxRetries);
+          setTimeout(tryGroup, 200);
         } else {
-          chrome.tabs.group({ tabIds: tabId }, function(groupId) {
-            if (chrome.runtime.lastError) {
-              Logger.error('[TabGroup] Failed to create group:', chrome.runtime.lastError.message);
-              return;
-            }
-            if (groupId) {
-              chrome.tabGroups.update(groupId, {
-                title: baseName,
-                color: CDPUtils.getGroupColorForClient(groupClientId),
-                collapsed: true
-              }, function() {
-                if (chrome.runtime.lastError) {
-                  Logger.error('[TabGroup] Failed to update group:', chrome.runtime.lastError.message);
-                } else {
-                  State.setGroupIdForClient(groupClientId, groupId);
-                  updateTabGroupName(groupClientId);
-                  Logger.info('[TabGroup] Created new group:', groupId, 'with tab:', tabId);
-                }
-              });
-            }
-          });
+          Logger.warn('[TabGroup] Tab never reached complete status, grouping anyway. tabId:', tabId);
+          doGroup(tabId, groupClientId, baseName);
         }
       });
-    }, 500);
+    }
+    tryGroup();
+  }
+
+  function doGroup(tabId, clientId, baseName) {
+    chrome.tabGroups.query({}, function(allGroups) {
+      var existing = CDPUtils.findGroupByName(allGroups, baseName);
+      if (existing) {
+        chrome.tabs.group({ tabIds: tabId, groupId: existing.id }, function(result) {
+          if (chrome.runtime.lastError) {
+            Logger.error('[TabGroup] Failed to add tab to group:', chrome.runtime.lastError.message);
+          } else {
+            State.setGroupIdForClient(clientId, existing.id);
+            updateTabGroupName(clientId);
+            Logger.info('[TabGroup] Tab', tabId, 'added to existing group:', existing.id);
+          }
+        });
+      } else {
+        chrome.tabs.group({ tabIds: tabId }, function(groupId) {
+          if (chrome.runtime.lastError) {
+            Logger.error('[TabGroup] Failed to create group:', chrome.runtime.lastError.message);
+            return;
+          }
+          if (groupId) {
+            chrome.tabGroups.update(groupId, {
+              title: baseName,
+              color: CDPUtils.getGroupColorForClient(clientId),
+              collapsed: true
+            }, function() {
+              if (chrome.runtime.lastError) {
+                Logger.error('[TabGroup] Failed to update group:', chrome.runtime.lastError.message);
+              } else {
+                State.setGroupIdForClient(clientId, groupId);
+                updateTabGroupName(clientId);
+                Logger.info('[TabGroup] Created new group:', groupId, 'with tab:', tabId);
+              }
+            });
+          }
+        });
+      }
+    });
   }
 
   function updateTabGroupName(clientId) {

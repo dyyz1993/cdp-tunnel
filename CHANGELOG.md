@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-05-12
+### Added
+- 多客户端隔离：CDP 客户端只能看到自己创建的 tab（`Target.getTargets` 过滤）
+- 用户 tab 不可见：`emitAutoAttachForExistingTargets` 跳过非 CDP tab，不发事件不 attach
+- 目标事件缓存：`pendingTargetCreatedEvents` 修复事件先于 response 到达时的丢包问题
+
+### Fixed
+- `closeGroupById` 按 `clientId` 过滤 tab，避免断连时误杀其他 client 的 tab
+- `addTabToAutomationGroup` 去掉 `cdpClients[0]` fallback，无 clientId 不分组
+- `buildGroupName` 使用稳定 `CDP-<hash>` 而非 `CDP #<index>`（index 随 client 断连变化）
+
 ## [2.1.0] - 2025-05-11
 
 ### Added

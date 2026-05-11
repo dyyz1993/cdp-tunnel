@@ -150,6 +150,7 @@ const clientIdToPlugin = new Map();
 const globalRequestIdMap = new Map();
 const targetIdToClientId = new Map();
 const pendingAttachedEvents = new Map();
+const pendingTargetCreatedEvents = new Map();
 const browserContextToClientId = new Map();
 const clientIdToBrowserContext = new Map();
 let globalRequestIdCounter = 0;
@@ -464,7 +465,6 @@ function handlePluginConnection(ws, clientInfo) {
             return;
         }
         
-        // 调试：打印所有收到的消息
         console.log(`[PLUGIN MSG] id=${parsed?.id} method=${parsed?.method || 'none'} type=${parsed?.type || 'none'} sessionId=${parsed?.sessionId?.substring(0,8) || 'none'}`);
 
         // 记录所有 PLUGIN -> CLIENT 消息到日志文件
@@ -509,9 +509,12 @@ function handlePluginConnection(ws, clientInfo) {
                         clientWs.send(cdpData);
                         console.log(`[TARGET EVENT ROUTED] ${parsed.method} targetId=${targetId?.substring(0,8)} -> clientId=${eventClientId}`);
                     }
+                } else if (targetId && (parsed.method === 'Target.targetCreated' || parsed.method === 'Target.attachedToTarget')) {
+                    const pendingMap = parsed.method === 'Target.targetCreated' ? pendingTargetCreatedEvents : pendingAttachedEvents;
+                    pendingMap.set(targetId, { parsed: JSON.parse(JSON.stringify(parsed)), cdpData });
+                    console.log(`[TARGET EVENT PENDING] ${parsed.method} targetId=${targetId?.substring(0,8)} (cached, waiting for createTarget response)`);
                 } else {
-                    console.log(`[TARGET EVENT BROADCAST] ${parsed.method} targetId=${targetId?.substring(0,8) || 'none'} (no owner, broadcasting)`);
-                    broadcastToClients(cdpData, null);
+                    console.log(`[TARGET EVENT DROPPED] ${parsed.method} targetId=${targetId?.substring(0,8) || 'none'} (no owner, dropped for isolation)`);
                 }
             }
             
@@ -591,20 +594,23 @@ function handlePluginConnection(ws, clientInfo) {
                     if (mapping.isCreateTarget && parsed.result?.targetId) {
                         const targetId = parsed.result.targetId;
                         targetIdToClientId.set(targetId, mapping.clientId);
-                        console.log(`[TARGET MAPPED] targetId=${targetId} -> clientId=${mapping.clientId}`);
+                        console.log(`[TARGET MAPPED] targetId=${targetId} -> clientId=${mapping.clientId} mapSize=${targetIdToClientId.size}`);
                         
-                        // 检查是否有缓存的 Target.attachedToTarget 事件
+                        const cachedCreated = pendingTargetCreatedEvents.get(targetId);
+                        if (cachedCreated) {
+                            clientWs.send(cachedCreated.cdpData);
+                            console.log(`[TARGET CREATED EVENT] Sent cached Target.targetCreated to client: ${mapping.clientId}`);
+                            pendingTargetCreatedEvents.delete(targetId);
+                        }
+                        
                         const cachedEvent = pendingAttachedEvents.get(targetId);
                         if (cachedEvent) {
-                            if (cachedEvent.sessionId) {
-                                sessionToClientId.set(cachedEvent.sessionId, mapping.clientId);
+                            if (cachedEvent.parsed.sessionId) {
+                                sessionToClientId.set(cachedEvent.parsed.sessionId, mapping.clientId);
                             }
-                            console.log(`[SESSION MAPPED from cached] sessionId=${cachedEvent.sessionId?.substring(0,8) || 'none'} -> clientId=${mapping.clientId} (targetId=${targetId})`);
+                            console.log(`[SESSION MAPPED from cached] sessionId=${cachedEvent.parsed.sessionId?.substring(0,8) || 'none'} -> clientId=${mapping.clientId} (targetId=${targetId})`);
                             pendingAttachedEvents.delete(targetId);
                             
-                            // 先发送缓存的事件给客户端
-                            // 注意：Target.attachedToTarget 事件必须发送给 root session（没有顶层 sessionId）
-                            // sessionId 在 params 里面，不在消息顶层
                             const cdpMsg = {
                                 method: cachedEvent.parsed.method,
                                 params: cachedEvent.parsed.params
@@ -621,7 +627,7 @@ function handlePluginConnection(ws, clientInfo) {
                         parsed.result.targetInfos = parsed.result.targetInfos.filter(t => {
                             if (t.type !== 'page') return true;
                             const ownerClient = targetIdToClientId.get(t.targetId);
-                            return !ownerClient || ownerClient === clientId;
+                            return ownerClient === clientId;
                         });
                         console.log(`[GET TARGETS FILTERED] client=${clientId} returned ${parsed.result.targetInfos.filter(t => t.type === 'page').length} page targets`);
                     }

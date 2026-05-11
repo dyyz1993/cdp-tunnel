@@ -25,7 +25,8 @@ var State = (function() {
     clientIdToSessionId: new Map(),
     tabIdToClientId: new Map(),
     clientIdToGroupId: new Map(),
-    preExistingTabIds: new Set()
+    preExistingTabIds: new Set(),
+    cdpCreatedTabIds: new Set()
   };
 
   function mapSession(sessionId, tabId, targetId) {
@@ -254,6 +255,14 @@ var State = (function() {
     _state.emittedTargets.clear();
   }
 
+  function addCDPCreatedTab(tabId) {
+    _state.cdpCreatedTabIds.add(tabId);
+  }
+
+  function isCDPCreatedTab(tabId) {
+    return _state.cdpCreatedTabIds.has(tabId);
+  }
+
   function clearAllState() {
     clearSessionState();
     _state.attachedTabIds.clear();
@@ -275,6 +284,7 @@ var State = (function() {
     _state.pendingDebuggerTabs.clear();
     _state.automatedTabs.clear();
     _state.pendingCreatedTabUrls.clear();
+    _state.cdpCreatedTabIds.clear();
     _state.cdpClients = [];
   }
 
@@ -494,6 +504,8 @@ var State = (function() {
     isPreExistingTab: isPreExistingTab,
     getPreExistingTabs: getPreExistingTabs,
     removePreExistingTab: removePreExistingTab,
-    clearPreExistingTabsForClient: clearPreExistingTabsForClient
+    clearPreExistingTabsForClient: clearPreExistingTabsForClient,
+    addCDPCreatedTab: addCDPCreatedTab,
+    isCDPCreatedTab: isCDPCreatedTab
   };
 })();

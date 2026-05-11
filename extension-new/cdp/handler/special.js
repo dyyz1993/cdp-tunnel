@@ -59,12 +59,16 @@ var SpecialHandler = (function() {
         var sessionId = CDPUtils.generateSessionId();
         State.mapSession(sessionId, tabId, targetId);
 
-        // 保存tabId到clientId的映射
         if (clientId) {
           State.setTabIdToClientId(tabId, clientId);
         }
 
-        addTabToAutomationGroup(tabId, clientId);
+        if (State.isCDPCreatedTab(tabId)) {
+          addTabToAutomationGroup(tabId, clientId);
+        } else {
+          State.addPreExistingTab(tabId);
+          Logger.info('[CDP] Target.attachToTarget: user tab not CDP-created, treating as pre-existing. tabId:', tabId);
+        }
 
         return { sessionId: sessionId };
       });
@@ -110,10 +114,10 @@ var SpecialHandler = (function() {
         // 保存tabId到clientId的映射，用于后续分组
         if (clientId) {
           State.setTabIdToClientId(tab.id, clientId);
-          Logger.info('[TabGroup] Mapped tabId:', tab.id, '-> clientId:', clientId);
         }
 
-        // 将标签页添加到CDP Automation组，使用对应的clientId
+        State.addCDPCreatedTab(tab.id);
+
         addTabToAutomationGroup(tab.id, clientId);
 
         getTargetIdByTabId(tab.id).then(function(targetId) {
@@ -128,59 +132,53 @@ var SpecialHandler = (function() {
   function addTabToAutomationGroup(tabId, clientId) {
     Logger.info('[TabGroup] Starting addTabToAutomationGroup for tabId:', tabId, 'clientId:', clientId);
 
-    setTimeout(function() {
-      muteTabIfNeeded(tabId);
-    }, 500);
+    muteTabIfNeeded(tabId);
 
     var groupClientId = clientId;
     if (!groupClientId) {
-      var cdpClients = State.getCDPClients() || [];
-      if (cdpClients.length > 0 && cdpClients[0] && cdpClients[0].id) {
-        groupClientId = cdpClients[0].id;
-      }
+      Logger.warn('[TabGroup] No clientId for tab:', tabId, '— skipping group operation');
+      return;
     }
-
-    if (!groupClientId) return;
     var baseName = CDPUtils.getGroupBaseName(groupClientId);
     
-    setTimeout(function() {
-      Logger.info('[TabGroup] Executing group operation for:', baseName);
-      
-      chrome.tabGroups.query({}, function(allGroups) {
-        var existing = CDPUtils.findGroupByName(allGroups, baseName);
-        if (existing) {
-          chrome.tabs.group({ tabIds: tabId, groupId: existing.id }, function(result) {
-            if (chrome.runtime.lastError) {
-              Logger.error('[TabGroup] Failed to add tab to group:', chrome.runtime.lastError.message);
-            } else {
-              State.setGroupIdForClient(groupClientId, existing.id);
-              updateTabGroupName(groupClientId);
-            }
-          });
-        } else {
-          chrome.tabs.group({ tabIds: tabId }, function(groupId) {
-            if (chrome.runtime.lastError) {
-              Logger.error('[TabGroup] Failed to create group:', chrome.runtime.lastError.message);
-              return;
-            }
-            if (groupId) {
-              chrome.tabGroups.update(groupId, {
-                title: baseName,
-                color: CDPUtils.getGroupColorForClient(groupClientId),
-                collapsed: true
-              }, function() {
-                if (chrome.runtime.lastError) {
-                  Logger.error('[TabGroup] Failed to update group:', chrome.runtime.lastError.message);
-                } else {
-                  State.setGroupIdForClient(groupClientId, groupId);
-                  updateTabGroupName(groupClientId);
-                }
-              });
-            }
-          });
-        }
-      });
-    }, 2000);
+    Logger.info('[TabGroup] Executing group operation for:', baseName);
+    
+    chrome.tabGroups.query({}, function(allGroups) {
+      var existing = CDPUtils.findGroupByName(allGroups, baseName);
+      if (existing) {
+        chrome.tabs.group({ tabIds: tabId, groupId: existing.id }, function(result) {
+          if (chrome.runtime.lastError) {
+            Logger.error('[TabGroup] Failed to add tab to group:', chrome.runtime.lastError.message);
+          } else {
+            State.setGroupIdForClient(groupClientId, existing.id);
+            updateTabGroupName(groupClientId);
+            Logger.info('[TabGroup] Tab', tabId, 'added to existing group:', existing.id);
+          }
+        });
+      } else {
+        chrome.tabs.group({ tabIds: tabId }, function(groupId) {
+          if (chrome.runtime.lastError) {
+            Logger.error('[TabGroup] Failed to create group:', chrome.runtime.lastError.message);
+            return;
+          }
+          if (groupId) {
+            chrome.tabGroups.update(groupId, {
+              title: baseName,
+              color: CDPUtils.getGroupColorForClient(groupClientId),
+              collapsed: true
+            }, function() {
+              if (chrome.runtime.lastError) {
+                Logger.error('[TabGroup] Failed to update group:', chrome.runtime.lastError.message);
+              } else {
+                State.setGroupIdForClient(groupClientId, groupId);
+                updateTabGroupName(groupClientId);
+                Logger.info('[TabGroup] Created new group:', groupId, 'with tab:', tabId);
+              }
+            });
+          }
+        });
+      }
+    });
   }
 
   function updateTabGroupName(clientId) {
@@ -342,47 +340,44 @@ function checkTabVisibility(tabId) {
     return chrome.debugger.getTargets().then(function(targets) {
       var promises = [];
 
-      Logger.info('[CDP] emitAutoAttachForExistingTargets: checking', targets.length, 'targets');
-      Logger.info('[CDP] Current attachedTabIds:', State.getAttachedTabIds());
+      Logger.info('[CDP] emitAutoAttachForExistingTargets: checking', targets.length, 'targets, clientId:', clientId);
 
       targets.forEach(function(target) {
         if (target.type !== 'page' && target.type !== 'background_page') return;
         if (!target.tabId) return;
 
         var targetId = target.id;
+        var tabId = target.tabId;
         var hasEmitted = State.hasEmittedTarget(targetId);
-        Logger.info('[CDP] emitAutoAttachForExistingTargets: targetId=', targetId, 'tabId=', target.tabId, 'attached=', target.attached, 'hasEmitted=', hasEmitted);
 
         if (hasEmitted) {
-          Logger.info('[CDP] Target already emitted in emitAutoAttachForExistingTargets, skipping:', targetId);
+          Logger.info('[CDP] Target already emitted, skipping:', targetId);
           return;
         }
-        State.addEmittedTarget(targetId);
 
-        var isAttachedByUs = State.isTabAttached(target.tabId);
+        var isCDPCreated = State.isCDPCreatedTab(tabId);
+        var isOwnedByClient = isCDPCreated && State.getClientIdByTabId(tabId) === clientId;
+
+        if (!isOwnedByClient) {
+          Logger.info('[CDP] Skipping user/other-client tab:', targetId, 'tabId:', tabId, 'cdpCreated:', isCDPCreated);
+          State.addEmittedTarget(targetId);
+          return;
+        }
+
+        State.addEmittedTarget(targetId);
         var targetInfo = LocalHandler.mapToTargetInfo(target);
         
-        Logger.info('[CDP] isAttachedByUs=', isAttachedByUs, 'for tabId=', target.tabId);
-        
-        if (target.attached && !isAttachedByUs) {
-          targetInfo.attached = false;
-          Logger.info('[CDP] Target attached by another debugger, reporting as not attached:', targetId, 'tabId:', target.tabId);
-        }
+        Logger.info('[CDP] Emitting CDP-owned target:', targetId, 'tabId:', tabId);
         
         EventBuilder.send('Target.targetCreated', { targetInfo: targetInfo });
 
-        if (target.attached && isAttachedByUs) {
+        if (target.attached) {
           promises.push(Promise.resolve().then(function() {
             var sessionId = CDPUtils.generateSessionId();
-            State.mapSession(sessionId, target.tabId, targetId);
-
-            if (clientId) {
-              State.setTabIdToClientId(target.tabId, clientId);
-            }
-            State.addPreExistingTab(target.tabId);
+            State.mapSession(sessionId, tabId, targetId);
 
             if (config.waitForDebuggerOnStart) {
-              State.addPendingDebuggerTab(target.tabId);
+              State.addPendingDebuggerTab(tabId);
             }
 
             EventBuilder.send('Target.attachedToTarget', {
@@ -391,20 +386,15 @@ function checkTabVisibility(tabId) {
               waitingForDebugger: config.waitForDebuggerOnStart || false
             });
           }));
-        } else if (!target.attached) {
+        } else {
           promises.push(
-            DebuggerManager.attach(target.tabId).then(function(attached) {
+            DebuggerManager.attach(tabId).then(function(attached) {
               if (!attached) return;
               var sessionId = CDPUtils.generateSessionId();
-              State.mapSession(sessionId, target.tabId, targetId);
-
-              if (clientId) {
-                State.setTabIdToClientId(target.tabId, clientId);
-              }
-              State.addPreExistingTab(target.tabId);
+              State.mapSession(sessionId, tabId, targetId);
 
               if (config.waitForDebuggerOnStart) {
-                State.addPendingDebuggerTab(target.tabId);
+                State.addPendingDebuggerTab(tabId);
               }
 
               EventBuilder.send('Target.attachedToTarget', {

@@ -1,0 +1,21 @@
+=== Test: Tab Eating (port 43930) ===
+
+[19:36:36] [SETUP] Proxy ready
+[19:36:45] [SETUP] Extension connected
+[19:36:45] [BASE] User tabs: 0
+[19:36:45] [PW] Connecting Playwright...
+[19:36:48] [PW] Created 1 CDP tab
+[19:36:50] [CHECK] Total pages: 0
+[19:36:55] [AFTER] Total pages after user action: 0
+[19:36:55] [CHECK] New tabs: 0, Bing tabs: 0
+[19:36:55] [CHECK] Playwright pages: 1, has bing: false
+[19:36:55] [PASS] User tab opened from pre-existing tab NOT controlled by Playwright
+[19:36:55] [DISC] Disconnecting...
+[19:37:04] [FINAL] Pages after disconnect: 0
+[19:37:04] [PASS] Original user tabs survive disconnect
+[19:37:04] [INFO] Bing tab not created, skipping survival check
+[19:37:04] [PASS] CDP tabs cleaned up
+
+=== RESULTS: 3 passed, 0 failed ===
+
+EXIT_CODE=0

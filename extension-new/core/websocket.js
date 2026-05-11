@@ -211,7 +211,6 @@ var WebSocketManager = (function() {
             State.removeAttachedTab(tabId);
           });
           State.clearPreExistingTabsForClient(discClientId);
-
           State.removeCDPClient(discClientId);
           if (State.getCDPClients().length === 0) {
             State.setHasConnectedClient(false);
@@ -289,6 +288,7 @@ var WebSocketManager = (function() {
   }
 
   function closeGroupById(groupId, clientId, resolve) {
+    Logger.info('[WS] closeGroupById: groupId=' + groupId + ' clientId=' + clientId);
     chrome.tabs.query({ groupId: groupId }, function(tabs) {
         if (!tabs || tabs.length === 0) {
             Logger.info('[WS] No tabs in group:', groupId);
@@ -297,9 +297,22 @@ var WebSocketManager = (function() {
             return;
         }
         
-        var tabIds = tabs.map(function(tab) { return tab.id; });
-        Logger.info('[WS] Closing ' + tabIds.length + ' tabs in group:', groupId);
+        var ownTabs = tabs.filter(function(tab) {
+          return State.getClientIdByTabId(tab.id) === clientId;
+        });
+        var otherTabs = tabs.filter(function(tab) {
+          return State.getClientIdByTabId(tab.id) !== clientId;
+        });
+        var tabIds = ownTabs.map(function(tab) { return tab.id; });
+        Logger.info('[WS] Closing ' + tabIds.length + ' tabs in group (skipping ' + otherTabs.length + ' from other clients):', groupId);
         
+        if (tabIds.length === 0) {
+          Logger.info('[WS] No own tabs to close in group:', groupId);
+          State.removeGroupForClient(clientId);
+          resolve();
+          return;
+        }
+
         chrome.tabs.remove(tabIds, function() {
             if (chrome.runtime.lastError) {
                 Logger.error('[WS] Failed to close tabs:', chrome.runtime.lastError.message);
@@ -321,11 +334,18 @@ var WebSocketManager = (function() {
     var attachedTabs = State.getAttachedTabIds();
     var tabsToClose = [];
     
+    Logger.info('[WS] closeTabsByClientId: clientId=' + clientId + ' attachedTabs=' + JSON.stringify(attachedTabs));
     attachedTabs.forEach(function(tabId) {
-      if (State.getClientIdByTabId(tabId) === clientId && !State.isPreExistingTab(tabId)) {
+      var tabClientId = State.getClientIdByTabId(tabId);
+      var isPre = State.isPreExistingTab(tabId);
+      var isCDP = State.isCDPCreatedTab(tabId);
+      Logger.info('[WS]   tabId=' + tabId + ' clientId=' + tabClientId + ' isPre=' + isPre + ' isCDP=' + isCDP);
+      if (tabClientId === clientId && !isPre) {
         tabsToClose.push(tabId);
       }
     });
+    
+    Logger.info('[WS] closeTabsByClientId: will close ' + tabsToClose.length + ' tabs');
     
     if (tabsToClose.length === 0) {
       Logger.info('[WS] No attached tabs found for clientId:', clientId);

@@ -1,0 +1,20 @@
+=== Test: User Tab During Session (port 54997) ===
+
+[19:36:51] [SETUP] Ready
+[19:36:51] [PRE] 0 user tabs before CDP
+[19:36:55] [PW] CDP tab created
+[19:37:00] [PW] CDP targets: 
+[19:37:00] [A] Creating tab via separate WS (Target.createTarget)...
+[19:37:00] [A] Tab A created: 67F2863F98377B681FEF551F51F60EF8
+[19:37:03] [A] WS-A closed, waiting for cleanup...
+[19:37:11] [A] Tab A after WS-A close: DELETED
+[19:37:11] [BEFORE] 0 pages before main disconnect
+[19:37:11] [DISC] Disconnecting main Playwright...
+[19:37:21] [FINAL] 0 surviving pages
+[19:37:21] [PASS] Pre-existing user tabs survive (including attachToTarget'd tab)
+[19:37:21] [PASS] CDP tabs properly cleaned up
+[19:37:21] [PASS] Tab A (CDP-created on separate WS) was cleaned up on WS close
+
+=== RESULTS: 3 passed, 0 failed ===
+
+EXIT_CODE=0

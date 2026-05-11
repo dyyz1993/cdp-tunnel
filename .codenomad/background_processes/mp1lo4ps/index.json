@@ -1,0 +1,58 @@
+[
+  {
+    "id": "proc_2026-05-11T1935_3d39e8",
+    "workspaceId": "mp1lo4ps",
+    "title": "Test 1: client-isolation",
+    "command": "cd /Users/xuyingzhou/Project/study-web/cdp-tunnel2 && timeout 140 node tests/e2e/test-client-isolation.js 2>&1; echo \"EXIT_CODE=$?\"",
+    "cwd": "/Users/xuyingzhou/Project/study-web/cdp-tunnel2",
+    "status": "stopped",
+    "pid": 90785,
+    "startedAt": "2026-05-11T19:35:09.048Z",
+    "outputSizeBytes": 1327,
+    "terminalReason": "finished",
+    "exitCode": 0,
+    "stoppedAt": "2026-05-11T19:35:44.653Z"
+  },
+  {
+    "id": "proc_2026-05-11T1935_971239",
+    "workspaceId": "mp1lo4ps",
+    "title": "Test 2: user-tab-protection",
+    "command": "cd /Users/xuyingzhou/Project/study-web/cdp-tunnel2 && timeout 140 node tests/e2e/test-user-tab-protection.js 2>&1; echo \"EXIT_CODE=$?\"",
+    "cwd": "/Users/xuyingzhou/Project/study-web/cdp-tunnel2",
+    "status": "stopped",
+    "pid": 91359,
+    "startedAt": "2026-05-11T19:35:50.667Z",
+    "outputSizeBytes": 1248,
+    "terminalReason": "finished",
+    "exitCode": 0,
+    "stoppedAt": "2026-05-11T19:36:23.552Z"
+  },
+  {
+    "id": "proc_2026-05-11T1936_f7aebe",
+    "workspaceId": "mp1lo4ps",
+    "title": "Test 3: tab-eating",
+    "command": "cd /Users/xuyingzhou/Project/study-web/cdp-tunnel2 && timeout 140 node tests/e2e/test-tab-eating.js 2>&1; echo \"EXIT_CODE=$?\"",
+    "cwd": "/Users/xuyingzhou/Project/study-web/cdp-tunnel2",
+    "status": "stopped",
+    "pid": 92451,
+    "startedAt": "2026-05-11T19:36:34.907Z",
+    "outputSizeBytes": 775,
+    "terminalReason": "finished",
+    "exitCode": 0,
+    "stoppedAt": "2026-05-11T19:37:04.157Z"
+  },
+  {
+    "id": "proc_2026-05-11T1936_f0af99",
+    "workspaceId": "mp1lo4ps",
+    "title": "Test 4: user-tab-during-session",
+    "command": "cd /Users/xuyingzhou/Project/study-web/cdp-tunnel2 && timeout 140 node tests/e2e/test-user-tab-during-session.js 2>&1; echo \"EXIT_CODE=$?\"",
+    "cwd": "/Users/xuyingzhou/Project/study-web/cdp-tunnel2",
+    "status": "stopped",
+    "pid": 92785,
+    "startedAt": "2026-05-11T19:36:42.054Z",
+    "outputSizeBytes": 807,
+    "terminalReason": "finished",
+    "exitCode": 0,
+    "stoppedAt": "2026-05-11T19:37:21.594Z"
+  }
+]

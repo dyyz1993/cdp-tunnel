@@ -22,6 +22,7 @@ const PORT = CONFIG.PORT;
 const CONFIG_DIR = path.join(os.homedir(), '.cdp-tunnel');
 const EXTENSION_STATE_FILE = path.join(CONFIG_DIR, 'extension-state.json');
 const PLUGIN_EVER_CONNECTED_FILE = path.join(CONFIG_DIR, 'plugin-ever-connected');
+const SERVER_START_TIME = Date.now();
 
 let lastChromeRestartAttempt = 0;
 const CHROME_RESTART_COOLDOWN = CONFIG.CHROME_RESTART_COOLDOWN;
@@ -739,7 +740,7 @@ function handlePluginConnection(ws, clientInfo) {
         type: 'connected',
         role: 'plugin',
         id: id,
-        fresh: true,
+        fresh: (Date.now() - SERVER_START_TIME) < 5000,
         timestamp: Date.now()
     }));
 }
@@ -1511,6 +1512,16 @@ process.on('SIGINT', () => {
 process.on('SIGTERM', () => {
     flushAllLogs();
     process.exit(0);
+});
+
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`[FATAL] Port ${PORT} is already in use. Is another cdp-tunnel running?`);
+        console.error(`  Run "cdp-tunnel stop" first, or kill the process on port ${PORT}.`);
+        process.exit(2);
+    }
+    console.error('[FATAL] Server error:', err.message);
+    process.exit(1);
 });
 
 server.listen(PORT, '0.0.0.0');

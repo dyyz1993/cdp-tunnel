@@ -181,6 +181,18 @@ function startServer(port, watchdog, autoRestart) {
       console.log('  重启次数: ' + restartTimestamps.length + '/' + MAX_RESTARTS + ' (60秒内)');
       console.log('');
 
+      // Kill any leftover process occupying the port before restarting
+      try {
+        const result = execSync(`lsof -ti:${port} 2>/dev/null || true`).toString().trim();
+        if (result) {
+          const pids = result.split('\n').filter(p => p && parseInt(p) !== process.pid);
+          pids.forEach(p => { try { process.kill(parseInt(p), 'SIGKILL'); } catch {} });
+          if (pids.length > 0) {
+            log('gray', '  已清理占用端口 ' + port + ' 的残留进程: ' + pids.join(', '));
+          }
+        }
+      } catch {}
+
       setTimeout(() => startServer(port, true, autoRestart), 3000);
     });
 

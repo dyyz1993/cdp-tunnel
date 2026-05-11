@@ -127,7 +127,9 @@ var SpecialHandler = (function() {
   function addTabToAutomationGroup(tabId, clientId) {
     Logger.info('[TabGroup] Starting addTabToAutomationGroup for tabId:', tabId, 'clientId:', clientId);
 
-    muteTabIfNeeded(tabId);
+    setTimeout(function() {
+      muteTabIfNeeded(tabId);
+    }, 500);
 
     var groupName;
     var groupClientId = clientId;

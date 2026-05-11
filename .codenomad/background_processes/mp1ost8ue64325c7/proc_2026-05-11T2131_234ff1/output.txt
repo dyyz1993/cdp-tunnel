@@ -1,0 +1,26 @@
+=== Test: Client Isolation (port 58597) ===
+
+[21:31:40] [SETUP] Ready
+[21:31:40] [PRE] User tabs: 0 (before isolation, pre-filtering still shows all)
+[21:31:40] [A] Client A connecting...
+[21:31:43] [A] Created tabs: EF2FC181BD8D31399716AF07C8091BE1, 178355BD749E92D6C71594650043949A
+[21:31:46] [A] Client A sees 2 pages:
+[21:31:46] [A]   EF2FC181BD8D31399716AF07C8091BE1 — about:blank
+[21:31:46] [A]   178355BD749E92D6C71594650043949A — about:blank
+[21:31:46] [B] Client B connecting...
+[21:31:48] [B] Created tab: D5C3C3D71235756DD0CB39EDBE2DE444
+[21:31:51] [B] Client B sees 1 pages:
+[21:31:51] [B]   D5C3C3D71235756DD0CB39EDBE2DE444 — about:blank
+[21:31:51] [PASS] Client A: sees only its own tabs (2), no B tabs, no user tabs
+[21:31:51] [PASS] Client B: sees only its own tab (1), no A tabs, no user tabs
+[21:31:51] [DISC-A] Disconnecting client A...
+[21:31:59] [B-AFTER] Client B sees 1 pages after A disconnect:
+[21:31:59] [B-AFTER]   D5C3C3D71235756DD0CB39EDBE2DE444 — about:blank
+[21:31:59] [PASS] Client B still sees only its own tab after A disconnect
+[21:31:59] [DISC-B] Disconnecting client B...
+[21:32:07] [FINAL] After all disconnect: 0 pages visible to new client
+[21:32:07] [PASS] No tabs visible to unowned client (user tabs hidden, CDP tabs cleaned)
+
+=== RESULTS: 4 passed, 0 failed ===
+
+EXIT=0

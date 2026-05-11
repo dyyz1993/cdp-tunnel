@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.3] - 2026-05-12
+### Fixed
+- `buildGroupName` 改用 `clientId.substring(clientId.length - 8)` 取末尾随机后缀，修复所有 client 组名相同（都是 `CDP-client_1`）的问题
+
+### Added
+- 压力测试 `test-stress-isolation.js`：3 个并发 CDP 客户端各执行 10+ 次创建/关闭/切换操作，验证隔离性、分组独立性和断连清理
+- `Tab.getGroupInfo` handler：直接查询分组是否创建成功
+
 ## [2.5.2] - 2026-05-12
 ### Added
 - `addTabToAutomationGroup` 改用轮询方案：`chrome.tabs.get` 每 200ms 检查 tab 状态，加载完成后再分组（最多等 4 秒后强制分组），无需 setTimeout(500) 或 chrome.tabs.onUpdated

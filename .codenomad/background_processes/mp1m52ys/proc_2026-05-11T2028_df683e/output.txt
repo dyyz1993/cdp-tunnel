@@ -1,0 +1,29 @@
+    var retries = 0;
+    var maxRetries = 20;
+    function tryGroup() {
+      chrome.tabs.get(tabId, function(tab) {
+        if (chrome.runtime.lastError || !tab) {
+          Logger.error('[TabGroup] Tab not found:', tabId, 'retries:', retries);
+          return;
+        }
+        if (tab.status === 'complete') {
+          Logger.info('[TabGroup] Tab ready, executing group operation for:', baseName);
+          doGroup(tabId, groupClientId, baseName);
+        } else if (retries < maxRetries) {
+          retries++;
+          Logger.info('[TabGroup] Tab not ready (', tab.status, '), retry', retries, '/', maxRetries);
+          setTimeout(tryGroup, 200);
+        } else {
+          Logger.warn('[TabGroup] Tab never reached complete status, grouping anyway. tabId:', tabId);
+          doGroup(tabId, groupClientId, baseName);
+        }
+--
+    tryGroup();
+  }
+
+  function doGroup(tabId, clientId, baseName) {
+    chrome.tabGroups.query({}, function(allGroups) {
+      var existing = CDPUtils.findGroupByName(allGroups, baseName);
+      if (existing) {
+        chrome.tabs.group({ tabIds: tabId, groupId: existing.id }, function(result) {
+          if (chrome.runtime.lastError) {

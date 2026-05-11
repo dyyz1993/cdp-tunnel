@@ -1,0 +1,17 @@
+ D .codenomad/background_processes/mp1m52ys/index.json
+ D .codenomad/background_processes/mp1m52ys/proc_2026-05-11T1954_df6571/output.txt
+ D .codenomad/background_processes/mp1m52ys/proc_2026-05-11T1956_4e87ca/output.txt
+ D .codenomad/background_processes/mp1m52ys/proc_2026-05-11T1957_716617/output.txt
+ M extension-new/cdp/handler/local.js
+ M extension-new/cdp/index.js
+?? .codenomad/background_processes/mp1m52ys/proc_2026-05-11T2003_c75e3a/
+?? .codenomad/background_processes/mp1m52ys/proc_2026-05-11T2025_a3f088/
+?? .codenomad/background_processes/mp1m52ys/proc_2026-05-11T2025_cee93a/
+?? .codenomad/background_processes/mp1m52ys/proc_2026-05-11T2027_dea2db/
+?? .codenomad/background_processes/mp1m52ys/proc_2026-05-11T2028_b99d33/
+?? .codenomad/background_processes/mp1m52ys/proc_2026-05-11T2028_df683e/
+?? .codenomad/background_processes/mp1m52ys/proc_2026-05-11T2036_c92648/
+?? .codenomad/background_processes/mp1m52ys/proc_2026-05-11T2037_9e1e67/
+?? .codenomad/background_processes/mp1m52ys/proc_2026-05-11T2037_ce9919/
+?? .codenomad/background_processes/mp1ost8ue64325c7/
+?? tests/e2e/test-group-creation.js

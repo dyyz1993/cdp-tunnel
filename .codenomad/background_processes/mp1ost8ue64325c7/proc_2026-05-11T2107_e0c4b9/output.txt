@@ -1,0 +1,5 @@
+[main 05f624d] chore: add Tab.getGroupInfo handler and group creation test
+ 3 files changed, 159 insertions(+), 1 deletion(-)
+ create mode 100755 tests/e2e/test-group-creation.js
+To https://github.com/dyyz1993/cdp-tunnel.git
+   1e06ba8..05f624d  main -> main

@@ -1,0 +1,27 @@
+1e06ba8 chore: release v2.5.2
+fc01897 chore: release v2.5.2
+5eb1da7 chore: release v2.5.1
+cebae77 chore: release v2.5.0
+18d4a85 test: add user-tab-during-session test (currently fails — tab A deleted on disconnect)
+---
+          addTabToAutomationGroup(tabId, clientId);
+        } else {
+          State.addPreExistingTab(tabId);
+          Logger.info('[CDP] Target.attachToTarget: user tab not CDP-created, treating as pre-existing. tabId:', tabId);
+        }
+
+--
+        addTabToAutomationGroup(tab.id, clientId);
+
+        getTargetIdByTabId(tab.id).then(function(targetId) {
+          return emitAutoAttachEvents(tab.id, targetId, browserContextId).then(function() {
+            resolve({ targetId: targetId });
+          });
+--
+  function addTabToAutomationGroup(tabId, clientId) {
+    Logger.info('[TabGroup] Starting addTabToAutomationGroup for tabId:', tabId, 'clientId:', clientId);
+
+    setTimeout(function() {
+      muteTabIfNeeded(tabId);
+    }, 200);
+

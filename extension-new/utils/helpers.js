@@ -44,7 +44,8 @@ var CDPUtils = (function() {
 
   function buildGroupName(clientId) {
     if (!clientId) return 'CDP';
-    return 'CDP-' + clientId.substring(0, 8);
+    var suffix = clientId.length > 8 ? clientId.substring(clientId.length - 8) : clientId;
+    return 'CDP-' + suffix;
   }
 
   function getGroupBaseName(clientId) {

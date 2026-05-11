@@ -1,0 +1,12 @@
+=== Test: User Tab During Session (port 56585) ===
+
+[21:28:00] [SETUP] Ready
+[21:28:00] [PRE] 0 user tabs before CDP
+
+FATAL: page.goto: Timeout 30000ms exceeded.
+Call log:
+[2m  - navigating to "about:blank", waiting until "load"[22m
+
+
+=== RESULTS: 0 passed, 1 failed ===
+

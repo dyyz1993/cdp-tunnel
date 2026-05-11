@@ -1,0 +1,6 @@
+1e06ba8 chore: release v2.5.2
+fc01897 chore: release v2.5.2
+5eb1da7 chore: release v2.5.1
+---
+1e06ba8 chore: release v2.5.2
+fc01897 chore: release v2.5.2

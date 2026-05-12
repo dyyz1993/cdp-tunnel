@@ -138,8 +138,14 @@ var SpecialHandler = (function() {
 
     var groupClientId = clientId;
     if (!groupClientId) {
-      Logger.warn('[TabGroup] No clientId for tab:', tabId, '— skipping group operation');
-      return;
+      var cdpClients = State.getCDPClients() || [];
+      if (cdpClients.length > 0 && cdpClients[0] && cdpClients[0].id) {
+        groupClientId = cdpClients[0].id;
+        Logger.warn('[TabGroup] No clientId for tab:', tabId, 'fallback to first client:', groupClientId);
+      } else {
+        Logger.warn('[TabGroup] No clientId for tab:', tabId, '— skipping group operation');
+        return;
+      }
     }
     var baseName = CDPUtils.getGroupBaseName(groupClientId);
 

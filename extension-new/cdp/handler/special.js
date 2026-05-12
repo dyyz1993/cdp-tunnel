@@ -167,13 +167,17 @@ var SpecialHandler = (function() {
     tryGroup();
   }
 
-  function doGroup(tabId, clientId, baseName) {
+  function doGroup(tabId, clientId, baseName, retries) {
+    retries = retries || 0;
     chrome.tabGroups.query({}, function(allGroups) {
       var existing = CDPUtils.findGroupByName(allGroups, baseName);
       if (existing) {
         chrome.tabs.group({ tabIds: tabId, groupId: existing.id }, function(result) {
           if (chrome.runtime.lastError) {
-            Logger.error('[TabGroup] Failed to add tab to group:', chrome.runtime.lastError.message);
+            Logger.error('[TabGroup] Failed to add tab to group:', chrome.runtime.lastError.message, 'retries:', retries);
+            if (retries < 3) {
+              setTimeout(function() { doGroup(tabId, clientId, baseName, retries + 1); }, 500);
+            }
           } else {
             State.setGroupIdForClient(clientId, existing.id);
             updateTabGroupName(clientId);
@@ -183,7 +187,10 @@ var SpecialHandler = (function() {
       } else {
         chrome.tabs.group({ tabIds: tabId }, function(groupId) {
           if (chrome.runtime.lastError) {
-            Logger.error('[TabGroup] Failed to create group:', chrome.runtime.lastError.message);
+            Logger.error('[TabGroup] Failed to create group:', chrome.runtime.lastError.message, 'retries:', retries);
+            if (retries < 3) {
+              setTimeout(function() { doGroup(tabId, clientId, baseName, retries + 1); }, 500);
+            }
             return;
           }
           if (groupId) {

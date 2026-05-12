@@ -392,30 +392,51 @@ var WebSocketManager = (function() {
     if (_groupMonitorTimer) clearInterval(_groupMonitorTimer);
     _groupMonitorTimer = setInterval(function() {
       var attached = State.getAttachedTabIds();
+      Logger.info('[Monitor] Checking ' + attached.length + ' attached tabs for grouping...');
       attached.forEach(function(tabId) {
         var clientId = State.getClientIdByTabId(tabId);
-        if (!clientId) return;
-        if (State.isPreExistingTab(tabId)) return;
+        if (!clientId) {
+          Logger.warn('[Monitor] Tab', tabId, 'has no clientId mapping, cannot group');
+          return;
+        }
+        if (State.isPreExistingTab(tabId)) {
+          Logger.info('[Monitor] Tab', tabId, 'is pre-existing, skipping');
+          return;
+        }
         chrome.tabs.get(tabId, function(tab) {
-          if (chrome.runtime.lastError || !tab) return;
-          if (tab.groupId) return;
-          Logger.info('[Monitor] Tab', tabId, 'has no group, regrouping for client:', clientId);
-          var baseName = CDPUtils.getGroupBaseName(clientId);
+          if (chrome.runtime.lastError || !tab) {
+            Logger.error('[Monitor] Tab', tabId, 'not found:', chrome.runtime.lastError?.message);
+            return;
+          }
           var groupId = State.getGroupIdForClient(clientId);
+          Logger.info('[Monitor] Tab', tabId, 'groupId=' + (tab.groupId || 'none'), 'expectedGroup=' + (groupId || 'none'), 'clientId=' + (clientId || 'none'));
+          if (tab.groupId) return;
+          Logger.info('[Monitor] Tab', tabId, 'escaped! Forcing regroup for client:', clientId);
           if (groupId) {
-            chrome.tabs.group({ tabIds: tabId, groupId: groupId }, function() {});
+            chrome.tabs.group({ tabIds: tabId, groupId: groupId }, function() {
+              Logger.info('[Monitor] Re-added tab', tabId, 'to existing group:', groupId);
+            });
           } else {
+            var baseName = CDPUtils.getGroupBaseName(clientId);
             chrome.tabs.group({ tabIds: tabId }, function(newGroupId) {
-              if (chrome.runtime.lastError || !newGroupId) return;
+              if (chrome.runtime.lastError || !newGroupId) {
+                Logger.error('[Monitor] Failed to create group for tab', tabId, ':', chrome.runtime.lastError?.message);
+                return;
+              }
               chrome.tabGroups.update(newGroupId, {
                 title: baseName,
                 color: CDPUtils.getGroupColorForClient(clientId),
                 collapsed: true
               }, function() {
                 State.setGroupIdForClient(clientId, newGroupId);
+                Logger.info('[Monitor] Created new group', newGroupId, 'for escaped tab', tabId);
               });
             });
           }
+        });
+      });
+    }, 5000);
+  }
         });
       });
     }, 5000);

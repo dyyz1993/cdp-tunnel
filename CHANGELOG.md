@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.6] - 2026-05-12
+### Added
+- `doGroup` 分组失败自动重试 3 次（500ms 间隔），提高首次分组成功率
+- 分组逃逸监控日志增强：记录每个 tab 的 groupId、clientId、预期分组状态
+
+### Fixed
+- 分组逃逸监控跳过 `clientId` 为空或 pre-existing 的 tab
+
 ## [2.5.5] - 2026-05-12
 ### Changed
 - 分组逃逸监控间隔从 10 秒缩短为 5 秒，更快检测并修复逃逸 tab

@@ -252,7 +252,6 @@ async function handleHttpRequest(req, res) {
                 if (url.startsWith('chrome://') || 
                     url.startsWith('chrome-extension://') ||
                     url.startsWith('devtools://') ||
-                    url.startsWith('about:blank') ||
                     url.startsWith('edge://')) {
                     return false;
                 }

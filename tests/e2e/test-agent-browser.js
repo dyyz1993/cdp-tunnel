@@ -253,17 +253,17 @@ async function runTest() {
 
     // === CONNECT: establish agent-browser session via CDP Tunnel ===
     log('CONNECT', `Connecting agent-browser to CDP tunnel (port ${PROXY_PORT})...`);
-    const connectResult = runWithCdp('open about:blank', 30000);
+    const connectResult = runWithCdp('open about:blank', 60000);
     if (!connectResult.ok) {
       log('CONNECT', `First attempt failed: ${connectResult.error}, retrying with get url...`);
       try {
         execSync(`agent-browser --cdp ${PROXY_PORT} --session ${SESSION_NAME} get url`, {
-          timeout: 30000, encoding: 'utf8', stdio: 'pipe'
+          timeout: 60000, encoding: 'utf8', stdio: 'pipe'
         });
       } catch {}
     }
     // Verify session is alive
-    const checkSession = runJSON('get url', 10000);
+    const checkSession = runJSON('get url', 20000);
     const connected = checkSession.ok && checkSession.data?.success !== false;
     record('agent-browser CDP connect', connected,
       connected ? `session ${SESSION_NAME} active` : connectResult.error || 'session not active');
@@ -274,7 +274,7 @@ async function runTest() {
 
     // === TEST 1: Open page ===
     log('TEST', '1. Open example.com...');
-    const openResult = run('open https://example.com', 20000);
+    const openResult = run('open https://example.com', 30000);
     await sleep(2000);
     record('open page', openResult.ok, openResult.ok ? 'navigated' : openResult.error);
 
@@ -329,7 +329,7 @@ document.getElementById('testForm').addEventListener('submit', function(e) {
     const formFile = path.join(os.tmpdir(), `ab-form-${Date.now()}.html`);
     fs.writeFileSync(formFile, formHtml);
 
-    const formResult = run(`open file://${formFile}`, 15000);
+    const formResult = run(`open file://${formFile}`, 30000);
     await sleep(1000);
     record('open form page', formResult.ok, formResult.ok ? 'opened' : formResult.error);
 

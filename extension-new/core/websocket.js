@@ -437,10 +437,6 @@ var WebSocketManager = (function() {
       });
     }, 5000);
   }
-        });
-      });
-    }, 5000);
-  }
 
   function stopGroupMonitor() {
     if (_groupMonitorTimer) {

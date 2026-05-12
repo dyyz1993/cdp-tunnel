@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.8] - 2026-05-12
+### Fixed
+- 修复 `websocket.js` 中 `startGroupMonitor` 函数末尾代码重复导致的 JS 语法错误（该错误导致扩展完全无法加载）
+
 ## [2.5.7] - 2026-05-12
 ### Fixed
 - 恢复 `addTabToAutomationGroup` 的 `cdpClients[0]` fallback 机制：当 `clientId` 为空时，如果存在已连接 client 则 fallback 到第一个 client 强制分组，避免逃逸

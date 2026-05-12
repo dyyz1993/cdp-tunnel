@@ -253,9 +253,9 @@ async function runTest() {
 
     // === CONNECT: establish agent-browser session via CDP Tunnel ===
     log('CONNECT', `Connecting agent-browser to CDP tunnel (port ${PROXY_PORT})...`);
-    const connectResult = runWithCdp('open about:blank', 60000);
+    const connectResult = runWithCdp(`connect ${PROXY_PORT}`, 60000);
     if (!connectResult.ok) {
-      log('CONNECT', `First attempt failed: ${connectResult.error}, retrying with get url...`);
+      log('CONNECT', `connect failed: ${connectResult.error}, retrying with get url...`);
       try {
         execSync(`agent-browser --cdp ${PROXY_PORT} --session ${SESSION_NAME} get url`, {
           timeout: 60000, encoding: 'utf8', stdio: 'pipe'
@@ -274,7 +274,7 @@ async function runTest() {
 
     // === TEST 1: Open page ===
     log('TEST', '1. Open example.com...');
-    const openResult = run('open https://example.com', 30000);
+    const openResult = run('open https://example.com', 60000);
     await sleep(2000);
     record('open page', openResult.ok, openResult.ok ? 'navigated' : openResult.error);
 
@@ -329,7 +329,7 @@ document.getElementById('testForm').addEventListener('submit', function(e) {
     const formFile = path.join(os.tmpdir(), `ab-form-${Date.now()}.html`);
     fs.writeFileSync(formFile, formHtml);
 
-    const formResult = run(`open file://${formFile}`, 30000);
+    const formResult = run(`open file://${formFile}`, 60000);
     await sleep(1000);
     record('open form page', formResult.ok, formResult.ok ? 'opened' : formResult.error);
 

@@ -322,6 +322,132 @@ wss.on('connection', (ws, req) => {
     }
 });
 
+function cleanupClient(ws, id, reason) {
+    const sessionsToClean = [];
+    for (const [sessionId, clientId] of sessionToClientId.entries()) {
+        if (clientId === id) {
+            sessionsToClean.push(sessionId);
+            sessionToClientId.delete(sessionId);
+        }
+    }
+
+    clientConnections.delete(ws);
+    clientById.delete(id);
+
+    logConnectionEvent('CLIENT_DISCONNECTED', {
+        id,
+        reason,
+        sessionsCleaned: sessionsToClean.length,
+        totalPlugins: pluginConnections.size,
+        totalClients: clientConnections.size
+    });
+
+    logDisconnect('CLIENT_CLEANUP', {
+        clientId: id,
+        reason,
+        sessionsLost: sessionsToClean.length,
+        cdpMethodsUsed: ws.cdpTrace ? [...new Set(ws.cdpTrace)] : [],
+        uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
+        remainingClients: clientConnections.size,
+        pluginAlive: pluginConnections.size > 0,
+        pairedPluginId: ws.pairedPlugin?.id || null
+    });
+
+    if (ws.cdpTrace && ws.cdpTrace.length && shouldLog('debug')) {
+        const unique = [...new Set(ws.cdpTrace)];
+        console.log(`[CDP TRACE] ${id} methods (${ws.cdpTrace.length}): ${unique.join(', ')}`);
+    }
+
+    if (ws.pairedPlugin) {
+        safeSend(ws.pairedPlugin, JSON.stringify({
+            type: 'client-disconnected',
+            clientId: id,
+            sessions: sessionsToClean
+        }), 'plugin');
+    }
+
+    broadcastClientList();
+
+    for (const [tId, cId] of targetIdToClientId.entries()) {
+        if (cId === id) targetIdToClientId.delete(tId);
+    }
+    for (const [bcId, cId] of browserContextToClientId.entries()) {
+        if (cId === id) browserContextToClientId.delete(bcId);
+    }
+    if (clientIdToBrowserContext.has(id)) {
+        clientIdToBrowserContext.delete(id);
+    }
+    for (const [gId, mapping] of globalRequestIdMap.entries()) {
+        if (mapping.clientId === id) globalRequestIdMap.delete(gId);
+    }
+
+    if (ws.pairedPlugin) {
+        ws.pairedPlugin.pairedClientId = null;
+    }
+    connectionPairs.delete(id);
+}
+
+function sendPendingRequestErrors(pluginWs) {
+    const toDelete = [];
+    for (const [gId, mapping] of globalRequestIdMap.entries()) {
+        const clientWs = clientById.get(mapping.clientId);
+        if (clientWs && clientWs.pairedPlugin === pluginWs) {
+            const errorResponse = {
+                id: mapping.originalId,
+                error: { code: -32000, message: 'Plugin disconnected: request cancelled' }
+            };
+            if (mapping.sessionId) {
+                errorResponse.sessionId = mapping.sessionId;
+            }
+            safeSend(clientWs, JSON.stringify(errorResponse), 'client');
+            toDelete.push(gId);
+        }
+    }
+    toDelete.forEach(gId => globalRequestIdMap.delete(gId));
+}
+
+function cleanupPlugin(ws, id, reason) {
+    pluginConnections.delete(ws);
+
+    if (pluginConnections.size === 0) {
+        updateExtensionState(false);
+    }
+
+    sendPendingRequestErrors(ws);
+
+    const affectedClients = [];
+    clientConnections.forEach(clientWs => {
+        if (clientWs.pairedPlugin === ws) {
+            if (clientWs.pluginMessageHandler) {
+                ws.off('message', clientWs.pluginMessageHandler);
+                clientWs.pluginMessageHandler = null;
+            }
+            clientWs.pairedPlugin = null;
+            affectedClients.push(clientWs.id);
+            if (clientWs.readyState === WebSocket.OPEN) {
+                clientWs.send(JSON.stringify({
+                    type: 'plugin-disconnected',
+                    message: 'Plugin connection lost'
+                }));
+            }
+        }
+    });
+
+    logDisconnect('PLUGIN_CLEANUP', {
+        pluginId: id,
+        reason,
+        remainingPlugins: pluginConnections.size,
+        affectedClients,
+        uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
+        activeSessions: sessionToClientId.size,
+        pendingRequests: pendingAttachRequests.size
+    });
+
+    if (ws.pairedClientId) {
+        connectionPairs.delete(ws.pairedClientId);
+    }
+}
+
 /**
  * 处理 Chrome 扩展连接
  */
@@ -687,15 +813,12 @@ function handlePluginConnection(ws, clientInfo) {
         }
     });
 
-    // 连接关闭
     ws.on('close', (code, reason) => {
-        pluginConnections.delete(ws);
         if (shouldLog('info')) {
             console.log(`\n[PLUGIN DISCONNECTED] ${id}`);
             console.log(`  - Code: ${code}, Reason: ${reason || 'none'}`);
             console.log(`  - Total plugin connections: ${pluginConnections.size}`);
         }
-        
         logConnectionEvent('PLUGIN_DISCONNECTED', {
             id,
             code,
@@ -703,51 +826,7 @@ function handlePluginConnection(ws, clientInfo) {
             totalPlugins: pluginConnections.size,
             totalClients: clientConnections.size
         });
-        
-        if (pluginConnections.size === 0) {
-            updateExtensionState(false);
-        }
-
-        // 清理配对关系并通知所有受影响的 Client
-        const affectedClients = [];
-        clientConnections.forEach(clientWs => {
-            if (clientWs.pairedPlugin === ws) {
-                // 清理 page 连接的事件监听器
-                if (clientWs.pluginMessageHandler) {
-                    ws.off('message', clientWs.pluginMessageHandler);
-                    clientWs.pluginMessageHandler = null;
-                }
-                clientWs.pairedPlugin = null;
-                affectedClients.push(clientWs.id);
-                if (clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.send(JSON.stringify({
-                        type: 'plugin-disconnected',
-                        message: 'Plugin connection lost'
-                    }));
-                }
-                if (shouldLog('debug')) {
-                    console.log(`  - Cleared pairedPlugin for client: ${clientWs.id}`);
-                }
-            }
-        });
-        
-        logDisconnect('PLUGIN_DISCONNECTED', {
-            pluginId: id,
-            code, reason: reason?.toString() || 'none',
-            remainingPlugins: pluginConnections.size,
-            affectedClients,
-            uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
-            activeSessions: sessionToClientId.size,
-            pendingRequests: pendingAttachRequests.size
-        });
-
-        if (affectedClients.length > 0) {
-            logConnectionEvent('PLUGIN_DISCONNECT_AFFECTED_CLIENTS', { pluginId: id, affectedClients });
-        }
-        
-        if (ws.pairedClientId) {
-            connectionPairs.delete(ws.pairedClientId);
-        }
+        cleanupPlugin(ws, id, `close:${code}`);
     });
 
     // 错误处理
@@ -998,111 +1077,24 @@ function handleClientConnection(ws, clientInfo, customClientId = null) {
         }
     });
 
-    // 连接关闭
     ws.on('close', async (code, reason) => {
-        // 记录断开事件到日志文件
         logCDP('EVENT', `CLIENT DISCONNECTED id=${id} code=${code} reason=${reason.toString() || 'none'}`);
-        
-        // 收集该 client 的所有 session
-        const sessionsToClean = [];
-        for (const [sessionId, clientId] of sessionToClientId.entries()) {
-            if (clientId === id) {
-                sessionsToClean.push(sessionId);
-                sessionToClientId.delete(sessionId);
-            }
-        }
-        
-        clientConnections.delete(ws);
-        clientById.delete(id);
         if (shouldLog('info')) {
             console.log(`\n[CLIENT DISCONNECTED] ${id}`);
             console.log(`  - Code: ${code}, Reason: ${reason || 'none'}`);
-            console.log(`  - Sessions to clean: ${sessionsToClean.length}`);
-            console.log(`  - Total client connections: ${clientConnections.size}`);
         }
-        
-        logConnectionEvent('CLIENT_DISCONNECTED', {
-            id,
-            code,
-            reason: reason?.toString() || 'none',
-            sessionsCleaned: sessionsToClean.length,
-            totalPlugins: pluginConnections.size,
-            totalClients: clientConnections.size
-        });
-
-        const isUnexpected = code !== 1000 && code !== 1001;
-        if (isUnexpected) {
-            logDisconnect('CLIENT_DISCONNECTED_UNEXPECTED', {
-                clientId: id,
-                code, reason: reason?.toString() || 'none',
-                sessionsLost: sessionsToClean.length,
-                cdpMethodsUsed: ws.cdpTrace ? [...new Set(ws.cdpTrace)] : [],
-                uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
-                remainingClients: clientConnections.size,
-                pluginAlive: pluginConnections.size > 0,
-                pairedPluginId: ws.pairedPlugin?.id || null
-            });
-        }
-        
-        if (ws.cdpTrace && ws.cdpTrace.length && shouldLog('debug')) {
-            const unique = [...new Set(ws.cdpTrace)];
-            console.log(`[CDP TRACE] ${id} methods (${ws.cdpTrace.length}): ${unique.join(', ')}`);
-        }
-
-        // 向 plugin 发送清理命令
-        if (ws.pairedPlugin) {
-            safeSend(ws.pairedPlugin, JSON.stringify({
-                type: 'client-disconnected',
-                clientId: id,
-                sessions: sessionsToClean
-            }), 'plugin');
-            if (shouldLog('debug')) {
-                console.log(`  - Notified plugin of client disconnect`);
-            }
-        }
-
-        // 广播更新后的客户端列表
-        broadcastClientList();
-
-        // 清理该 client 的所有映射
-        for (const [tId, cId] of targetIdToClientId.entries()) {
-            if (cId === id) targetIdToClientId.delete(tId);
-        }
-        for (const [bcId, cId] of browserContextToClientId.entries()) {
-            if (cId === id) browserContextToClientId.delete(bcId);
-        }
-        if (clientIdToBrowserContext.has(id)) {
-            clientIdToBrowserContext.delete(id);
-        }
-        for (const [gId, mapping] of globalRequestIdMap.entries()) {
-            if (mapping.clientId === id) globalRequestIdMap.delete(gId);
-        }
-
-        // 清理配对关系
-        if (ws.pairedPlugin) {
-            ws.pairedPlugin.pairedClientId = null;
-        }
-        connectionPairs.delete(id);
+        cleanupClient(ws, id, `close:${code}`);
     });
 
-    // 错误处理
     ws.on('error', (error) => {
         console.error(`[CLIENT ERROR] ${id}:`, error.message);
-        
         logConnectionEvent('CLIENT_ERROR', {
             id,
             error: error.message,
             totalPlugins: pluginConnections.size,
             totalClients: clientConnections.size
         });
-        
-        clientConnections.delete(ws);
-        clientById.delete(id);
-        
-        if (ws.pairedPlugin) {
-            ws.pairedPlugin.pairedClientId = null;
-        }
-        connectionPairs.delete(id);
+        cleanupClient(ws, id, `error:${error.message}`);
     });
 }
 
@@ -1430,29 +1422,13 @@ const heartbeatInterval = setInterval(() => {
     const now = new Date().toISOString();
     const nowMs = Date.now();
 
-    // 检查 plugin 连接
     pluginConnections.forEach((ws) => {
         if (!ws.isAlive) {
             if (shouldLog('warn')) {
                 console.log(`[${now}] Plugin ${ws.id} not responding, terminating...`);
             }
             logConnectionEvent('HEARTBEAT_TIMEOUT', { type: 'plugin', id: ws.id });
-            logDisconnect('HEARTBEAT_TIMEOUT_PLUGIN', {
-                pluginId: ws.id,
-                pairedClientId: ws.pairedClientId || null,
-                uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
-                remainingPlugins: pluginConnections.size,
-                activeClients: clientConnections.size,
-                activeSessions: sessionToClientId.size
-            });
-            pluginConnections.delete(ws);
-            if (ws.pairedClientId) {
-                connectionPairs.delete(ws.pairedClientId);
-                const clientWs = clientById.get(ws.pairedClientId);
-                if (clientWs) {
-                    clientWs.pairedPlugin = null;
-                }
-            }
+            cleanupPlugin(ws, ws.id, 'heartbeat_timeout');
             return ws.terminate();
         }
         ws.isAlive = false;
@@ -1460,29 +1436,16 @@ const heartbeatInterval = setInterval(() => {
         logConnectionEvent('HEARTBEAT_PING', { type: 'plugin', id: ws.id, bufferedAmount: ws.bufferedAmount });
     });
 
-    // 检查 client 连接
     clientConnections.forEach((ws) => {
         if (!ws.isAlive) {
             if (shouldLog('warn')) {
                 console.log(`[${now}] Client ${ws.id} not responding, terminating...`);
             }
             logConnectionEvent('HEARTBEAT_TIMEOUT', { type: 'client', id: ws.id });
-            logDisconnect('HEARTBEAT_TIMEOUT_CLIENT', {
-                clientId: ws.id,
-                uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
-                remainingClients: clientConnections.size,
-                pluginAlive: pluginConnections.size > 0
-            });
-            clientConnections.delete(ws);
-            clientById.delete(ws.id);
-            if (ws.pairedPlugin) {
-                ws.pairedPlugin.pairedClientId = null;
-            }
-            connectionPairs.delete(ws.id);
+            cleanupClient(ws, ws.id, 'heartbeat_timeout');
             return ws.terminate();
         }
         
-        // 检查空闲超时
         if (ws.lastActivityTime && (nowMs - ws.lastActivityTime > CONFIG.CLIENT_IDLE_TIMEOUT)) {
             const idleSeconds = Math.round((nowMs - ws.lastActivityTime) / 1000);
             if (shouldLog('info')) {
@@ -1512,10 +1475,7 @@ setInterval(() => {
         }
     });
     toRemove.forEach(ws => {
-        pluginConnections.delete(ws);
-        if (shouldLog('debug')) {
-            console.log(`[CLEANUP] Removed zombie plugin: ${ws.id}, state: ${ws.readyState}`);
-        }
+        cleanupPlugin(ws, ws.id, 'zombie_cleanup');
     });
     
     toRemove.length = 0;
@@ -1525,11 +1485,7 @@ setInterval(() => {
         }
     });
     toRemove.forEach(ws => {
-        clientConnections.delete(ws);
-        clientById.delete(ws.id);
-        if (shouldLog('debug')) {
-            console.log(`[CLEANUP] Removed zombie client: ${ws.id}, state: ${ws.readyState}`);
-        }
+        cleanupClient(ws, ws.id, 'zombie_cleanup');
     });
 }, 60000);
 

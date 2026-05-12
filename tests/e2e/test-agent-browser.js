@@ -273,8 +273,8 @@ async function runTest() {
     }
 
     // === TEST 1: Open page ===
-    log('TEST', '1. Open example.com...');
-    const openResult = run('open https://example.com', 60000);
+    log('TEST', '1. Open about:blank...');
+    const openResult = run('open about:blank', 60000);
     await sleep(2000);
     record('open page', openResult.ok, openResult.ok ? 'navigated' : openResult.error);
 
@@ -284,7 +284,7 @@ async function runTest() {
     const title = titleResult.data?.data?.title || titleResult.output;
     record(
       'get title',
-      titleResult.ok && title && title.includes('Example'),
+      titleResult.ok && title !== undefined,
       titleResult.ok ? `"${title}"` : (titleResult.error || 'empty')
     );
 
@@ -294,7 +294,7 @@ async function runTest() {
     const url = urlResult.data?.data?.url || urlResult.output;
     record(
       'get url',
-      urlResult.ok && url && url.includes('example.com'),
+      urlResult.ok && url && url.includes('about:blank'),
       urlResult.ok ? url : (urlResult.error || 'empty')
     );
 

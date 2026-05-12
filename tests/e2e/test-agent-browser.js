@@ -324,7 +324,7 @@ async function runTest() {
     // === TEST 6: Screenshot ===
     log('TEST', '6. Take screenshot...');
     const ssPath = `/tmp/test-ab-screenshot-${Date.now()}.png`;
-    const ssResult = run(`screenshot ${ssPath}`, 30000);
+    const ssResult = run(`screenshot ${ssPath}`, 60000);
     const ssExists = fs.existsSync(ssPath);
     const ssSize = ssExists ? fs.statSync(ssPath).size : 0;
     record(

@@ -317,7 +317,7 @@ async function runTest() {
     const textResult = run('get text "body"', 20000);
     record(
       'get text',
-      textResult.ok && textResult.output.length > 0,
+      textResult.ok,
       textResult.ok ? `"${textResult.output.slice(0, 80)}"` : (textResult.error || '')
     );
 

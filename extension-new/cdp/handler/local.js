@@ -135,17 +135,96 @@ var LocalHandler = (function() {
     return {};
   }
 
-  function tabGetGroupInfo(context) {
+  function tabUngroup(context) {
     var clientId = context.clientId;
     var groupId = null;
-    var baseName = null;
     try {
       groupId = State.getGroupIdForClient(clientId);
+    } catch (e) {
+      Logger.error('[TabUngroup] Error getting groupId: ' + (e.message || e));
+      return Promise.resolve({ success: false, ungroupedCount: 0, error: e.message || String(e) });
+    }
+    if (groupId == null) {
+      return Promise.resolve({ success: true, ungroupedCount: 0 });
+    }
+    return new Promise(function(resolve) {
+      chrome.tabs.query({ groupId: groupId }, function(tabs) {
+        if (chrome.runtime.lastError) {
+          Logger.error('[TabUngroup] chrome.runtime.lastError: ' + chrome.runtime.lastError.message);
+          resolve({ success: false, ungroupedCount: 0, error: chrome.runtime.lastError.message });
+          return;
+        }
+        if (!tabs || tabs.length === 0) {
+          resolve({ success: true, ungroupedCount: 0 });
+          return;
+        }
+        var tabIds = tabs.map(function(tab) { return tab.id; });
+        chrome.tabs.ungroup(tabIds, function() {
+          if (chrome.runtime.lastError) {
+            Logger.error('[TabUngroup] ungroup lastError: ' + chrome.runtime.lastError.message);
+            resolve({ success: false, ungroupedCount: 0, error: chrome.runtime.lastError.message });
+            return;
+          }
+          State.removeGroupForClient(clientId);
+          resolve({ success: true, ungroupedCount: tabIds.length });
+        });
+      });
+    });
+  }
+
+  function tabGetGroupInfo(context) {
+    var clientId = context.clientId;
+    var cachedGroupId = null;
+    var baseName = null;
+    try {
+      cachedGroupId = State.getGroupIdForClient(clientId);
       baseName = CDPUtils.getGroupBaseName(clientId);
     } catch (e) {
       Logger.error('[TabGetGroupInfo] Error: ' + (e.message || e));
     }
-    return Promise.resolve({ groupId: groupId, baseName: baseName, clientId: clientId });
+
+    var attachedTabIds = State.getAttachedTabIds();
+    var matchedTabId = null;
+    for (var i = 0; i < attachedTabIds.length; i++) {
+      if (State.getClientIdByTabId(attachedTabIds[i]) === clientId) {
+        matchedTabId = attachedTabIds[i];
+        break;
+      }
+    }
+
+    if (matchedTabId == null) {
+      return Promise.resolve({
+        groupId: -1,
+        cachedGroupId: cachedGroupId,
+        baseName: baseName,
+        clientId: clientId,
+        tabId: null
+      });
+    }
+
+    var tabId = matchedTabId;
+    return new Promise(function(resolve) {
+      chrome.tabs.get(tabId, function(tab) {
+        if (chrome.runtime.lastError) {
+          Logger.error('[TabGetGroupInfo] chrome.tabs.get error: ' + chrome.runtime.lastError.message);
+          resolve({
+            groupId: -1,
+            cachedGroupId: cachedGroupId,
+            baseName: baseName,
+            clientId: clientId,
+            tabId: tabId
+          });
+          return;
+        }
+        resolve({
+          groupId: tab.groupId != null ? tab.groupId : -1,
+          cachedGroupId: cachedGroupId,
+          baseName: baseName,
+          clientId: clientId,
+          tabId: tabId
+        });
+      });
+    });
   }
 
   function tabGetMuteStatus(params) {
@@ -322,6 +401,7 @@ var LocalHandler = (function() {
     getTargetInfoById: getTargetInfoById,
     mapToTargetInfo: mapToTargetInfo,
     tabGetMuteStatus: tabGetMuteStatus,
-    tabGetGroupInfo: tabGetGroupInfo
+    tabGetGroupInfo: tabGetGroupInfo,
+    tabUngroup: tabUngroup
   };
 })();

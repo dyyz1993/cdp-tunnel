@@ -149,28 +149,8 @@ var SpecialHandler = (function() {
     }
     var baseName = CDPUtils.getGroupBaseName(groupClientId);
 
-    var retries = 0;
-    var maxRetries = 20;
-    function tryGroup() {
-      chrome.tabs.get(tabId, function(tab) {
-        if (chrome.runtime.lastError || !tab) {
-          Logger.error('[TabGroup] Tab not found:', tabId, 'retries:', retries);
-          return;
-        }
-        if (tab.status === 'complete') {
-          Logger.info('[TabGroup] Tab ready, executing group operation for:', baseName);
-          doGroup(tabId, groupClientId, baseName);
-        } else if (retries < maxRetries) {
-          retries++;
-          Logger.info('[TabGroup] Tab not ready (', tab.status, '), retry', retries, '/', maxRetries);
-          setTimeout(tryGroup, 200);
-        } else {
-          Logger.warn('[TabGroup] Tab never reached complete status, grouping anyway. tabId:', tabId);
-          doGroup(tabId, groupClientId, baseName);
-        }
-      });
-    }
-    tryGroup();
+    Logger.info('[TabGroup] Grouping tab immediately for:', baseName);
+    doGroup(tabId, groupClientId, baseName);
   }
 
   function doGroup(tabId, clientId, baseName, retries) {
@@ -608,6 +588,7 @@ function checkTabVisibility(tabId) {
     pageAddScriptToEvaluateOnNewDocument: pageAddScriptToEvaluateOnNewDocument,
     runtimeRunIfWaitingForDebugger: runtimeRunIfWaitingForDebugger,
     domSetFileInputFiles: domSetFileInputFiles,
-    updateTabGroupName: updateTabGroupName
+    updateTabGroupName: updateTabGroupName,
+    addTabToAutomationGroup: addTabToAutomationGroup
   };
 })();

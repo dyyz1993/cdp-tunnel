@@ -24,6 +24,7 @@ var CDP_HANDLERS = {
 
   'Tab.getMuteStatus': { type: 'LOCAL', handler: LocalHandler.tabGetMuteStatus },
   'Tab.getGroupInfo': { type: 'LOCAL', handler: LocalHandler.tabGetGroupInfo },
+  'Tab.ungroup': { type: 'LOCAL', handler: LocalHandler.tabUngroup },
 
   'SystemInfo.getInfo': { type: 'LOCAL', handler: LocalHandler.systemInfoGetInfo },
   'SystemInfo.getProcessInfo': { type: 'LOCAL', handler: LocalHandler.systemInfoGetProcessInfo },

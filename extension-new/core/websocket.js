@@ -409,8 +409,8 @@ var WebSocketManager = (function() {
             return;
           }
           var groupId = State.getGroupIdForClient(clientId);
-          Logger.info('[Monitor] Tab', tabId, 'groupId=' + (tab.groupId || 'none'), 'expectedGroup=' + (groupId || 'none'), 'clientId=' + (clientId || 'none'));
-          if (tab.groupId) return;
+          Logger.info('[Monitor] Tab', tabId, 'groupId=' + (tab.groupId > -1 ? tab.groupId : 'none'), 'expectedGroup=' + (groupId > -1 ? groupId : 'none'), 'clientId=' + (clientId || 'none'));
+          if (tab.groupId > -1) return;
           Logger.info('[Monitor] Tab', tabId, 'escaped! Forcing regroup for client:', clientId);
           if (groupId) {
             chrome.tabs.group({ tabIds: tabId, groupId: groupId }, function() {

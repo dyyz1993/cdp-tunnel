@@ -230,56 +230,7 @@ importScripts('features/automation-badge.js');
           }
         });
         
-        // 将标签页添加到CDP组（添加延迟等待）
-        setTimeout(function() {
-          var openerClientId = openerTabId ? State.getClientIdByTabId(openerTabId) : null;
-          var groupClientId = openerClientId;
-          if (!groupClientId) {
-            var cdpClients = State.getCDPClients() || [];
-            if (cdpClients.length > 0 && cdpClients[0] && cdpClients[0].id) {
-              groupClientId = cdpClients[0].id;
-            }
-          }
-
-          if (!groupClientId) return;
-          var baseName = CDPUtils.getGroupBaseName(groupClientId);
-          Logger.info('[TabGroup] background onCreated, baseName:', baseName);
-
-          chrome.tabGroups.query({}, function(allGroups) {
-            var existing = CDPUtils.findGroupByName(allGroups, baseName);
-            if (existing) {
-              chrome.tabs.group({ tabIds: tabId, groupId: existing.id }, function(groupId) {
-                if (chrome.runtime.lastError) {
-                  Logger.error('[TabGroup] Failed to add tab to group:', chrome.runtime.lastError.message);
-                } else {
-                  State.setGroupIdForClient(groupClientId, existing.id);
-                  Logger.info('[TabGroup] Tab added to group:', groupId);
-                }
-              });
-            } else {
-              chrome.tabs.group({ tabIds: tabId }, function(groupId) {
-                if (chrome.runtime.lastError) {
-                  Logger.error('[TabGroup] Failed to create group:', chrome.runtime.lastError.message);
-                  return;
-                }
-                if (groupId) {
-                  chrome.tabGroups.update(groupId, {
-                    title: baseName,
-                    color: CDPUtils.getGroupColorForClient(groupClientId),
-                    collapsed: true
-                  }, function(group) {
-                    if (chrome.runtime.lastError) {
-                      Logger.error('[TabGroup] Failed to update group:', chrome.runtime.lastError.message);
-                    } else {
-                      State.setGroupIdForClient(groupClientId, groupId);
-                      Logger.info('[TabGroup] Group created:', group);
-                    }
-                  });
-                }
-              });
-            }
-          });
-        }, 2000);
+        SpecialHandler.addTabToAutomationGroup(tabId, openerClientId);
         
         Logger.info('[Tabs] Sending Target.attachedToTarget event');
         

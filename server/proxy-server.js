@@ -159,6 +159,7 @@ const { version: PKG_VERSION } = require('../package.json');
 
 let cachedTargets = [];
 let lastTargetsUpdate = 0;
+let cachedBrowserVersion = null;
 
 console.log('='.repeat(60));
 console.log(`  WebSocket CDP Proxy Server v${PKG_VERSION}`);
@@ -185,6 +186,39 @@ function buildWebSocketDebuggerUrl(req) {
 
 function buildTargetWebSocketUrl(req, targetId) {
     return `ws://${getHost(req)}/devtools/page/${targetId}`;
+}
+
+function invalidateTargetsCache() {
+    lastTargetsUpdate = 0;
+}
+
+async function requestVersionFromPlugin() {
+    if (cachedBrowserVersion) return cachedBrowserVersion;
+
+    const plugin = pluginConnections.values().next().value;
+    if (!plugin || plugin.readyState !== WebSocket.OPEN) {
+        return null;
+    }
+
+    return new Promise((resolve) => {
+        const requestId = `version_${Date.now()}`;
+        const timeout = setTimeout(() => resolve(null), 2000);
+
+        const handler = (data) => {
+            try {
+                const msg = JSON.parse(data.toString());
+                if (msg.id === requestId && msg.result) {
+                    clearTimeout(timeout);
+                    plugin.off('message', handler);
+                    cachedBrowserVersion = msg.result;
+                    resolve(cachedBrowserVersion);
+                }
+            } catch (e) {}
+        };
+
+        plugin.on('message', handler);
+        plugin.send(JSON.stringify({ id: requestId, method: 'Browser.getVersion' }));
+    });
 }
 
 async function requestTargetsFromPlugin() {
@@ -229,11 +263,14 @@ async function handleHttpRequest(req, res) {
     const url = new URL(req.url, `http://localhost:${PORT}`);
     
     if (url.pathname === '/json/version' || url.pathname === '/json/version/') {
+        const ver = await requestVersionFromPlugin();
+        const userAgent = ver?.userAgent || 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Safari/537.36';
+        const product = ver?.product || 'Chrome/131.0.6778.86';
         const payload = {
-            Browser: `Chrome/131.0.6778.86`,
-            'Protocol-Version': '1.3',
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Safari/537.36',
-            'V8-Version': '13.1.201.8',
+            Browser: product,
+            'Protocol-Version': ver?.protocolVersion || '1.3',
+            'User-Agent': userAgent,
+            'V8-Version': ver?.jsVersion || '',
             'WebKit-Version': '537.36',
             webSocketDebuggerUrl: buildWebSocketDebuggerUrl(req)
         };
@@ -745,6 +782,7 @@ function handlePluginConnection(ws, clientInfo) {
                             clientWs.send(msgStr);
                             console.log(`[ATTACHED EVENT] Sent cached event to client: ${mapping.clientId}`);
                         }
+                        invalidateTargetsCache();
                     }
                     // 过滤 Target.getTargets 响应，只返回该客户端拥有的 target
                     if (mapping.isGetTargets && parsed.result && parsed.result.targetInfos) {
@@ -762,6 +800,7 @@ function handlePluginConnection(ws, clientInfo) {
                             targetIdToClientId.delete(mapping.closeTargetId);
                             console.log(`[CLOSE TARGET CLEANUP] removed targetId=${mapping.closeTargetId?.substring(0,8)} from mapping`);
                         }
+                        invalidateTargetsCache();
                     }
                     
                     // 然后发送响应给客户端

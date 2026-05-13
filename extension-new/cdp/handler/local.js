@@ -1,10 +1,11 @@
 var LocalHandler = (function() {
   function browserGetVersion() {
     var userAgent = navigator.userAgent || '';
-    var chromeVersion = CDPUtils.getChromeVersion(userAgent);
+    var match = userAgent.match(/Chrome\/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/);
+    var product = match ? 'Chrome/' + match[1] : 'Chrome';
     return {
       protocolVersion: '1.3',
-      product: chromeVersion ? 'Chrome/' + chromeVersion : 'Chrome',
+      product: product,
       revision: '',
       userAgent: userAgent,
       jsVersion: ''

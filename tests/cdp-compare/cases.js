@@ -437,6 +437,64 @@ module.exports = {
 
     return results;
   },
+
+  'Case 11: 新建 page 在 Target.getTargets 中是否可见（区分已有 vs 新建）': async (ctx) => {
+    const results = [];
+
+    const directVersion = await ctx.httpGet(`http://localhost:${ctx.directPort}/json/version`);
+    const tunnelVersion = await ctx.httpGet(`http://localhost:${ctx.tunnelPort}/json/version`);
+    const directWs = await ctx.connectWS(directVersion.webSocketDebuggerUrl);
+    const tunnelWs = await ctx.connectWS(tunnelVersion.webSocketDebuggerUrl);
+
+    const directBefore = await ctx.sendCDP(directWs, 'Target.getTargets');
+    const tunnelBefore = await ctx.sendCDP(tunnelWs, 'Target.getTargets');
+    const directPagesBefore = (directBefore.result?.targetInfos || []).filter(t => t.type === 'page').length;
+    const tunnelPagesBefore = (tunnelBefore.result?.targetInfos || []).filter(t => t.type === 'page').length;
+
+    results.push({
+      name: '创建前: Target.getTargets page 数量 (均为新客户端)',
+      direct: directPagesBefore,
+      tunnel: tunnelPagesBefore,
+      match: directPagesBefore === tunnelPagesBefore,
+      details: `两者都是新连接，尚未创建任何 page`
+    });
+
+    const directCreate = await ctx.sendCDP(directWs, 'Target.createTarget', { url: 'about:blank' });
+    const tunnelCreate = await ctx.sendCDP(tunnelWs, 'Target.createTarget', { url: 'about:blank' });
+    const directNewId = directCreate.result?.targetId;
+    const tunnelNewId = tunnelCreate.result?.targetId;
+
+    await ctx.sleep(1000);
+
+    const directAfter = await ctx.sendCDP(directWs, 'Target.getTargets');
+    const tunnelAfter = await ctx.sendCDP(tunnelWs, 'Target.getTargets');
+    const directPagesAfter = (directAfter.result?.targetInfos || []).filter(t => t.type === 'page');
+    const tunnelPagesAfter = (tunnelAfter.result?.targetInfos || []).filter(t => t.type === 'page');
+
+    const directFound = directPagesAfter.some(t => t.targetId === directNewId);
+    const tunnelFound = tunnelPagesAfter.some(t => t.targetId === tunnelNewId);
+
+    results.push({
+      name: '创建后: 新 page 在 Target.getTargets 中可见',
+      direct: directFound,
+      tunnel: tunnelFound,
+      match: directFound === tunnelFound,
+      details: `标准: ${directFound ? '找到' : '未找到'} | Tunnel: ${tunnelFound ? '找到' : '未找到'} (新建的 page)`
+    });
+
+    results.push({
+      name: '创建后: page 数量变化',
+      direct: directPagesAfter.length - directPagesBefore,
+      tunnel: tunnelPagesAfter.length - tunnelPagesBefore,
+      match: (directPagesAfter.length - directPagesBefore) === (tunnelPagesAfter.length - tunnelPagesBefore),
+      details: `标准 +${directPagesAfter.length - directPagesBefore} vs Tunnel +${tunnelPagesAfter.length - tunnelPagesBefore}`
+    });
+
+    directWs.close();
+    tunnelWs.close();
+
+    return results;
+  },
 };
 
 function checkEndpoint(port, urlPath, method) {

@@ -17,8 +17,8 @@ module.exports = {
         name: 'Browser 字段',
         direct: direct.Browser,
         tunnel: tunnel.Browser,
-        match: direct.Browser === tunnel.Browser,
-        details: 'Chrome 版本号是否一致'
+        match: tunnel.Browser.startsWith('Chrome/' + direct.Browser.split('/')[1].split('.').slice(0, 1).join('.')),
+        details: 'Chrome 主版本号是否一致'
       },
       {
         name: 'Protocol-Version 字段',

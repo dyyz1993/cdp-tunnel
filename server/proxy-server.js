@@ -269,7 +269,7 @@ async function handleHttpRequest(req, res) {
         const userAgent = ver?.userAgent || 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Safari/537.36';
         const product = ver?.product || 'Chrome/131.0.6778.86';
         const payload = {
-            Browser: product,
+            Browser: `${product} (cdp-tunnel/${PKG_VERSION})`,
             'Protocol-Version': ver?.protocolVersion || '1.3',
             'User-Agent': userAgent,
             'V8-Version': ver?.jsVersion || '',

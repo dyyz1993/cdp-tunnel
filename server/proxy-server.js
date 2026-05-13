@@ -210,8 +210,10 @@ async function requestVersionFromPlugin() {
                 if (msg.id === requestId && msg.result) {
                     clearTimeout(timeout);
                     plugin.off('message', handler);
-                    cachedBrowserVersion = msg.result;
-                    resolve(cachedBrowserVersion);
+                    if (msg.result.product || msg.result.userAgent) {
+                        cachedBrowserVersion = msg.result;
+                    }
+                    resolve(cachedBrowserVersion || msg.result);
                 }
             } catch (e) {}
         };
@@ -624,6 +626,8 @@ function handlePluginConnection(ws, clientInfo) {
             if (!match) {
                 console.log(`  ↳ Run "cdp-tunnel update" or reload the extension to sync versions`);
             }
+            cachedBrowserVersion = null;
+            requestVersionFromPlugin();
             return;
         }
         
@@ -782,7 +786,16 @@ function handlePluginConnection(ws, clientInfo) {
                             clientWs.send(msgStr);
                             console.log(`[ATTACHED EVENT] Sent cached event to client: ${mapping.clientId}`);
                         }
-                        invalidateTargetsCache();
+                        const newTargetInfo = cachedCreated?.parsed?.params?.targetInfo
+                            || cachedEvent?.parsed?.params?.targetInfo;
+                        if (newTargetInfo) {
+                            const exists = cachedTargets.some(t => t.targetId === targetId);
+                            if (!exists) {
+                                cachedTargets.push(newTargetInfo);
+                            }
+                        } else {
+                            invalidateTargetsCache();
+                        }
                     }
                     // 过滤 Target.getTargets 响应，只返回该客户端拥有的 target
                     if (mapping.isGetTargets && parsed.result && parsed.result.targetInfos) {

@@ -14,7 +14,8 @@
     "benchmark": "node benchmark/run-all.js",
     "benchmark:native": "node benchmark/run-all.js --native",
     "benchmark:proxy": "node benchmark/run-all.js --proxy",
-    "demo": "node demo/server.js"
+    "demo": "node demo/server.js",
+    "test:compare": "node tests/cdp-compare/cdp-compare-runner.js"
   },
   "keywords": [
     "cdp",

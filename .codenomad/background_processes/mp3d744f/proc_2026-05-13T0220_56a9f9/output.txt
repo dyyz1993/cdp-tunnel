@@ -1,1 +1,14 @@
 v2.5.13
+[main e6c43a0] fix: tab group escape — fix monitor groupId=-1 bug + immediate grouping + unified cleanup
+ 15 files changed, 558 insertions(+), 82 deletions(-)
+ create mode 100644 .codenomad/background_processes/mp3d744f/index.json
+ create mode 100644 .codenomad/background_processes/mp3d744f/proc_2026-05-13T0159_27ab00/output.txt
+ create mode 100644 .codenomad/background_processes/mp3d744f/proc_2026-05-13T0159_b336aa/output.txt
+ create mode 100644 .codenomad/background_processes/mp3d744f/proc_2026-05-13T0204_7c319d/output.txt
+ create mode 100644 .codenomad/background_processes/mp3d744f/proc_2026-05-13T0206_12ad96/output.txt
+ create mode 100644 .codenomad/background_processes/mp3d744f/proc_2026-05-13T0218_3fd80d/output.txt
+ create mode 100644 .codenomad/background_processes/mp3d744f/proc_2026-05-13T0220_56a9f9/output.txt
+ create mode 100644 tests/e2e/test-tab-group-monitor-regroup.js
+To https://github.com/dyyz1993/cdp-tunnel.git
+   7e1494e..e6c43a0  main -> main
+ * [new tag]         v2.5.13 -> v2.5.13

@@ -75,9 +75,12 @@
     "title": "Release v2.5.13",
     "command": "cd /Users/xuyingzhou/Project/study-web/cdp-tunnel2 && npm version patch --no-git-tag-version && git add -A && git commit -m \"fix: tab group escape — fix monitor groupId=-1 bug + immediate grouping + unified cleanup\" && git tag v2.5.13 && git push origin main --tags 2>&1",
     "cwd": "/Users/xuyingzhou/Project/study-web/cdp-tunnel2",
-    "status": "running",
+    "status": "stopped",
     "pid": 81725,
     "startedAt": "2026-05-13T02:20:09.817Z",
-    "outputSizeBytes": 0
+    "outputSizeBytes": 1025,
+    "terminalReason": "finished",
+    "exitCode": 0,
+    "stoppedAt": "2026-05-13T02:20:13.667Z"
   }
 ]

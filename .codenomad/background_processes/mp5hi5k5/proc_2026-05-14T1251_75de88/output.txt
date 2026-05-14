@@ -1,0 +1,26 @@
+
+=== Test: CDP Disconnect Cleanup — Residual Tabs (port 53533) ===
+
+[12:51:31] [SETUP] Proxy ready
+[12:51:37] [SETUP] Extension connected
+[12:51:37] [A] Connecting Client A...
+[12:51:37] [A] Creating CDP tab...
+[12:51:37] [A] CDP tab created: E4FA7B522701...
+[12:51:40] [A] CDP tab groupId=294616288
+[12:51:40] [PASS] 1. CDP tab is grouped
+[12:51:40] [A] Creating child tab via simulateUserOpen...
+[12:51:41] [A] simulateUserOpen: {"success":true,"newTabId":1812421880,"openerTabId":1812421879,"actualOpenerTabId":1812421879,"actualGroupId":-1}
+[12:51:41] [PASS] 2. Child tab created
+[12:51:44] [A] Child tab groupId=-1
+[12:51:44] [INFO] Child tab status: {"tabId":1812421880,"groupId":-1,"url":"https://example.com/","openerTabId":1812421879}
+[12:51:44] [A] Client A sees 1 pages
+[12:51:44] [TEST] Phase 2: Force-terminating Client A...
+[12:51:44] [TEST] Waiting 10s for cleanup...
+[12:51:54] [B] Connecting Client B...
+[12:51:56] [B] Client B sees 0 pages
+[12:51:56] [PASS] 3. No residual pages after Client A disconnect
+[12:51:56] [CHECK] Child tab still exists: groupId=-1, url=https://example.com/
+[12:51:56] [PASS] 4. Child tab survived but is ungrouped (acceptable)
+
+=== RESULTS: 4 passed, 0 failed ===
+

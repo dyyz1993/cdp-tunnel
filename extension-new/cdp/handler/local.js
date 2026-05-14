@@ -228,6 +228,56 @@ var LocalHandler = (function() {
     });
   }
 
+  function tabSimulateUserOpen(context) {
+    var attachedTabIds = State.getAttachedTabIds();
+    var openerTabId = null;
+    for (var i = 0; i < attachedTabIds.length; i++) {
+      if (State.isCDPCreatedTab(attachedTabIds[i])) {
+        openerTabId = attachedTabIds[i];
+        break;
+      }
+    }
+    if (openerTabId == null) {
+      return Promise.resolve({ success: false, error: 'No CDP-created tab found to use as opener' });
+    }
+    return new Promise(function(resolve) {
+      chrome.tabs.create({ url: 'https://example.com', openerTabId: openerTabId }, function(tab) {
+        if (chrome.runtime.lastError) {
+          Logger.error('[TabSimulateUserOpen] Error: ' + chrome.runtime.lastError.message);
+          resolve({ success: false, error: chrome.runtime.lastError.message });
+          return;
+        }
+        setTimeout(function() {
+          chrome.tabs.get(tab.id, function(t) {
+            resolve({ success: true, newTabId: tab.id, openerTabId: openerTabId, actualOpenerTabId: t.openerTabId, actualGroupId: t.groupId });
+          });
+        }, 1000);
+      });
+    });
+  }
+
+  function tabGetTabGroup(context) {
+    var tabId = context.params && context.params.tabId;
+    if (tabId == null) {
+      return Promise.resolve({ error: 'tabId is required' });
+    }
+    return new Promise(function(resolve) {
+      chrome.tabs.get(tabId, function(tab) {
+        if (chrome.runtime.lastError) {
+          Logger.error('[TabGetTabGroup] Error: ' + chrome.runtime.lastError.message);
+          resolve({ tabId: tabId, groupId: -1, error: chrome.runtime.lastError.message });
+          return;
+        }
+        resolve({
+          tabId: tab.id,
+          groupId: tab.groupId != null ? tab.groupId : -1,
+          url: tab.url || '',
+          openerTabId: tab.openerTabId || null
+        });
+      });
+    });
+  }
+
   function tabGetMuteStatus(params) {
     var cdpOnly = params && params.cdpOnly;
     var attachedTabIds = State.getAttachedTabIds();
@@ -403,6 +453,8 @@ var LocalHandler = (function() {
     mapToTargetInfo: mapToTargetInfo,
     tabGetMuteStatus: tabGetMuteStatus,
     tabGetGroupInfo: tabGetGroupInfo,
-    tabUngroup: tabUngroup
+    tabUngroup: tabUngroup,
+    tabSimulateUserOpen: tabSimulateUserOpen,
+    tabGetTabGroup: tabGetTabGroup
   };
 })();

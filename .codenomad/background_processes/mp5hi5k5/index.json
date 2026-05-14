@@ -1,0 +1,16 @@
+[
+  {
+    "id": "proc_2026-05-14T1251_75de88",
+    "workspaceId": "mp5hi5k5",
+    "title": "TDD: residual tabs cleanup test",
+    "command": "cd /Users/xuyingzhou/Project/study-web/cdp-tunnel2 && node tests/e2e/test-residual-tabs-cleanup.js 2>&1",
+    "cwd": "/Users/xuyingzhou/Project/study-web/cdp-tunnel2",
+    "status": "stopped",
+    "pid": 83313,
+    "startedAt": "2026-05-14T12:51:30.489Z",
+    "outputSizeBytes": 1213,
+    "terminalReason": "finished",
+    "exitCode": 0,
+    "stoppedAt": "2026-05-14T12:51:58.372Z"
+  }
+]

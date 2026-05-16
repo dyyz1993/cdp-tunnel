@@ -100,31 +100,61 @@ var SpecialHandler = (function() {
     var url = (params && params.url) || 'about:blank';
     var browserContextId = (params && params.browserContextId) || 'default';
     var clientId = context.clientId;
+    var needsNavigate = url !== 'about:blank' && url !== '';
 
     return new Promise(function(resolve, reject) {
-      State.addPendingCreatedTabUrl(url);
-      // 默认设置active: false，避免自动切换标签页
-      chrome.tabs.create({ url: url, active: false }, function(tab) {
+      // Step 1: 先创建 about:blank (不加载任何资源，tab bar 闪烁最小)
+      chrome.tabs.create({ url: 'about:blank', active: false }, function(tab) {
         if (!tab || !tab.id) {
-          State.removePendingCreatedTabUrl(url);
           reject(new Error('Failed to create tab'));
           return;
         }
 
-        // 保存tabId到clientId的映射，用于后续分组
         if (clientId) {
           State.setTabIdToClientId(tab.id, clientId);
         }
 
         State.addCDPCreatedTab(tab.id);
 
-        addTabToAutomationGroup(tab.id, clientId);
-
-        getTargetIdByTabId(tab.id).then(function(targetId) {
-          return emitAutoAttachEvents(tab.id, targetId, browserContextId).then(function() {
-            resolve({ targetId: targetId });
+        // Step 2: 立刻分组折叠 (用户在 tab bar 上看不到)
+        groupTabSilently(tab.id, clientId).then(function() {
+          // Step 3: 获取 targetId 并 attach debugger
+          return getTargetIdByTabId(tab.id).then(function(targetId) {
+            return emitAutoAttachEvents(tab.id, targetId, browserContextId).then(function() {
+              // Step 4: 折叠+attach 完成后，再导航到真实 URL
+              if (needsNavigate) {
+                State.addPendingCreatedTabUrl(url);
+                return navigateTabQuietly(tab.id, url).then(function() {
+                  resolve({ targetId: targetId });
+                });
+              }
+              resolve({ targetId: targetId });
+            });
           });
+        }).catch(function(err) {
+          Logger.error('[CreateTarget] Error:', err.message || err);
+          reject(err);
         });
+      });
+    });
+  }
+
+  function groupTabSilently(tabId, clientId) {
+    return new Promise(function(resolve) {
+      addTabToAutomationGroup(tabId, clientId);
+      // 分组操作是异步的，给一点时间让 tab 被收进折叠的 group
+      setTimeout(resolve, 100);
+    });
+  }
+
+  function navigateTabQuietly(tabId, url) {
+    return new Promise(function(resolve) {
+      chrome.tabs.update(tabId, { url: url }, function() {
+        if (chrome.runtime.lastError) {
+          Logger.warn('[NavigateQuietly] Failed:', chrome.runtime.lastError.message);
+        }
+        // 不管成功失败都 resolve，让调用者继续
+        resolve();
       });
     });
   }

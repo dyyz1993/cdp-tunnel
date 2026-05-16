@@ -1169,7 +1169,6 @@ function handlePageConnection(ws, clientInfo, targetId) {
     const plugin = pluginConnections.values().next().value;
     if (plugin && plugin.readyState === WebSocket.OPEN) {
         ws.pairedPlugin = plugin;
-        plugin.pairedClientId = id;
         if (shouldLog('info')) {
             console.log(`  - Paired with plugin: ${plugin.id}`);
         }
@@ -1268,7 +1267,9 @@ function handlePageConnection(ws, clientInfo, targetId) {
 
         if (ws.pairedPlugin && ws.pluginMessageHandler) {
             ws.pairedPlugin.off('message', ws.pluginMessageHandler);
-            ws.pairedPlugin.pairedClientId = null;
+            if (ws.pairedPlugin.pairedClientId === id) {
+                ws.pairedPlugin.pairedClientId = null;
+            }
             
             safeSend(ws.pairedPlugin, JSON.stringify({
                 type: 'client-disconnected',
@@ -1291,7 +1292,9 @@ function handlePageConnection(ws, clientInfo, targetId) {
         
         if (ws.pairedPlugin && ws.pluginMessageHandler) {
             ws.pairedPlugin.off('message', ws.pluginMessageHandler);
-            ws.pairedPlugin.pairedClientId = null;
+            if (ws.pairedPlugin.pairedClientId === id) {
+                ws.pairedPlugin.pairedClientId = null;
+            }
         }
         
         ws.pluginMessageHandler = null;
@@ -1336,8 +1339,8 @@ function broadcastToClients(data, excludeWs = null) {
     let sent = 0;
     logCDP('BROADCAST', `Starting broadcast to ${clientConnections.size} clients, data preview: ${data.substring(0, 200)}`);
     clientConnections.forEach((client) => {
-        logCDP('BROADCAST', `Checking client ${client.id}, state=${client.readyState}, excluded=${client === excludeWs}`);
-        if (client !== excludeWs && safeSend(client, data, 'client')) {
+        logCDP('BROADCAST', `Checking client ${client.id}, state=${client.readyState}, excluded=${client === excludeWs}, hasOwnHandler=${!!client.pluginMessageHandler}`);
+        if (client !== excludeWs && !client.pluginMessageHandler && safeSend(client, data, 'client')) {
             sent++;
             logCDP('BROADCAST', `Sent to client ${client.id}`);
         }

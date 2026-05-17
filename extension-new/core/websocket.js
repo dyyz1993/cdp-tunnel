@@ -339,23 +339,40 @@ var WebSocketManager = (function() {
 
   function closeTabsByClientId(clientId, resolve) {
     var attachedTabs = State.getAttachedTabIds();
+    var cdpCreatedTabs = State.getCDPCreatedTabIds();
     var tabsToClose = [];
+    var tabsToCloseSet = new Set();
     
-    Logger.info('[WS] closeTabsByClientId: clientId=' + clientId + ' attachedTabs=' + JSON.stringify(attachedTabs));
+    Logger.info('[WS] closeTabsByClientId: clientId=' + clientId + ' attachedTabs=' + JSON.stringify(attachedTabs) + ' cdpCreatedTabs=' + JSON.stringify(cdpCreatedTabs));
+    
     attachedTabs.forEach(function(tabId) {
       var tabClientId = State.getClientIdByTabId(tabId);
       var isPre = State.isPreExistingTab(tabId);
       var isCDP = State.isCDPCreatedTab(tabId);
-      Logger.info('[WS]   tabId=' + tabId + ' clientId=' + tabClientId + ' isPre=' + isPre + ' isCDP=' + isCDP);
+      Logger.info('[WS]   [attached] tabId=' + tabId + ' clientId=' + tabClientId + ' isPre=' + isPre + ' isCDP=' + isCDP);
       if (tabClientId === clientId && !isPre) {
-        tabsToClose.push(tabId);
+        tabsToCloseSet.add(tabId);
       }
     });
+    
+    cdpCreatedTabs.forEach(function(tabId) {
+      if (tabsToCloseSet.has(tabId)) return;
+      
+      var tabClientId = State.getClientIdByTabId(tabId);
+      var isPre = State.isPreExistingTab(tabId);
+      Logger.info('[WS]   [cdpCreated] tabId=' + tabId + ' clientId=' + tabClientId + ' isPre=' + isPre + ' isAttached=' + attachedTabs.includes(tabId));
+      if (tabClientId === clientId && !isPre && !attachedTabs.includes(tabId)) {
+        tabsToCloseSet.add(tabId);
+        Logger.info('[WS]     -> Added to close list (not yet attached)');
+      }
+    });
+    
+    tabsToClose = Array.from(tabsToCloseSet);
     
     Logger.info('[WS] closeTabsByClientId: will close ' + tabsToClose.length + ' tabs');
     
     if (tabsToClose.length === 0) {
-      Logger.info('[WS] No attached tabs found for clientId:', clientId);
+      Logger.info('[WS] No tabs found for clientId:', clientId);
       resolve();
       return;
     }

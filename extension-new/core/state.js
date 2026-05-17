@@ -263,6 +263,10 @@ var State = (function() {
     return _state.cdpCreatedTabIds.has(tabId);
   }
 
+  function getCDPCreatedTabIds() {
+    return Array.from(_state.cdpCreatedTabIds);
+  }
+
   function clearAllState() {
     clearSessionState();
     _state.attachedTabIds.clear();
@@ -506,6 +510,7 @@ var State = (function() {
     removePreExistingTab: removePreExistingTab,
     clearPreExistingTabsForClient: clearPreExistingTabsForClient,
     addCDPCreatedTab: addCDPCreatedTab,
-    isCDPCreatedTab: isCDPCreatedTab
+    isCDPCreatedTab: isCDPCreatedTab,
+    getCDPCreatedTabIds: getCDPCreatedTabIds
   };
 })();

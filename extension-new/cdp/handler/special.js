@@ -162,6 +162,8 @@ var SpecialHandler = (function() {
   function addTabToAutomationGroup(tabId, clientId) {
     Logger.info('[TabGroup] Starting addTabToAutomationGroup for tabId:', tabId, 'clientId:', clientId);
 
+    WebSocketManager.send({ type: 'tabgroup-debug', tabId: tabId, clientId: clientId, phase: 'start' });
+
     setTimeout(function() {
       muteTabIfNeeded(tabId);
     }, 200);
@@ -185,12 +187,20 @@ var SpecialHandler = (function() {
 
   function doGroup(tabId, clientId, baseName, retries) {
     retries = retries || 0;
+    Logger.info('[TabGroup] doGroup: tabId=' + tabId + ' clientId=' + (clientId || 'none') + ' baseName=' + baseName + ' retry=' + retries);
     chrome.tabGroups.query({}, function(allGroups) {
+      if (chrome.runtime.lastError) {
+        Logger.error('[TabGroup] tabGroups.query failed:', chrome.runtime.lastError.message);
+        EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'query', error: chrome.runtime.lastError.message });
+      }
+      Logger.info('[TabGroup] query result: ' + (allGroups ? allGroups.length : 'null') + ' groups');
       var existing = CDPUtils.findGroupByName(allGroups, baseName);
       if (existing) {
+        Logger.info('[TabGroup] Found existing group:', existing.id, 'title:', existing.title);
         chrome.tabs.group({ tabIds: tabId, groupId: existing.id }, function(result) {
           if (chrome.runtime.lastError) {
             Logger.error('[TabGroup] Failed to add tab to group:', chrome.runtime.lastError.message, 'retries:', retries);
+            EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'addToExisting', error: chrome.runtime.lastError.message, tabId: tabId, groupId: existing.id });
             if (retries < 3) {
               setTimeout(function() { doGroup(tabId, clientId, baseName, retries + 1); }, 500);
             }
@@ -201,14 +211,18 @@ var SpecialHandler = (function() {
           }
         });
       } else {
+        Logger.info('[TabGroup] No existing group, creating new one for tab:', tabId);
         chrome.tabs.group({ tabIds: tabId }, function(groupId) {
           if (chrome.runtime.lastError) {
             Logger.error('[TabGroup] Failed to create group:', chrome.runtime.lastError.message, 'retries:', retries);
+            EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'createGroup', error: chrome.runtime.lastError.message, tabId: tabId });
             if (retries < 3) {
               setTimeout(function() { doGroup(tabId, clientId, baseName, retries + 1); }, 500);
             }
             return;
           }
+          Logger.info('[TabGroup] chrome.tabs.group returned groupId:', groupId);
+          EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'groupCreated', tabId: tabId, groupId: groupId });
           if (groupId) {
             chrome.tabGroups.update(groupId, {
               title: baseName,
@@ -217,12 +231,15 @@ var SpecialHandler = (function() {
             }, function() {
               if (chrome.runtime.lastError) {
                 Logger.error('[TabGroup] Failed to update group:', chrome.runtime.lastError.message);
+                EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'updateGroup', error: chrome.runtime.lastError.message, groupId: groupId });
               } else {
                 State.setGroupIdForClient(clientId, groupId);
                 updateTabGroupName(clientId);
                 Logger.info('[TabGroup] Created new group:', groupId, 'with tab:', tabId);
               }
             });
+          } else {
+            Logger.error('[TabGroup] chrome.tabs.group returned null groupId');
           }
         });
       }

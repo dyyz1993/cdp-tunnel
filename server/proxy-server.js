@@ -633,11 +633,18 @@ function handlePluginConnection(ws, clientInfo) {
         
         console.log(`[PLUGIN MSG] id=${parsed?.id} method=${parsed?.method || 'none'} type=${parsed?.type || 'none'} sessionId=${parsed?.sessionId?.substring(0,8) || 'none'}`);
 
+        if (parsed?.type === 'tabgroup-debug') {
+            console.log(`[TABGROUP DEBUG] ${JSON.stringify(parsed)}`);
+        }
+
         // 记录所有 PLUGIN -> CLIENT 消息到日志文件
         logCDP('PLUGIN -> CLIENT', data.toString().substring(0, CONFIG.LOG_MESSAGE_PREVIEW_LENGTH), parsed?.sessionId, ws.pluginType);
 
         // 处理 type: 'event' 消息（来自 background.js 的 screencast 等事件）
         if (parsed && parsed.type === 'event' && parsed.method) {
+            if (parsed.method.startsWith('CDPTunnel.')) {
+                console.log(`[EXT DEBUG] ${parsed.method}: ${JSON.stringify(parsed.params)}`);
+            }
             // 对于 Target 事件，始终广播给所有客户端
             const targetEvents = ['Target.targetCreated', 'Target.attachedToTarget', 'Target.targetDestroyed', 'Target.targetInfoChanged'];
             if (targetEvents.includes(parsed.method)) {

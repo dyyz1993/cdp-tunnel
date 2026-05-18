@@ -13,6 +13,24 @@ const LOG_FILE = path.join(CONFIG_DIR, 'server.log');
 const EXTENSION_STATE_FILE = path.join(CONFIG_DIR, 'extension-state.json');
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
 
+const INSTANCES_DIR = path.join(CONFIG_DIR, 'instances');
+
+function getInstanceDir(port) {
+  return path.join(INSTANCES_DIR, port.toString());
+}
+
+function getInstanceFilePath(port, filename) {
+  return path.join(getInstanceDir(port), filename);
+}
+
+function ensureInstanceDir(port) {
+  const dir = getInstanceDir(port);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
 const program = new Command();
 
 program
@@ -54,60 +72,65 @@ function ensureConfigDir() {
   }
 }
 
-function cleanupLogFile() {
+function cleanupLogFile(logFilePath) {
   try {
-    if (fs.existsSync(LOG_FILE)) {
-      const stats = fs.statSync(LOG_FILE);
-      if (stats.size > MAX_LOG_SIZE) {
-        fs.writeFileSync(LOG_FILE, '');
-        console.log('');
-        log('yellow', '⚠ 日志文件超过 10MB，已清空');
-        console.log('');
-      }
+    if (!fs.existsSync(logFilePath)) return;
+    const stats = fs.statSync(logFilePath);
+    if (stats.size > MAX_LOG_SIZE) {
+      fs.writeFileSync(logFilePath, '');
+      console.log('');
+      log('yellow', '⚠ 日志文件超过 10MB，已清空');
+      console.log('');
     }
   } catch (e) {
     // 清理失败不影响启动
   }
 }
 
-function getConfig() {
+function getConfig(port) {
   ensureConfigDir();
-  if (fs.existsSync(CONFIG_FILE)) {
-    return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+  const file = port ? getInstanceFilePath(port, 'config.json') : CONFIG_FILE;
+  if (fs.existsSync(file)) {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
   }
-  return { port: 9221 };
+  return { port: port || 9221 };
 }
 
-function saveConfig(config) {
+function saveConfig(config, port) {
   ensureConfigDir();
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  const file = port ? getInstanceFilePath(port, 'config.json') : CONFIG_FILE;
+  const dir = port ? getInstanceDir(port) : CONFIG_DIR;
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(config, null, 2));
 }
 
-function isServerRunning() {
-  if (!fs.existsSync(PID_FILE)) return false;
-  const pid = parseInt(fs.readFileSync(PID_FILE, 'utf8'));
+function isServerRunning(port) {
+  const pidFile = port ? getInstanceFilePath(port, 'server.pid') : PID_FILE;
+  if (!fs.existsSync(pidFile)) return false;
+  const pid = parseInt(fs.readFileSync(pidFile, 'utf8'));
   try {
     process.kill(pid, 0);
     return true;
   } catch {
-    fs.unlinkSync(PID_FILE);
+    fs.unlinkSync(pidFile);
     return false;
   }
 }
 
-function getServerPid() {
-  if (!fs.existsSync(PID_FILE)) return null;
-  return parseInt(fs.readFileSync(PID_FILE, 'utf8'));
+function getServerPid(port) {
+  const pidFile = port ? getInstanceFilePath(port, 'server.pid') : PID_FILE;
+  if (!fs.existsSync(pidFile)) return null;
+  return parseInt(fs.readFileSync(pidFile, 'utf8'));
 }
 
-function checkChromeExtension() {
-  if (!fs.existsSync(EXTENSION_STATE_FILE)) {
+function checkChromeExtension(port) {
+  const stateFile = port ? getInstanceFilePath(port, 'extension-state.json') : EXTENSION_STATE_FILE;
+  if (!fs.existsSync(stateFile)) {
     return { installed: false };
   }
   
   try {
-    const state = JSON.parse(fs.readFileSync(EXTENSION_STATE_FILE, 'utf8'));
-    // 检查连接状态，允许5分钟的时间差容错
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
     const timeDiff = Math.abs(Date.now() - state.lastSeen);
     if (state.connected && timeDiff < 300000) {
       return { installed: true, connected: true };
@@ -162,16 +185,22 @@ function openChromeExtensions() {
 }
 
 function startServer(port, watchdog, autoRestart) {
+  ensureInstanceDir(port);
+  const instancePidFile = getInstanceFilePath(port, 'server.pid');
+  const instanceLogFile = getInstanceFilePath(port, 'server.log');
   const serverPath = path.join(__dirname, '..', 'server', 'proxy-server.js');
-  const logFd = fs.openSync(LOG_FILE, 'a');
 
-  const child = spawn('node', [serverPath], {
+  cleanupLogFile(instanceLogFile);
+
+  const logFd = fs.openSync(instanceLogFile, 'a');
+
+  const child = spawn(process.execPath, [serverPath], {
     detached: !watchdog,
     stdio: ['ignore', logFd, logFd],
     env: { ...process.env, PORT: port.toString(), AUTO_RESTART: autoRestart ? 'true' : 'false' }
   });
 
-  fs.writeFileSync(PID_FILE, child.pid.toString());
+  fs.writeFileSync(instancePidFile, child.pid.toString());
 
   if (watchdog) {
     let restartCount = 0;
@@ -183,11 +212,11 @@ function startServer(port, watchdog, autoRestart) {
       const now = Date.now();
       const reason = signal ? `信号 ${signal}` : `退出码 ${code}`;
       const logLine = `[${new Date().toISOString()}] [WATCHDOG] 服务器退出: ${reason}\n`;
-      fs.appendFileSync(LOG_FILE, logLine);
+      fs.appendFileSync(instanceLogFile, logLine);
 
       if (code === 0 && !signal) {
         log('gray', '  服务器正常退出 (code=0)，不重启');
-        try { fs.unlinkSync(PID_FILE); } catch {}
+        try { fs.unlinkSync(instancePidFile); } catch {}
         process.exit(0);
       }
 
@@ -197,9 +226,9 @@ function startServer(port, watchdog, autoRestart) {
       if (restartTimestamps.length > MAX_RESTARTS) {
         console.log('');
         log('red', '✗ 服务器在 60 秒内崩溃超过 ' + MAX_RESTARTS + ' 次，停止重启');
-        log('gray', '  请检查日志: ' + LOG_FILE);
+        log('gray', '  请检查日志: ' + instanceLogFile);
         console.log('');
-        try { fs.unlinkSync(PID_FILE); } catch {}
+        try { fs.unlinkSync(instancePidFile); } catch {}
         process.exit(1);
       }
 
@@ -226,13 +255,13 @@ function startServer(port, watchdog, autoRestart) {
       console.log('');
       log('cyan', '正在停止服务器（含 watchdog）...');
       try { child.kill('SIGTERM'); } catch {}
-      try { fs.unlinkSync(PID_FILE); } catch {}
+      try { fs.unlinkSync(instancePidFile); } catch {}
       process.exit(0);
     });
 
     process.on('SIGTERM', () => {
       try { child.kill('SIGTERM'); } catch {}
-      try { fs.unlinkSync(PID_FILE); } catch {}
+      try { fs.unlinkSync(instancePidFile); } catch {}
       process.exit(0);
     });
   } else {
@@ -242,11 +271,11 @@ function startServer(port, watchdog, autoRestart) {
   return child;
 }
 
-function waitForPluginConnection(maxWaitMs) {
+function waitForPluginConnection(port, maxWaitMs) {
   return new Promise((resolve) => {
     const start = Date.now();
     const interval = setInterval(() => {
-      const status = checkChromeExtension();
+      const status = checkChromeExtension(port);
       if (status.connected) {
         clearInterval(interval);
         resolve(true);
@@ -282,29 +311,31 @@ program
   .option('-w, --watchdog', '启用看门狗，服务器崩溃时自动重启')
   .option('-a, --auto-restart', '浏览器断连时自动重启 Chrome（带插件）')
   .action(async (options) => {
-    const config = getConfig();
-    const port = options.port || config.port || 9221;
+    const globalConfig = getConfig();
+    const port = options.port || globalConfig.port || 9221;
+    const instanceConfig = getConfig(port);
 
-    config.port = port;
-    config.autoRestart = !!options.autoRestart;
-    saveConfig(config);
+    instanceConfig.port = port;
+    instanceConfig.autoRestart = !!options.autoRestart;
+    saveConfig(instanceConfig, port);
 
-    if (isServerRunning()) {
+    if (isServerRunning(port)) {
       console.log('');
-      log('yellow', `⚠ 服务器已在运行 (PID: ${getServerPid()})`);
+      log('yellow', `⚠ 服务器已在运行 (PID: ${getServerPid(port)}, 端口: ${port})`);
       log('cyan', `  CDP: http://localhost:${port}`);
     } else {
-      ensureConfigDir();
-      cleanupLogFile();
+      ensureInstanceDir(port);
       startServer(port, options.watchdog, options.autoRestart);
       console.log('');
       log('green', '✅ 服务器已启动');
-      log('cyan', `  CDP: http://localhost:${port}`);
+      log('cyan', `  端口:   ${port}`);
+      log('cyan', `  CDP:    http://localhost:${port}`);
+      log('cyan', `  Plugin: ws://localhost:${port}/plugin`);
     }
 
     await new Promise(r => setTimeout(r, 1000));
 
-    const extStatus = checkChromeExtension();
+    const extStatus = checkChromeExtension(port);
     if (extStatus.connected) {
       console.log('');
       log('green', '✅ Ready! Chrome 扩展已连接');
@@ -323,7 +354,7 @@ program
       const launched = launchChromeWithExtension();
       if (launched) {
         log('cyan', '⏳ 等待插件连接...');
-        const connected = await waitForPluginConnection(15000);
+        const connected = await waitForPluginConnection(port, 15000);
         if (connected) {
           console.log('');
           log('green', '✅ Ready! Chrome 已启动，插件已连接');
@@ -337,7 +368,7 @@ program
         log('yellow', '⚠ 无法自动启动 Chrome。请手动安装插件：');
         printExtensionGuide();
         openChromeExtensions();
-        const connected = await waitForPluginConnection(120000);
+        const connected = await waitForPluginConnection(port, 120000);
         if (connected) {
           console.log('');
           log('green', '✅ Ready! 插件已连接');
@@ -361,7 +392,7 @@ program
     printExtensionGuide();
 
     log('cyan', '⏳ 等待插件安装并连接（最多 2 分钟）...');
-    const connected = await waitForPluginConnection(120000);
+    const connected = await waitForPluginConnection(port, 120000);
     if (connected) {
       console.log('');
       log('green', '✅ Ready! 插件已连接');
@@ -377,17 +408,50 @@ program
 program
   .command('stop')
   .description('停止 CDP Tunnel 服务器')
-  .action(() => {
-    if (!isServerRunning()) {
-      log('yellow', '⚠️  服务器未运行');
+  .option('-p, --port <port>', '指定端口', parseInt)
+  .option('--all', '停止所有实例')
+  .action((options) => {
+    if (options.all) {
+      if (!fs.existsSync(INSTANCES_DIR)) {
+        log('yellow', '⚠️  没有运行中的实例');
+        return;
+      }
+      const ports = fs.readdirSync(INSTANCES_DIR).filter(dir => {
+        return fs.existsSync(getInstanceFilePath(dir, 'server.pid'));
+      });
+      if (ports.length === 0) {
+        log('yellow', '⚠️  没有运行中的实例');
+        return;
+      }
+      ports.forEach(p => {
+        const port = parseInt(p);
+        if (isServerRunning(port)) {
+          const pid = getServerPid(port);
+          try {
+            process.kill(pid, 'SIGTERM');
+            fs.unlinkSync(getInstanceFilePath(port, 'server.pid'));
+            log('green', `✓ 端口 ${port} 已停止 (PID: ${pid})`);
+          } catch (e) {
+            log('red', `✗ 端口 ${port} 停止失败: ${e.message}`);
+          }
+        }
+      });
       return;
     }
-    
-    const pid = getServerPid();
+
+    const globalConfig = getConfig();
+    const port = options.port || globalConfig.port || 9221;
+
+    if (!isServerRunning(port)) {
+      log('yellow', `⚠️  服务器未运行 (端口: ${port})`);
+      return;
+    }
+
+    const pid = getServerPid(port);
     try {
       process.kill(pid, 'SIGTERM');
-      fs.unlinkSync(PID_FILE);
-      log('green', '✓ 服务器已停止');
+      fs.unlinkSync(getInstanceFilePath(port, 'server.pid'));
+      log('green', `✓ 服务器已停止 (端口: ${port})`);
     } catch (e) {
       log('red', '✗ 停止服务器失败: ' + e.message);
     }
@@ -399,9 +463,10 @@ program
   .option('-p, --port <port>', '指定端口', parseInt)
   .option('-w, --watchdog', '启用看门狗')
   .action(async (options) => {
-    const config = getConfig();
-    const wasRunning = isServerRunning();
-    const savedPort = options.port || config.port;
+    const globalConfig = getConfig();
+    const port = options.port || globalConfig.port || 9221;
+    const wasRunning = isServerRunning(port);
+    const savedConfig = getConfig(port);
     const savedWatchdog = options.watchdog;
     
     try {
@@ -427,14 +492,14 @@ program
       if (localVersion === latestVersion) {
         log('green', '✅ 已是最新版本 (' + localVersion + ')');
         if (wasRunning) {
-          log('cyan', '  服务器仍在运行中');
+          log('cyan', '  服务器仍在运行中 (端口: ' + port + ')');
         }
         process.exit(0);
       }
       
       if (wasRunning) {
-        log('yellow', '⏸ 停止服务器...');
-        const pid = getServerPid();
+        log('yellow', '⏸ 停止服务器 (端口: ' + port + ')...');
+        const pid = getServerPid(port);
         if (pid) {
           try { process.kill(pid, 'SIGTERM'); } catch {}
           await new Promise(r => setTimeout(r, 1500));
@@ -463,10 +528,10 @@ program
       }
       
       if (wasRunning) {
-        log('cyan', '🔄 重启服务器...');
-        const child = startServer(savedPort, false, config.autoRestart);
+        log('cyan', '🔄 重启服务器 (端口: ' + port + ')...');
+        const child = startServer(port, false, savedConfig.autoRestart);
         child.unref();
-        log('green', '✅ 服务器已重启 (PID: ' + child.pid + ')');
+        log('green', '✅ 服务器已重启 (PID: ' + child.pid + ', 端口: ' + port + ')');
       } else {
         log('cyan', '  运行 cdp-tunnel start 启动服务器');
       }
@@ -478,40 +543,113 @@ program
     }
   });
 
+function printInstanceStatus(port) {
+  const config = port ? getConfig(port) : getConfig();
+  const p = port || config.port || 9221;
+  const running = isServerRunning(p);
+  const pid = running ? getServerPid(p) : null;
+  const extStatus = checkChromeExtension(p);
+
+  console.log('');
+  console.log(`  实例 [端口 ${p}]`);
+  console.log('  ' + '─'.repeat(20));
+  console.log('  服务器: ' + (running ? '\x1b[32m运行中\x1b[0m' : '\x1b[31m已停止\x1b[0m'));
+  if (running) {
+    console.log('  PID:    ' + pid);
+    console.log('  CDP:    http://localhost:' + p);
+  }
+
+  if (extStatus.installed && extStatus.connected) {
+    console.log('  扩展:   \x1b[32m已连接\x1b[0m');
+  } else if (extStatus.installed) {
+    console.log('  扩展:   \x1b[33m已安装但未连接\x1b[0m');
+  }
+}
+
 program
   .command('status')
   .description('查看服务器状态')
-  .action(() => {
-    const config = getConfig();
-    const running = isServerRunning();
-    const extStatus = checkChromeExtension();
-    
+  .option('-p, --port <port>', '指定端口', parseInt)
+  .action((options) => {
     console.log('');
     console.log('CDP Tunnel 状态');
     console.log('─'.repeat(30));
+
+    if (options.port) {
+      printInstanceStatus(options.port);
+    } else {
+      let foundAny = false;
+
+      if (fs.existsSync(PID_FILE) && !fs.existsSync(INSTANCES_DIR)) {
+        printInstanceStatus(null);
+        foundAny = true;
+      } else if (fs.existsSync(INSTANCES_DIR)) {
+        const ports = fs.readdirSync(INSTANCES_DIR);
+        if (ports.length > 0) {
+          ports.forEach(p => {
+            printInstanceStatus(parseInt(p));
+            foundAny = true;
+          });
+        }
+      }
+
+      if (!foundAny) {
+        const globalConfig = getConfig();
+        console.log('');
+        log('yellow', '  没有运行中的实例');
+        log('gray', `  默认端口: ${globalConfig.port || 9221}`);
+        log('cyan', '  启动: cdp-tunnel start [-p 端口]');
+      }
+    }
     console.log('');
-    console.log('  服务器: ' + (running ? '\x1b[32m运行中\x1b[0m' : '\x1b[31m已停止\x1b[0m'));
-    console.log('  端口:   ' + config.port);
-    
-    if (running) {
-      console.log('  PID:    ' + getServerPid());
-      console.log('  CDP:    http://localhost:' + config.port);
+  });
+
+program
+  .command('remote')
+  .description('查看远程连接配置指引')
+  .option('-s, --server <url>', '远程服务器地址，如 wss://example.com/plugin')
+  .action((options) => {
+    console.log('');
+    log('cyan', '📡 CDP Tunnel 远程模式配置指引');
+    console.log('─'.repeat(40));
+    console.log('');
+
+    if (options.server) {
+      log('green', '✅ 远程服务器: ' + options.server);
+    } else {
+      log('yellow', '⚠  未指定远程地址');
+      log('gray', '  用法: cdp-tunnel remote -s wss://your-server.com/plugin');
     }
 
-    if (config.autoRestart) {
-      console.log('  自动重启: 已启用');
-    }
-    
     console.log('');
-    if (extStatus.installed && extStatus.connected) {
-      console.log('  扩展:   \x1b[32m已连接\x1b[0m');
-    } else if (extStatus.installed) {
-      console.log('  扩展:   \x1b[33m已安装但未连接\x1b[0m');
-      console.log('  提示:   请点击扩展图标连接服务器');
+    log('bold', '  配置步骤:');
+    console.log('');
+    console.log('  1. 安装 CDP Bridge 扩展到 Chrome');
+    console.log('     → 运行: cdp-tunnel extension');
+    console.log('');
+    console.log('  2. 点击浏览器工具栏的 CDP Bridge 图标');
+    console.log('');
+    if (options.server) {
+      console.log('  3. 在 "Server Address" 输入框中填入:');
+      log('green', `     ${options.server}`);
     } else {
-      console.log('  扩展:   \x1b[31m未安装\x1b[0m');
-      console.log('  提示:   运行 cdp-tunnel extension 安装扩展');
+      console.log('  3. 在 "Server Address" 输入框中填入远程 WS 地址');
     }
+    console.log('');
+    console.log('  4. 点击 "Save & Connect"');
+    console.log('');
+    console.log('  5. 在远程服务器上运行 Playwright:');
+    if (options.server) {
+      const httpUrl = options.server
+        .replace('wss://', 'https://')
+        .replace('ws://', 'http://')
+        .replace(/\/plugin$/, '');
+      console.log(`     chromium.connectOverCDP('${httpUrl}')`);
+    } else {
+      console.log('     chromium.connectOverCDP("http://your-server:port")');
+    }
+    console.log('');
+    log('gray', '  注意: 此模式不需要启动本地 cdp-tunnel server');
     console.log('');
   });
 
@@ -639,15 +777,15 @@ program
   .description('诊断 CDP Tunnel 连接问题')
   .option('-p, --port <port>', '指定端口', parseInt)
   .action(async (options) => {
-    const config = getConfig();
-    const port = options.port || config.port || 9221;
+    const globalConfig = getConfig();
+    const port = options.port || globalConfig.port || 9221;
     const http = require('http');
 
     console.log('');
     log('bold', '🔍 CDP Tunnel 诊断');
     console.log('');
 
-    const running = isServerRunning();
+    const running = isServerRunning(port);
     log(running ? 'green' : 'red', `  1. Proxy Server: ${running ? '运行中' : '❌ 未运行'}`);
     if (!running) {
       log('yellow', '     → 运行 cdp-tunnel start 启动服务器');
@@ -668,7 +806,7 @@ program
       log('red', `  2. HTTP 端点: ❌ ${err.message}`);
     }
 
-    const extStatus = checkChromeExtension();
+    const extStatus = checkChromeExtension(port);
     log(extStatus.connected ? 'green' : 'red', `  3. Chrome 扩展: ${extStatus.connected ? '已连接' : '❌ 未连接'}`);
     if (!extStatus.connected) {
       log('yellow', '     → 点击浏览器工具栏上的 CDP Bridge 图标');
@@ -737,6 +875,31 @@ program
     process.exit(0);
   });
 
+function migrateFromLegacy() {
+  if (!fs.existsSync(PID_FILE) && !fs.existsSync(EXTENSION_STATE_FILE)) return;
+
+  const oldConfig = getConfig();
+  const port = oldConfig.port || 9221;
+
+  if (fs.existsSync(getInstanceDir(port))) return;
+
+  ensureInstanceDir(port);
+
+  try {
+    if (fs.existsSync(PID_FILE)) {
+      fs.copyFileSync(PID_FILE, getInstanceFilePath(port, 'server.pid'));
+      fs.unlinkSync(PID_FILE);
+    }
+    if (fs.existsSync(EXTENSION_STATE_FILE)) {
+      fs.copyFileSync(EXTENSION_STATE_FILE, getInstanceFilePath(port, 'extension-state.json'));
+      fs.unlinkSync(EXTENSION_STATE_FILE);
+    }
+    saveConfig(oldConfig, port);
+
+    log('gray', `  已迁移旧配置到实例目录 (端口: ${port})`);
+  } catch {}
+}
+
 program.addHelpText('after', `
 
 常用命令:
@@ -752,5 +915,8 @@ program.addHelpText('after', `
   $ npm install -g cdp-tunnel
   $ cdp-tunnel start              # 一行命令搞定！
 `);
+
+ensureConfigDir();
+migrateFromLegacy();
 
 program.parse();

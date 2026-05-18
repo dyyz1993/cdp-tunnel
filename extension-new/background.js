@@ -261,7 +261,25 @@ importScripts('features/automation-badge.js');
   });
 
   chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
-    if (message.type === 'reconnect') {
+    if (message.type === 'popup-query') {
+      var ws = State.getWs();
+      var isConnected = ws && ws.readyState === WebSocket.OPEN;
+      chrome.storage.local.get(['wsAddress', 'pluginId'], function(result) {
+        sendResponse({
+          connected: isConnected,
+          pluginId: result.pluginId || null,
+          cdpClients: State.getCDPClients() || [],
+          attachedPages: State.getAttachedTabIds().map(function(tid) { return { tabId: tid }; })
+        });
+      });
+      return true;
+    } else if (message.type === 'ws-reconnect') {
+      Logger.info('[Runtime] WS address changed, reconnecting');
+      var ws = State.getWs();
+      if (ws) ws.close();
+      WebSocketManager.connect();
+      sendResponse({ success: true });
+    } else if (message.type === 'reconnect') {
       Logger.info('[Runtime] Received reconnect request from popup');
       var ws = State.getWs();
       if (ws) {

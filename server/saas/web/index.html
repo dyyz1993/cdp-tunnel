@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CDP Tunnel - SaaS Management</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0d1117;
+  --bg-card: #161b22;
+  --bg-card-hover: #1c2333;
+  --bg-input: #0d1117;
+  --border: #30363d;
+  --border-focus: #58a6ff;
+  --text: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted: #6e7681;
+  --accent: #58a6ff;
+  --accent-hover: #79c0ff;
+  --green: #3fb950;
+  --green-bg: rgba(63,185,80,0.12);
+  --red: #f85149;
+  --orange: #d29922;
+  --radius: 8px;
+  --radius-sm: 6px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+html, body { height: 100%; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); }
+button {
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 14px;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  transition: all .15s ease;
+}
+input {
+  font-family: var(--font);
+  font-size: 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--text);
+  width: 100%;
+  outline: none;
+  transition: border-color .15s ease;
+}
+input:focus { border-color: var(--border-focus); }
+::selection { background: var(--accent); color: #fff; }
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  padding: 10px 20px;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+.btn-secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--bg-card-hover); border-color: var(--text-muted); }
+.btn-danger {
+  background: transparent;
+  color: var(--red);
+  border: 1px solid var(--red);
+  font-size: 12px;
+  padding: 4px 10px;
+}
+.btn-danger:hover { background: rgba(248,81,73,0.1); }
+.btn-sm { font-size: 12px; padding: 4px 10px; }
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Login */
+.login-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.login-box {
+  width: 100%;
+  max-width: 400px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px;
+}
+.login-box h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.login-box p {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin-bottom: 24px;
+}
+.form-group { margin-bottom: 16px; }
+.form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+}
+.error-msg {
+  background: rgba(248,81,73,0.1);
+  border: 1px solid rgba(248,81,73,0.3);
+  color: var(--red);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  margin-bottom: 16px;
+  display: none;
+}
+.error-msg.visible { display: block; }
+
+/* Dashboard */
+.dashboard {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.header-left { display: flex; align-items: center; gap: 12px; }
+.header-left h1 {
+  font-size: 18px;
+  font-weight: 700;
+}
+.header-badge {
+  font-size: 11px;
+  background: var(--accent);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.header-right { display: flex; align-items: center; gap: 12px; }
+.user-info {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.header-right .btn-secondary { font-size: 13px; padding: 6px 14px; }
+
+/* Main Content */
+.main {
+  flex: 1;
+  padding: 24px;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Section */
+.section { margin-bottom: 32px; }
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.section-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.section-header .subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Status Badge */
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.status-dot.offline { background: var(--text-muted); }
+
+/* Browser Grid */
+.browser-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+.browser-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  transition: border-color .15s ease, background .15s ease;
+}
+.browser-card:hover { border-color: var(--text-muted); }
+.browser-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.browser-card-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+  word-break: break-all;
+}
+.browser-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.meta-item {}
+.meta-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: 600;
+}
+.meta-value {
+  font-size: 13px;
+  color: var(--text);
+  margin-top: 2px;
+}
+.browser-urls {}
+.url-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.url-item:last-child { margin-bottom: 0; }
+.url-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.url-value {
+  font-size: 12px;
+  color: var(--accent);
+  font-family: 'SF Mono', 'SFMono-Regular', 'Fira Code', monospace;
+  word-break: break-all;
+  flex: 1;
+  min-width: 0;
+}
+.btn-copy {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all .15s;
+}
+.btn-copy:hover { background: var(--bg-card-hover); color: var(--text); border-color: var(--text-muted); }
+.btn-copy.copied { background: var(--green-bg); border-color: var(--green); color: var(--green); }
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-muted);
+}
+.empty-state svg { margin-bottom: 12px; opacity: .4; }
+.empty-state h3 { font-size: 16px; color: var(--text-secondary); margin-bottom: 4px; }
+.empty-state p { font-size: 13px; }
+
+/* API Keys */
+.api-keys-section {}
+.api-key-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+.api-key-info { flex: 1; min-width: 0; }
+.api-key-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+.api-key-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.api-key-key {
+  font-size: 12px;
+  font-family: 'SF Mono', monospace;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  word-break: break-all;
+}
+.api-key-actions { flex-shrink: 0; margin-left: 12px; }
+.create-key-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.create-key-form input { flex: 1; }
+.create-key-form button { flex-shrink: 0; }
+
+/* Toast */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.toast {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  animation: toast-in .25s ease;
+  max-width: 360px;
+}
+.toast.success { border-left: 3px solid var(--green); }
+.toast.error { border-left: 3px solid var(--red); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Loading */
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 48px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .header { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
+  .header-left h1 { font-size: 16px; }
+  .main { padding: 16px; }
+  .browser-grid { grid-template-columns: 1fr; }
+  .browser-meta { grid-template-columns: 1fr; }
+  .create-key-form { flex-direction: column; }
+  .create-key-form button { width: 100%; }
+  .api-key-card { flex-direction: column; align-items: stretch; gap: 8px; }
+  .api-key-actions { margin-left: 0; }
+  .user-info { display: none; }
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+const API_BASE = window.location.origin;
+
+// ====== State ======
+let state = {
+  token: localStorage.getItem('cdp_token'),
+  user: null,
+  browsers: [],
+  apiKeys: [],
+  loading: false,
+  browserRefreshTimer: null,
+};
+
+// ====== DOM ======
+const $ = (s, p) => (p || document).querySelector(s);
+const $$ = (s, p) => [...(p || document).querySelectorAll(s)];
+
+// ====== Router ======
+function render() {
+  const app = $('#app');
+  if (!state.token || !state.user) {
+    app.innerHTML = renderLogin();
+    bindLogin();
+  } else {
+    app.innerHTML = renderDashboard();
+    bindDashboard();
+  }
+}
+
+// ====== Toast ======
+function toast(msg, type = 'success') {
+  const c = $('#toastContainer');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(() => { el.remove(); }, 3000);
+}
+
+// ====== API ======
+async function api(url, opts = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (state.token) headers['Authorization'] = `Bearer ${state.token}`;
+  const res = await fetch(API_BASE + url, { ...opts, headers });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// ====== Login ======
+function renderLogin() {
+  return `
+<div class="login-container">
+  <div class="login-box">
+    <h1>CDP Tunnel</h1>
+    <p>Sign in to manage your remote browsers</p>
+    <div class="error-msg" id="loginError"></div>
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="you@example.com" autocomplete="email" required autofocus>
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="Enter your password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn-primary" id="loginBtn" style="width:100%">Sign In</button>
+    </form>
+  </div>
+</div>`;
+}
+
+function bindLogin() {
+  const form = $('#loginForm');
+  const btn = $('#loginBtn');
+  const err = $('#loginError');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    err.classList.remove('visible');
+    btn.disabled = true;
+    btn.textContent = 'Signing in…';
+    try {
+      const data = await api('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email: $('#email').value, password: $('#password').value })
+      });
+      state.token = data.token;
+      state.user = data.user;
+      state.apiKeys = data.apiKeys || [];
+      localStorage.setItem('cdp_token', data.token);
+      render();
+      toast('Signed in successfully');
+    } catch (ex) {
+      err.textContent = ex.message;
+      err.classList.add('visible');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+    }
+  });
+}
+
+// ====== Logout ======
+function logout() {
+  state.token = null;
+  state.user = null;
+  state.browsers = [];
+  state.apiKeys = [];
+  localStorage.removeItem('cdp_token');
+  if (state.browserRefreshTimer) { clearInterval(state.browserRefreshTimer); state.browserRefreshTimer = null; }
+  render();
+}
+
+// ====== Dashboard ======
+function renderDashboard() {
+  return `
+<div class="dashboard">
+  <header class="header">
+    <div class="header-left">
+      <h1>CDP Tunnel</h1>
+      <span class="header-badge">SaaS</span>
+    </div>
+    <div class="header-right">
+      <span class="user-info">${escapeHtml(state.user.displayName || state.user.email)}</span>
+      <button class="btn-secondary" onclick="renderApiKeys()">API Keys</button>
+      <button class="btn-secondary" onclick="logout()">Sign Out</button>
+    </div>
+  </header>
+  <main class="main" id="dashboardMain">
+    <div id="browserSection" class="section">${renderBrowserSection()}</div>
+    <div id="apiKeySection" class="section">${renderApiKeySection()}</div>
+  </main>
+</div>`;
+}
+
+function bindDashboard() {
+  startBrowserPolling();
+}
+
+// ====== Browser Polling ======
+function startBrowserPolling() {
+  if (state.browserRefreshTimer) clearInterval(state.browserRefreshTimer);
+  fetchBrowsers();
+  state.browserRefreshTimer = setInterval(fetchBrowsers, 10000);
+}
+
+async function fetchBrowsers() {
+  try {
+    const data = await api('/api/browsers');
+    state.browsers = data.browsers;
+  } catch (ex) {
+    if (ex.message.includes('Unauthorized') || ex.message.includes('401')) {
+      logout();
+      return;
+    }
+  }
+  const section = $('#browserSection');
+  if (section) section.innerHTML = renderBrowserSection();
+}
+
+function renderBrowserSection() {
+  const count = state.browsers.length;
+  return `
+<div class="section-header">
+  <div>
+    <h2>Remote Browsers</h2>
+    <div class="subtitle">${count} browser${count !== 1 ? 's' : ''} connected</div>
+  </div>
+</div>
+${count === 0 ? renderEmptyBrowsers() : renderBrowserGrid()}`;
+}
+
+function renderEmptyBrowsers() {
+  return `
+<div class="empty-state">
+  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+    <line x1="8" y1="21" x2="16" y2="21"/>
+    <line x1="12" y1="17" x2="12" y2="21"/>
+    <line x1="2" y1="10" x2="22" y2="10"/>
+  </svg>
+  <h3>No browsers connected</h3>
+  <p>Install the CDP Tunnel plugin on your remote machine to get started.</p>
+</div>`;
+}
+
+function renderBrowserGrid() {
+  return `<div class="browser-grid">${state.browsers.map(b => renderBrowserCard(b)).join('')}</div>`;
+}
+
+function renderBrowserCard(b) {
+  const connected = b.connected;
+  const time = b.connectedAt ? formatTime(b.connectedAt) : '—';
+  return `
+<div class="browser-card">
+  <div class="browser-card-header">
+    <h3>${escapeHtml(b.name)}</h3>
+    <span class="status-indicator">
+      <span class="status-dot ${connected ? 'online' : 'offline'}"></span>
+      ${connected ? 'Online' : 'Offline'}
+    </span>
+  </div>
+  <div class="browser-meta">
+    <div class="meta-item">
+      <div class="meta-label">Plugin ID</div>
+      <div class="meta-value" style="font-family:monospace;font-size:12px">${escapeHtml(b.pluginId)}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">Targets</div>
+      <div class="meta-value">${b.targets}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">Connected Since</div>
+      <div class="meta-value">${time}</div>
+    </div>
+  </div>
+  <div class="browser-urls">
+    <div class="url-item">
+      <span class="url-label">CDP</span>
+      <span class="url-value" id="cdp-${b.pluginId}">${escapeHtml(b.cdpHttpUrl)}</span>
+      <button class="btn-copy" onclick="copyText('cdp-${b.pluginId}', this)">Copy</button>
+    </div>
+    <div class="url-item">
+      <span class="url-label">WS</span>
+      <span class="url-value" id="ws-${b.pluginId}">${escapeHtml(b.webSocketDebuggerUrl)}</span>
+      <button class="btn-copy" onclick="copyText('ws-${b.pluginId}', this)">Copy</button>
+    </div>
+  </div>
+</div>`;
+}
+
+// ====== API Keys ======
+async function renderApiKeys() {
+  try {
+    const data = await api('/api/api-keys');
+    state.apiKeys = data.apiKeys;
+  } catch (ex) {
+    toast(ex.message, 'error');
+    return;
+  }
+
+  const main = $('#dashboardMain');
+  if (!main) return;
+
+  const apiSection = $('#apiKeySection');
+  apiSection.innerHTML = renderApiKeySection();
+  window.scrollTo({ top: apiSection.offsetTop - 80, behavior: 'smooth' });
+}
+
+function renderApiKeySection() {
+  return `
+<div class="section-header">
+  <div>
+    <h2>API Keys</h2>
+    <div class="subtitle">Manage API keys for programmatic access</div>
+  </div>
+</div>
+<div class="create-key-form" style="margin-bottom:16px">
+  <input type="text" id="newKeyName" placeholder="Key name (e.g. ci-cd)" maxlength="64">
+  <button class="btn-primary btn-sm" onclick="createApiKey()">Generate Key</button>
+</div>
+<div class="api-keys-section">
+  ${state.apiKeys.length === 0 ? '<p style="color:var(--text-muted);font-size:13px">No API keys yet. Generate one above.</p>' : state.apiKeys.map(k => renderApiKeyRow(k)).join('')}
+</div>`;
+}
+
+function renderApiKeyRow(k) {
+  const active = k.active === 1 || k.active === true;
+  const created = k.created_at ? formatTime(k.created_at) : '—';
+  const lastUsed = k.last_used_at ? formatTime(k.last_used_at) : 'Never';
+  return `
+<div class="api-key-card">
+  <div class="api-key-info">
+    <div class="api-key-name">${escapeHtml(k.name || 'Unnamed')}</div>
+    <div class="api-key-meta">Created ${created} · Last used ${lastUsed}</div>
+  </div>
+  <div class="api-key-actions">
+    ${active ? `<button class="btn-danger" onclick="revokeApiKey('${k.id}', this)">Revoke</button>` : '<span style="font-size:12px;color:var(--text-muted)">Revoked</span>'}
+  </div>
+</div>`;
+}
+
+async function createApiKey() {
+  const input = $('#newKeyName');
+  const name = input.value.trim() || 'unnamed';
+  try {
+    const data = await api('/api/api-keys', { method: 'POST', body: JSON.stringify({ name }) });
+    input.value = '';
+    state.apiKeys = await (await fetch(API_BASE + '/api/api-keys', { headers: { 'Authorization': `Bearer ${state.token}` } })).json().then(d => d.apiKeys);
+    const apiSection = $('#apiKeySection');
+    if (apiSection) apiSection.innerHTML = renderApiKeySection();
+    toast(`Key generated: ${data.apiKey.key}`);
+  } catch (ex) {
+    toast(ex.message, 'error');
+  }
+}
+
+async function revokeApiKey(id, btn) {
+  if (!confirm('Revoke this API key? This action cannot be undone.')) return;
+  btn.disabled = true;
+  btn.textContent = 'Revoking…';
+  try {
+    await api(`/api/api-keys/${id}/revoke`, { method: 'POST' });
+    state.apiKeys = await (await fetch(API_BASE + '/api/api-keys', { headers: { 'Authorization': `Bearer ${state.token}` } })).json().then(d => d.apiKeys);
+    const apiSection = $('#apiKeySection');
+    if (apiSection) apiSection.innerHTML = renderApiKeySection();
+    toast('API key revoked');
+  } catch (ex) {
+    toast(ex.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Revoke';
+  }
+}
+
+// ====== Copy ======
+function copyText(elemId, btn) {
+  const el = document.getElementById(elemId);
+  if (!el) return;
+  const text = el.textContent;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+    }).catch(() => fallbackCopy(text, btn));
+  } else {
+    fallbackCopy(text, btn);
+  }
+}
+
+function fallbackCopy(text, btn) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+  btn.textContent = 'Copied!';
+  btn.classList.add('copied');
+  setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+}
+
+// ====== Helpers ======
+function escapeHtml(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.appendChild(document.createTextNode(s));
+  return d.innerHTML;
+}
+
+function formatTime(isoStr) {
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return isoStr;
+    const now = new Date();
+    const diff = now - d;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch { return isoStr; }
+}
+
+// ====== Init ======
+(async function init() {
+  if (state.token) {
+    try {
+      const data = await api('/api/auth/me');
+      state.user = data.user;
+    } catch {
+      state.token = null;
+      localStorage.removeItem('cdp_token');
+    }
+  }
+  render();
+})();
+</script>
+</body>
+</html>

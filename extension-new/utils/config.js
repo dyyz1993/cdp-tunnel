@@ -1,5 +1,5 @@
 var Config = {
-  WS_URL: 'ws://localhost:19221/plugin',
+  WS_URL: 'ws://localhost:9221/plugin',
   RECONNECT_DELAY: 3000,
   DEBUGGER_VERSION: '1.3',
   HEARTBEAT_INTERVAL: 25000,
@@ -15,6 +15,18 @@ var Config = {
   getWsUrl: function(callback) {
     chrome.storage.local.get(['wsAddress'], function(result) {
       callback(result.wsAddress || Config.WS_URL);
+    });
+  },
+  getPluginId: function(callback) {
+    chrome.storage.local.get(['pluginId'], function(result) {
+      if (result.pluginId) {
+        callback(result.pluginId);
+      } else {
+        var id = 'browser_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
+        chrome.storage.local.set({ pluginId: id }, function() {
+          callback(id);
+        });
+      }
     });
   },
   AUTO_MUTE: true,

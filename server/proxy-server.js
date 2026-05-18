@@ -18,10 +18,23 @@ const { execSync, spawn: spawnProcess } = require('child_process');
 const { CONFIG, BROWSER_ID, shouldLog } = require('./modules/config');
 const { logCDP, logEvent, clearLog, logStatus, logConnectionEvent, flushAllLogs, logDisconnect } = require('./modules/logger');
 
+try {
+    const { validateApiKey } = require('./saas/auth');
+    var HAS_SAAS = true;
+} catch (e) {
+    var HAS_SAAS = false;
+}
+
 const PORT = CONFIG.PORT;
 const CONFIG_DIR = path.join(os.homedir(), '.cdp-tunnel');
-const EXTENSION_STATE_FILE = path.join(CONFIG_DIR, 'extension-state.json');
-const PLUGIN_EVER_CONNECTED_FILE = path.join(CONFIG_DIR, 'plugin-ever-connected');
+const INSTANCE_DIR = path.join(CONFIG_DIR, 'instances', PORT.toString());
+
+if (!fs.existsSync(INSTANCE_DIR)) {
+    fs.mkdirSync(INSTANCE_DIR, { recursive: true });
+}
+
+const EXTENSION_STATE_FILE = path.join(INSTANCE_DIR, 'extension-state.json');
+const PLUGIN_EVER_CONNECTED_FILE = path.join(INSTANCE_DIR, 'plugin-ever-connected');
 const SERVER_START_TIME = Date.now();
 
 let lastChromeRestartAttempt = 0;
@@ -142,24 +155,37 @@ const server = http.createServer((req, res) => handleHttpRequest(req, res));
 const pluginConnections = new Set();
 const clientConnections = new Set();
 
+class PluginNamespace {
+    constructor() {
+        this.sessionToClientId = new Map();
+        this.pendingAttachRequests = new Map();
+        this.pendingAttachedEvents = new Map();
+        this.pendingTargetCreatedEvents = new Map();
+        this.targetIdToClientId = new Map();
+        this.browserContextToClientId = new Map();
+        this.clientIdToBrowserContext = new Map();
+        this.cachedTargets = [];
+        this.lastTargetsUpdate = 0;
+        this.cachedBrowserVersion = null;
+    }
+}
+
+const pluginNamespaces = new Map();
+
+function getNamespace(pluginWs) {
+    if (!pluginNamespaces.has(pluginWs)) {
+        pluginNamespaces.set(pluginWs, new PluginNamespace());
+    }
+    return pluginNamespaces.get(pluginWs);
+}
+
 const connectionPairs = new Map();
 const clientById = new Map();
-const sessionToClientId = new Map();
-const pendingAttachRequests = new Map();
 const clientIdToPlugin = new Map();
 const globalRequestIdMap = new Map();
-const targetIdToClientId = new Map();
-const pendingAttachedEvents = new Map();
-const pendingTargetCreatedEvents = new Map();
-const browserContextToClientId = new Map();
-const clientIdToBrowserContext = new Map();
 let globalRequestIdCounter = 0;
 
 const { version: PKG_VERSION } = require('../package.json');
-
-let cachedTargets = [];
-let lastTargetsUpdate = 0;
-let cachedBrowserVersion = null;
 
 console.log('='.repeat(60));
 console.log(`  WebSocket CDP Proxy Server v${PKG_VERSION}`);
@@ -177,26 +203,24 @@ function getHost(req) {
     return req.headers.host || `localhost:${PORT}`;
 }
 
-/**
- * 生成 WebSocket 调试地址
- */
-function buildWebSocketDebuggerUrl(req) {
-    return `ws://${getHost(req)}/devtools/browser/${BROWSER_ID}`;
+function invalidateTargetsCache(pluginWs) {
+    if (pluginWs) {
+        getNamespace(pluginWs).lastTargetsUpdate = 0;
+    } else {
+        pluginNamespaces.forEach(ns => { ns.lastTargetsUpdate = 0; });
+    }
 }
 
-function buildTargetWebSocketUrl(req, targetId) {
-    return `ws://${getHost(req)}/devtools/page/${targetId}`;
-}
+async function requestVersionFromPlugin(pluginWs) {
+    if (!pluginWs) {
+        pluginWs = pluginConnections.values().next().value;
+    }
+    if (!pluginWs) return null;
 
-function invalidateTargetsCache() {
-    lastTargetsUpdate = 0;
-}
+    const ns = getNamespace(pluginWs);
+    if (ns.cachedBrowserVersion) return ns.cachedBrowserVersion;
 
-async function requestVersionFromPlugin() {
-    if (cachedBrowserVersion) return cachedBrowserVersion;
-
-    const plugin = pluginConnections.values().next().value;
-    if (!plugin || plugin.readyState !== WebSocket.OPEN) {
+    if (pluginWs.readyState !== WebSocket.OPEN) {
         return null;
     }
 
@@ -209,35 +233,40 @@ async function requestVersionFromPlugin() {
                 const msg = JSON.parse(data.toString());
                 if (msg.id === requestId && msg.result) {
                     clearTimeout(timeout);
-                    plugin.off('message', handler);
+                    pluginWs.off('message', handler);
                     if (msg.result.product || msg.result.userAgent) {
-                        cachedBrowserVersion = msg.result;
+                        ns.cachedBrowserVersion = msg.result;
                     }
-                    resolve(cachedBrowserVersion || msg.result);
+                    resolve(ns.cachedBrowserVersion || msg.result);
                 }
             } catch (e) {}
         };
 
-        plugin.on('message', handler);
-        plugin.send(JSON.stringify({ id: requestId, method: 'Browser.getVersion' }));
+        pluginWs.on('message', handler);
+        pluginWs.send(JSON.stringify({ id: requestId, method: 'Browser.getVersion' }));
     });
 }
 
-async function requestTargetsFromPlugin() {
+async function requestTargetsFromPlugin(pluginWs) {
+    if (!pluginWs) {
+        pluginWs = pluginConnections.values().next().value;
+    }
+    if (!pluginWs) return [];
+
+    const ns = getNamespace(pluginWs);
     const now = Date.now();
-    if (now - lastTargetsUpdate < CONFIG.TARGETS_CACHE_TTL && cachedTargets.length > 0) {
-        return cachedTargets;
+    if (now - ns.lastTargetsUpdate < CONFIG.TARGETS_CACHE_TTL && ns.cachedTargets.length > 0) {
+        return ns.cachedTargets;
     }
 
-    const plugin = pluginConnections.values().next().value;
-    if (!plugin || plugin.readyState !== WebSocket.OPEN) {
-        return cachedTargets;
+    if (pluginWs.readyState !== WebSocket.OPEN) {
+        return ns.cachedTargets;
     }
 
     return new Promise((resolve) => {
         const requestId = `targets_${Date.now()}`;
         const timeout = setTimeout(() => {
-            resolve(cachedTargets);
+            resolve(ns.cachedTargets);
         }, CONFIG.TARGETS_REQUEST_TIMEOUT);
 
         const handler = (data) => {
@@ -245,36 +274,79 @@ async function requestTargetsFromPlugin() {
                 const msg = JSON.parse(data.toString());
                 if (msg.id === requestId && msg.result?.targetInfos) {
                     clearTimeout(timeout);
-                    plugin.off('message', handler);
-                    cachedTargets = msg.result.targetInfos;
-                    lastTargetsUpdate = now;
-                    resolve(cachedTargets);
+                    pluginWs.off('message', handler);
+                    ns.cachedTargets = msg.result.targetInfos;
+                    ns.lastTargetsUpdate = now;
+                    resolve(ns.cachedTargets);
                 }
             } catch (e) {}
         };
 
-        plugin.on('message', handler);
-        plugin.send(JSON.stringify({ id: requestId, method: 'Target.getTargets' }));
+        pluginWs.on('message', handler);
+        pluginWs.send(JSON.stringify({ id: requestId, method: 'Target.getTargets' }));
     });
+}
+
+/**
+ * 生成指定 plugin 的 browser WS URL
+ */
+function buildBrowserWsUrl(pluginId) {
+    const host = CONFIG.EXTERNAL_HOST || `localhost:${PORT}`;
+    return `ws://${host}/devtools/browser/${pluginId}`;
 }
 
 /**
  * 处理 HTTP 请求
  */
+function resolvePluginFromUrl(url) {
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length >= 3) {
+        const pluginId = parts[2];
+        for (const pluginWs of pluginConnections) {
+            if (pluginWs.pluginId === pluginId) return pluginWs;
+        }
+    }
+    return pluginConnections.values().next().value || null;
+}
+
 async function handleHttpRequest(req, res) {
     const url = new URL(req.url, `http://localhost:${PORT}`);
     
-    if (url.pathname === '/json/version' || url.pathname === '/json/version/') {
-        const ver = await requestVersionFromPlugin();
+    if (url.pathname === '/json/browsers' || url.pathname === '/json/browsers/') {
+        const browsers = [];
+        for (const pluginWs of pluginConnections) {
+            if (pluginWs.readyState !== WebSocket.OPEN) continue;
+            const ns = getNamespace(pluginWs);
+            browsers.push({
+                pluginId: pluginWs.pluginId,
+                pluginName: pluginWs.pluginName || 'My Browser',
+                userId: pluginWs.userId || null,
+                browserName: ns.cachedBrowserVersion?.Browser || 'Unknown',
+                targets: ns.cachedTargets.length,
+                connected: true,
+                connectedAt: pluginWs.connectedAt,
+                webSocketDebuggerUrl: buildBrowserWsUrl(pluginWs.pluginId)
+            });
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(browsers));
+        return;
+    }
+    
+    if (url.pathname === '/json/version' || url.pathname === '/json/version/' ||
+        url.pathname.match(/^\/json\/version\/[^/]+$/)) {
+        const pluginWs = resolvePluginFromUrl(url);
+        const ver = await requestVersionFromPlugin(pluginWs);
         const userAgent = ver?.userAgent || 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.86 Safari/537.36';
         const product = ver?.product || 'Chrome/131.0.6778.86';
+        const browserId = pluginWs ? pluginWs.pluginId : BROWSER_ID;
         const payload = {
             Browser: `${product} (cdp-tunnel/${PKG_VERSION})`,
             'Protocol-Version': ver?.protocolVersion || '1.3',
             'User-Agent': userAgent,
             'V8-Version': ver?.jsVersion || '',
             'WebKit-Version': '537.36',
-            webSocketDebuggerUrl: buildWebSocketDebuggerUrl(req)
+            webSocketDebuggerUrl: `ws://${getHost(req)}/devtools/browser/${browserId}`
         };
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(payload));
@@ -282,16 +354,19 @@ async function handleHttpRequest(req, res) {
     }
     
     if (url.pathname === '/json' || url.pathname === '/json/' ||
-        url.pathname === '/json/list' || url.pathname === '/json/list/') {
-        const targets = await requestTargetsFromPlugin();
+        url.pathname === '/json/list' || url.pathname === '/json/list/' ||
+        url.pathname.match(/^\/json\/list\/[^/]+$/)) {
+        const pluginWs = resolvePluginFromUrl(url);
+        const targets = await requestTargetsFromPlugin(pluginWs);
+        const browserId = pluginWs ? pluginWs.pluginId : BROWSER_ID;
         const targetList = targets
             .filter(t => {
                 if (t.type !== 'page') return false;
-                const url = t.url || '';
-                if (url.startsWith('chrome://') || 
-                    url.startsWith('chrome-extension://') ||
-                    url.startsWith('devtools://') ||
-                    url.startsWith('edge://')) {
+                const tUrl = t.url || '';
+                if (tUrl.startsWith('chrome://') || 
+                    tUrl.startsWith('chrome-extension://') ||
+                    tUrl.startsWith('devtools://') ||
+                    tUrl.startsWith('edge://')) {
                     return false;
                 }
                 return true;
@@ -305,7 +380,7 @@ async function handleHttpRequest(req, res) {
                 title: t.title || '',
                 type: t.type,
                 url: t.url || '',
-                webSocketDebuggerUrl: buildTargetWebSocketUrl(req, t.targetId)
+                webSocketDebuggerUrl: `ws://${getHost(req)}/devtools/page/${t.targetId}`
             }));
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(targetList));
@@ -322,8 +397,10 @@ async function handleHttpRequest(req, res) {
 server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url, `http://localhost:${PORT}`);
     const path = url.pathname;
+    const pathParts = path.split('/').filter(Boolean);
     const isPlugin = path === '/plugin';
     const isClient = path === '/client' || 
+                     path.startsWith('/client/') ||
                      path.startsWith('/client-') ||
                      path.startsWith('/devtools/browser/') ||
                      path.startsWith('/devtools/page/');
@@ -341,6 +418,7 @@ server.on('upgrade', (req, socket, head) => {
 wss.on('connection', (ws, req) => {
     const url = new URL(req.url, `http://localhost:${PORT}`);
     const path = url.pathname;
+    const pathParts = path.split('/').filter(Boolean);
 
     const clientInfo = {
         ip: req.socket.remoteAddress,
@@ -348,10 +426,16 @@ wss.on('connection', (ws, req) => {
     };
 
     if (path === '/plugin') {
-        handlePluginConnection(ws, clientInfo);
-    } else if (path === '/client' || path.startsWith('/client-') || path.startsWith('/devtools/browser/')) {
+        handlePluginConnection(ws, clientInfo, req);
+    } else if (path === '/client' || path.startsWith('/client/') || path.startsWith('/client-') || path.startsWith('/devtools/browser/')) {
         const customClientId = path.startsWith('/client-') ? path.replace('/client-', '') : null;
-        handleClientConnection(ws, clientInfo, customClientId);
+        let targetPluginId = null;
+        if (pathParts[0] === 'client' && pathParts[1]) {
+            targetPluginId = pathParts[1];
+        } else if (pathParts[0] === 'devtools' && pathParts[1] === 'browser' && pathParts[2]) {
+            targetPluginId = pathParts[2];
+        }
+        handleClientConnection(ws, clientInfo, customClientId, targetPluginId);
     } else if (path.startsWith('/devtools/page/')) {
         const targetId = path.replace('/devtools/page/', '');
         handlePageConnection(ws, clientInfo, targetId);
@@ -362,21 +446,26 @@ wss.on('connection', (ws, req) => {
 });
 
 function cleanupClient(ws, id, reason) {
-    const sessionsToClean = [];
-    for (const [sessionId, clientId] of sessionToClientId.entries()) {
-        if (clientId === id) {
-            sessionsToClean.push(sessionId);
-            sessionToClientId.delete(sessionId);
+    const pluginWs = ws.pairedPlugin || clientIdToPlugin.get(id);
+    const ns = pluginWs ? getNamespace(pluginWs) : null;
+
+    if (ns) {
+        const sessionsToClean = [];
+        for (const [sessionId, clientId] of ns.sessionToClientId.entries()) {
+            if (clientId === id) {
+                sessionsToClean.push(sessionId);
+                ns.sessionToClientId.delete(sessionId);
+            }
         }
     }
 
     clientConnections.delete(ws);
     clientById.delete(id);
+    clientIdToPlugin.delete(id);
 
     logConnectionEvent('CLIENT_DISCONNECTED', {
         id,
         reason,
-        sessionsCleaned: sessionsToClean.length,
         totalPlugins: pluginConnections.size,
         totalClients: clientConnections.size
     });
@@ -384,7 +473,6 @@ function cleanupClient(ws, id, reason) {
     logDisconnect('CLIENT_CLEANUP', {
         clientId: id,
         reason,
-        sessionsLost: sessionsToClean.length,
         cdpMethodsUsed: ws.cdpTrace ? [...new Set(ws.cdpTrace)] : [],
         uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
         remainingClients: clientConnections.size,
@@ -401,20 +489,22 @@ function cleanupClient(ws, id, reason) {
         safeSend(ws.pairedPlugin, JSON.stringify({
             type: 'client-disconnected',
             clientId: id,
-            sessions: sessionsToClean
+            sessions: []
         }), 'plugin');
     }
 
     broadcastClientList();
 
-    for (const [tId, cId] of targetIdToClientId.entries()) {
-        if (cId === id) targetIdToClientId.delete(tId);
-    }
-    for (const [bcId, cId] of browserContextToClientId.entries()) {
-        if (cId === id) browserContextToClientId.delete(bcId);
-    }
-    if (clientIdToBrowserContext.has(id)) {
-        clientIdToBrowserContext.delete(id);
+    if (ns) {
+        for (const [tId, cId] of ns.targetIdToClientId.entries()) {
+            if (cId === id) ns.targetIdToClientId.delete(tId);
+        }
+        for (const [bcId, cId] of ns.browserContextToClientId.entries()) {
+            if (cId === id) ns.browserContextToClientId.delete(bcId);
+        }
+        if (ns.clientIdToBrowserContext.has(id)) {
+            ns.clientIdToBrowserContext.delete(id);
+        }
     }
     for (const [gId, mapping] of globalRequestIdMap.entries()) {
         if (mapping.clientId === id) globalRequestIdMap.delete(gId);
@@ -446,7 +536,9 @@ function sendPendingRequestErrors(pluginWs) {
 }
 
 function cleanupPlugin(ws, id, reason) {
+    const ns = getNamespace(ws);
     pluginConnections.delete(ws);
+    pluginNamespaces.delete(ws);
 
     if (pluginConnections.size === 0) {
         updateExtensionState(false);
@@ -478,8 +570,8 @@ function cleanupPlugin(ws, id, reason) {
         remainingPlugins: pluginConnections.size,
         affectedClients,
         uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
-        activeSessions: sessionToClientId.size,
-        pendingRequests: pendingAttachRequests.size
+        activeSessions: ns.sessionToClientId.size,
+        pendingRequests: ns.pendingAttachRequests.size
     });
 
     if (ws.pairedClientId) {
@@ -490,34 +582,45 @@ function cleanupPlugin(ws, id, reason) {
 /**
  * 处理 Chrome 扩展连接
  */
-function handlePluginConnection(ws, clientInfo) {
+function handlePluginConnection(ws, clientInfo, request) {
+    const req = request;
     const id = generateId('plugin');
     
-    if (pluginConnections.size > 0) {
-        const toRemove = [];
-        pluginConnections.forEach(oldWs => {
-            if (oldWs !== ws) {
-                if (oldWs.readyState === WebSocket.OPEN) {
-                    oldWs.send(JSON.stringify({ type: 'server-restart' }));
-                    oldWs.close(1001, 'Server restarted');
+    ws.pluginId = 'browser_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
+
+    try {
+        const url = new URL(req.url, `http://localhost`);
+        const apiKey = url.searchParams.get('key');
+        const desiredPluginId = url.searchParams.get('pluginId');
+
+        if (desiredPluginId && /^browser_[a-zA-Z0-9_]+$/.test(desiredPluginId)) {
+            let conflict = false;
+            for (const existing of pluginConnections) {
+                if (existing.pluginId === desiredPluginId && existing !== ws) {
+                    conflict = true;
+                    break;
                 }
-                toRemove.push(oldWs);
             }
-        });
-        toRemove.forEach(oldWs => {
-            pluginConnections.delete(oldWs);
-            if (shouldLog('info')) {
-                console.log(`[PLUGIN] Removed old connection: ${oldWs.id}`);
+            if (!conflict) {
+                ws.pluginId = desiredPluginId;
             }
-        });
+        }
+
+        if (HAS_SAAS && apiKey) {
+            const keyInfo = validateApiKey(apiKey);
+            if (keyInfo) {
+                ws.userId = keyInfo.userId;
+                ws.apiKeyId = keyInfo.keyId;
+                logConnectionEvent('PLUGIN_AUTHED', `userId=${keyInfo.userId} keyName=${keyInfo.keyName}`);
+            } else {
+                logConnectionEvent('PLUGIN_AUTH_FAIL', 'Invalid API key');
+                ws.close(4001, 'Invalid API key');
+                return;
+            }
+        }
+    } catch (e) {
+        logConnectionEvent('PLUGIN_AUTH_ERR', e.message);
     }
-    
-    sessionToClientId.clear();
-    pendingAttachRequests.clear();
-    connectionPairs.clear();
-    clientConnections.forEach(clientWs => {
-        clientWs.pairedPlugin = null;
-    });
     
     pluginConnections.add(ws);
     
@@ -626,8 +729,8 @@ function handlePluginConnection(ws, clientInfo) {
             if (!match) {
                 console.log(`  ↳ Run "cdp-tunnel update" or reload the extension to sync versions`);
             }
-            cachedBrowserVersion = null;
-            requestVersionFromPlugin();
+            getNamespace(ws).cachedBrowserVersion = null;
+            requestVersionFromPlugin(ws);
             return;
         }
         
@@ -645,9 +748,9 @@ function handlePluginConnection(ws, clientInfo) {
             if (parsed.method.startsWith('CDPTunnel.')) {
                 console.log(`[EXT DEBUG] ${parsed.method}: ${JSON.stringify(parsed.params)}`);
             }
-            // 对于 Target 事件，始终广播给所有客户端
             const targetEvents = ['Target.targetCreated', 'Target.attachedToTarget', 'Target.targetDestroyed', 'Target.targetInfoChanged'];
             if (targetEvents.includes(parsed.method)) {
+                const ns = getNamespace(ws);
                 const cdpMsg = {
                     method: parsed.method,
                     params: parsed.params,
@@ -662,19 +765,19 @@ function handlePluginConnection(ws, clientInfo) {
                     const targetId = parsed.params?.targetInfo?.targetId;
                     const openerId = parsed.params?.targetInfo?.openerId;
                     if (openerId && targetId) {
-                        const openerClientId = targetIdToClientId.get(openerId);
+                        const openerClientId = ns.targetIdToClientId.get(openerId);
                         if (openerClientId) {
-                            targetIdToClientId.set(targetId, openerClientId);
+                            ns.targetIdToClientId.set(targetId, openerClientId);
                             console.log(`[TARGET CREATED with opener] targetId=${targetId?.substring(0,8) || 'none'} openerId=${openerId?.substring(0,8) || 'none'} -> clientId=${openerClientId}`);
                         }
                     }
                 }
 
-                rewriteBrowserContextId(cdpMsg);
+                rewriteBrowserContextId(cdpMsg, ws);
                 const cdpData = JSON.stringify(cdpMsg);
 
                 const targetId = parsed.params?.targetInfo?.targetId;
-                const eventClientId = targetId ? targetIdToClientId.get(targetId) : null;
+                const eventClientId = targetId ? ns.targetIdToClientId.get(targetId) : null;
 
                 if (eventClientId) {
                     const clientWs = clientById.get(eventClientId);
@@ -683,7 +786,7 @@ function handlePluginConnection(ws, clientInfo) {
                         console.log(`[TARGET EVENT ROUTED] ${parsed.method} targetId=${targetId?.substring(0,8)} -> clientId=${eventClientId}`);
                     }
                 } else if (targetId && (parsed.method === 'Target.targetCreated' || parsed.method === 'Target.attachedToTarget')) {
-                    const pendingMap = parsed.method === 'Target.targetCreated' ? pendingTargetCreatedEvents : pendingAttachedEvents;
+                    const pendingMap = parsed.method === 'Target.targetCreated' ? ns.pendingTargetCreatedEvents : ns.pendingAttachedEvents;
                     pendingMap.set(targetId, { parsed: JSON.parse(JSON.stringify(parsed)), cdpData });
                     console.log(`[TARGET EVENT PENDING] ${parsed.method} targetId=${targetId?.substring(0,8)} (cached, waiting for createTarget response)`);
                 } else {
@@ -691,24 +794,23 @@ function handlePluginConnection(ws, clientInfo) {
                 }
             }
             
-            // 对于 Target.attachedToTarget 事件，建立 sessionId -> clientId 映射
             if (parsed.method === 'Target.attachedToTarget') {
+                const ns = getNamespace(ws);
                 const targetId = parsed.params?.targetInfo?.targetId;
                 const sessionId = parsed.params?.sessionId;
                 
                 if (targetId && sessionId) {
                     const clientId = ws.pairedClientId;
                     if (clientId) {
-                        sessionToClientId.set(sessionId, clientId);
+                        ns.sessionToClientId.set(sessionId, clientId);
                         console.log(`[SESSION MAPPED] sessionId=${sessionId?.substring(0,8) || 'none'} -> clientId=${clientId?.substring(0,8) || 'none'}`);
                     } else {
-                        sessionToClientId.set(sessionId, targetId);
+                        ns.sessionToClientId.set(sessionId, targetId);
                         console.log(`[SESSION MAPPED] sessionId=${sessionId?.substring(0,8) || 'none'} -> targetId=${targetId?.substring(0,8) || 'none'} (no pairedClientId)`);
                     }
                 }
             }
             
-            // 如果不是 Target 事件，按照原来的逻辑发送
             if (!targetEvents.includes(parsed.method)) {
                 const cdpMsg = {
                     method: parsed.method,
@@ -744,45 +846,42 @@ function handlePluginConnection(ws, clientInfo) {
         if (parsed && parsed.id !== undefined) {
             const globalId = parsed.id;
             const mapping = globalRequestIdMap.get(globalId);
+            const ns = getNamespace(ws);
             console.log(`[RESPONSE DEBUG] globalId=${globalId} hasMapping=${!!mapping} sessionId=${parsed.sessionId?.substring(0,8) || 'none'} method=${parsed.method || 'response'}`);
             if (mapping) {
                 const clientWs = clientById.get(mapping.clientId);
                 if (clientWs && clientWs.readyState === WebSocket.OPEN) {
-                    // 如果是 Target.createBrowserContext 响应，记录 browserContextId -> clientId 映射
                     if (mapping.isCreateBrowserContext && parsed.result?.browserContextId) {
                         const browserContextId = parsed.result.browserContextId;
-                        browserContextToClientId.set(browserContextId, mapping.clientId);
-                        clientIdToBrowserContext.set(mapping.clientId, browserContextId);
+                        ns.browserContextToClientId.set(browserContextId, mapping.clientId);
+                        ns.clientIdToBrowserContext.set(mapping.clientId, browserContextId);
                         console.log(`[BROWSER CONTEXT MAPPED] browserContextId=${browserContextId} -> clientId=${mapping.clientId}`);
                     }
                     
-                    // 如果是 Target.attachToTarget 响应，建立 sessionId -> clientId 映射
                     if (parsed.result?.sessionId && mapping.method === 'Target.attachToTarget') {
-                        sessionToClientId.set(parsed.result.sessionId, mapping.clientId);
+                        ns.sessionToClientId.set(parsed.result.sessionId, mapping.clientId);
                         console.log(`[SESSION MAPPED from attach response] sessionId=${parsed.result.sessionId?.substring(0,8)} -> clientId=${mapping.clientId?.substring(0,8)}`);
                     }
                     
-                    // 如果是 Target.createTarget 响应，先发送缓存的 Target.attachedToTarget 事件
-                    // 然后再发送响应
                     if (mapping.isCreateTarget && parsed.result?.targetId) {
                         const targetId = parsed.result.targetId;
-                        targetIdToClientId.set(targetId, mapping.clientId);
-                        console.log(`[TARGET MAPPED] targetId=${targetId} -> clientId=${mapping.clientId} mapSize=${targetIdToClientId.size}`);
+                        ns.targetIdToClientId.set(targetId, mapping.clientId);
+                        console.log(`[TARGET MAPPED] targetId=${targetId} -> clientId=${mapping.clientId} mapSize=${ns.targetIdToClientId.size}`);
                         
-                        const cachedCreated = pendingTargetCreatedEvents.get(targetId);
+                        const cachedCreated = ns.pendingTargetCreatedEvents.get(targetId);
                         if (cachedCreated) {
                             clientWs.send(cachedCreated.cdpData);
                             console.log(`[TARGET CREATED EVENT] Sent cached Target.targetCreated to client: ${mapping.clientId}`);
-                            pendingTargetCreatedEvents.delete(targetId);
+                            ns.pendingTargetCreatedEvents.delete(targetId);
                         }
                         
-                        const cachedEvent = pendingAttachedEvents.get(targetId);
+                        const cachedEvent = ns.pendingAttachedEvents.get(targetId);
                         if (cachedEvent) {
                             if (cachedEvent.parsed.sessionId) {
-                                sessionToClientId.set(cachedEvent.parsed.sessionId, mapping.clientId);
+                                ns.sessionToClientId.set(cachedEvent.parsed.sessionId, mapping.clientId);
                             }
                             console.log(`[SESSION MAPPED from cached] sessionId=${cachedEvent.parsed.sessionId?.substring(0,8) || 'none'} -> clientId=${mapping.clientId} (targetId=${targetId})`);
-                            pendingAttachedEvents.delete(targetId);
+                            ns.pendingAttachedEvents.delete(targetId);
                             
                             const cdpMsg = {
                                 method: cachedEvent.parsed.method,
@@ -796,37 +895,33 @@ function handlePluginConnection(ws, clientInfo) {
                         const newTargetInfo = cachedCreated?.parsed?.params?.targetInfo
                             || cachedEvent?.parsed?.params?.targetInfo;
                         if (newTargetInfo) {
-                            const exists = cachedTargets.some(t => t.targetId === targetId);
+                            const exists = ns.cachedTargets.some(t => t.targetId === targetId);
                             if (!exists) {
-                                cachedTargets.push(newTargetInfo);
+                                ns.cachedTargets.push(newTargetInfo);
                             }
                         } else {
-                            invalidateTargetsCache();
+                            invalidateTargetsCache(ws);
                         }
                     }
-                    // 过滤 Target.getTargets 响应，只返回该客户端拥有的 target
                     if (mapping.isGetTargets && parsed.result && parsed.result.targetInfos) {
                         const clientId = mapping.clientId;
                         parsed.result.targetInfos = parsed.result.targetInfos.filter(t => {
                             if (t.type !== 'page') return true;
-                            const ownerClient = targetIdToClientId.get(t.targetId);
+                            const ownerClient = ns.targetIdToClientId.get(t.targetId);
                             return ownerClient === clientId;
                         });
                         console.log(`[GET TARGETS FILTERED] client=${clientId} returned ${parsed.result.targetInfos.filter(t => t.type === 'page').length} page targets`);
                     }
-                    // 清理 Target.closeTarget 成功后的映射
                     if (parsed.result && parsed.result.success !== undefined && mapping.method === 'Target.closeTarget') {
                         if (mapping.closeTargetId) {
-                            targetIdToClientId.delete(mapping.closeTargetId);
+                            ns.targetIdToClientId.delete(mapping.closeTargetId);
                             console.log(`[CLOSE TARGET CLEANUP] removed targetId=${mapping.closeTargetId?.substring(0,8)} from mapping`);
                         }
-                        invalidateTargetsCache();
+                        invalidateTargetsCache(ws);
                     }
                     
-                    // 然后发送响应给客户端
                     const originalId = mapping.originalId;
                     parsed.id = originalId;
-                    // 如果请求有 sessionId，但响应没有，添加 sessionId
                     if (mapping.sessionId && !parsed.sessionId) {
                         parsed.sessionId = mapping.sessionId;
                     }
@@ -844,7 +939,8 @@ function handlePluginConnection(ws, clientInfo) {
         
         // 2. sessionId 路由：消息属于特定 session（事件，没有 id）
         if (parsed && parsed.sessionId) {
-            const targetClientId = sessionToClientId.get(parsed.sessionId);
+            const ns = getNamespace(ws);
+            const targetClientId = ns.sessionToClientId.get(parsed.sessionId);
             console.log(`[SESSION ROUTE] sessionId=${parsed.sessionId?.substring(0,8) || 'none'} -> clientId=${targetClientId || 'not found'}`);
             if (targetClientId) {
                 const clientWs = clientById.get(targetClientId);
@@ -888,7 +984,6 @@ function handlePluginConnection(ws, clientInfo) {
         cleanupPlugin(ws, id, `close:${code}`);
     });
 
-    // 错误处理
     ws.on('error', (error) => {
         console.error(`[PLUGIN ERROR] ${id}:`, error.message);
         
@@ -900,6 +995,7 @@ function handlePluginConnection(ws, clientInfo) {
         });
         
         pluginConnections.delete(ws);
+        pluginNamespaces.delete(ws);
         
         clientConnections.forEach(clientWs => {
             if (clientWs.pairedPlugin === ws) {
@@ -922,6 +1018,7 @@ function handlePluginConnection(ws, clientInfo) {
         type: 'connected',
         role: 'plugin',
         id: id,
+        pluginId: ws.pluginId,
         fresh: (Date.now() - SERVER_START_TIME) < 5000,
         timestamp: Date.now()
     }));
@@ -930,11 +1027,11 @@ function handlePluginConnection(ws, clientInfo) {
 /**
  * 处理 CDP 客户端连接 (Playwright/Puppeteer)
  */
-function handleClientConnection(ws, clientInfo, customClientId = null) {
+function handleClientConnection(ws, clientInfo, customClientId = null, targetPluginId = null) {
     clientConnections.add(ws);
     const id = customClientId || generateId('client');
     if (shouldLog('info')) {
-        console.log(`\n[CLIENT CONNECTED] ID: ${id}${customClientId ? ' (custom)' : ''}`);
+        console.log(`\n[CLIENT CONNECTED] ID: ${id}${customClientId ? ' (custom)' : ''}${targetPluginId ? ` targetPlugin=${targetPluginId}` : ''}`);
         console.log(`  - Remote: ${clientInfo.ip}:${clientInfo.port}`);
         console.log(`  - Total client connections: ${clientConnections.size}`);
     }
@@ -947,7 +1044,6 @@ function handleClientConnection(ws, clientInfo, customClientId = null) {
         totalClients: clientConnections.size
     });
 
-    // 检查是否有可用的 plugin 连接
     if (pluginConnections.size === 0) {
         if (shouldLog('warn')) {
             console.log(`  - WARNING: No plugin connections available!`);
@@ -965,27 +1061,36 @@ function handleClientConnection(ws, clientInfo, customClientId = null) {
             }
         }
     } else {
-        // 多客户端模式: 所有客户端共享同一个 plugin
-        // 每个 clientId 对应不同的 tab
-        const pluginWs = pluginConnections.values().next().value;
+        let pluginWs;
+        if (targetPluginId) {
+            pluginWs = [...pluginConnections].find(p => p.pluginId === targetPluginId);
+            if (!pluginWs) {
+                if (shouldLog('warn')) {
+                    console.log(`  - WARNING: Plugin ${targetPluginId} not found!`);
+                }
+                ws.close(4004, `Plugin ${targetPluginId} not found`);
+                return;
+            }
+        } else {
+            pluginWs = pluginConnections.values().next().value;
+        }
         if (pluginWs) {
             connectionPairs.set(id, pluginWs);
             ws.pairedPlugin = pluginWs;
+            ws.targetPluginId = pluginWs.pluginId;
             clientIdToPlugin.set(id, pluginWs);
             
             if (shouldLog('info')) {
-                console.log(`  - Paired with plugin: ${pluginWs.id} (shared mode)`);
+                console.log(`  - Paired with plugin: ${pluginWs.id} (pluginId=${pluginWs.pluginId})`);
             }
             
             logConnectionEvent('CLIENT_PAIRED', { clientId: id, pluginId: pluginWs.id });
             
-            // 通知 Plugin 新客户端已连接
             pluginWs.send(JSON.stringify({
                 type: 'client-connected',
                 clientId: id
             }));
             
-            // 发送当前所有客户端列表
             broadcastClientList();
         }
     }
@@ -1063,8 +1168,10 @@ function handleClientConnection(ws, clientInfo, customClientId = null) {
         }
         if (parsed && parsed.id !== undefined) {
             if (parsed.method === 'Target.closeTarget') {
+                const pluginWs = ws.pairedPlugin;
+                const ns = pluginWs ? getNamespace(pluginWs) : null;
                 const targetId = parsed.params?.targetId;
-                const ownerClient = targetId ? targetIdToClientId.get(targetId) : null;
+                const ownerClient = (ns && targetId) ? ns.targetIdToClientId.get(targetId) : null;
                 if (ownerClient && ownerClient !== id) {
                     console.log(`[BLOCKED] ${parsed.method} targetId=${targetId?.substring(0,8)} owner=${ownerClient?.substring(0,8)} requester=${id?.substring(0,8)} — not owner`);
                     const errMsg = JSON.stringify({
@@ -1080,8 +1187,10 @@ function handleClientConnection(ws, clientInfo, customClientId = null) {
                     currentMapping.closeTargetId = targetId;
                 }
             } else if (parsed.method === 'Target.attachToTarget') {
+                const pluginWs = ws.pairedPlugin;
+                const ns = pluginWs ? getNamespace(pluginWs) : null;
                 const targetId = parsed.params?.targetId;
-                const ownerClient = targetId ? targetIdToClientId.get(targetId) : null;
+                const ownerClient = (ns && targetId) ? ns.targetIdToClientId.get(targetId) : null;
                 if (ownerClient && ownerClient !== id) {
                     console.log(`[BLOCKED] ${parsed.method} targetId=${targetId?.substring(0,8)} owner=${ownerClient?.substring(0,8)} requester=${id?.substring(0,8)} — not owner`);
                     const errMsg = JSON.stringify({
@@ -1173,7 +1282,17 @@ function handlePageConnection(ws, clientInfo, targetId) {
     ws.lastActivityTime = Date.now();
     clientById.set(id, ws);
 
-    const plugin = pluginConnections.values().next().value;
+    let plugin = null;
+    for (const p of pluginConnections) {
+        const ns = getNamespace(p);
+        if (ns.targetIdToClientId.has(targetId)) {
+            plugin = p;
+            break;
+        }
+    }
+    if (!plugin) {
+        plugin = pluginConnections.values().next().value;
+    }
     if (plugin && plugin.readyState === WebSocket.OPEN) {
         ws.pairedPlugin = plugin;
         if (shouldLog('info')) {
@@ -1209,7 +1328,7 @@ function handlePageConnection(ws, clientInfo, targetId) {
             // 对于全局 Target 事件，需要广播给所有客户端
             const broadcastEvents = ['Target.targetCreated', 'Target.attachedToTarget', 'Target.targetDestroyed', 'Target.targetInfoChanged'];
             if (broadcastEvents.includes(msg.method)) {
-                rewriteBrowserContextId(cdpMsg);
+                rewriteBrowserContextId(cdpMsg, ws.pairedPlugin);
                 console.log(`[PLUGIN -> ALL CLIENTS] Broadcasting ${msg.method}`);
                 broadcastToClients(JSON.stringify(cdpMsg), null);
             } else {
@@ -1313,23 +1432,24 @@ function handlePageConnection(ws, clientInfo, targetId) {
  * 插件总是报告 'default'，但 Playwright 期望自己创建的 context ID
  * 通过 openerId 找到对应的 clientId，再找到该 client 的 browserContextId
  */
-function rewriteBrowserContextId(cdpMsg) {
+function rewriteBrowserContextId(cdpMsg, pluginWs) {
     const targetInfo = cdpMsg.params?.targetInfo;
     if (!targetInfo || targetInfo.browserContextId !== 'default') {
         return cdpMsg;
     }
 
+    const ns = pluginWs ? getNamespace(pluginWs) : null;
     let clientId = null;
 
-    if (targetInfo.openerId) {
-        clientId = targetIdToClientId.get(targetInfo.openerId);
+    if (targetInfo.openerId && ns) {
+        clientId = ns.targetIdToClientId.get(targetInfo.openerId);
     }
-    if (!clientId && targetInfo.targetId) {
-        clientId = targetIdToClientId.get(targetInfo.targetId);
+    if (!clientId && targetInfo.targetId && ns) {
+        clientId = ns.targetIdToClientId.get(targetInfo.targetId);
     }
 
-    if (clientId) {
-        const contextId = clientIdToBrowserContext.get(clientId);
+    if (clientId && ns) {
+        const contextId = ns.clientIdToBrowserContext.get(clientId);
         if (contextId) {
             console.log(`[CONTEXT REWRITE] targetId=${targetInfo.targetId?.substring(0,8) || 'none'} browserContextId: 'default' -> '${contextId}' (via openerId=${targetInfo.openerId?.substring(0,8) || 'none'}, clientId=${clientId})`);
             targetInfo.browserContextId = contextId;
@@ -1605,6 +1725,13 @@ setInterval(() => {
         };
     });
     
+    let totalSessions = 0;
+    let totalPendingAttach = 0;
+    pluginNamespaces.forEach(ns => {
+        totalSessions += ns.sessionToClientId.size;
+        totalPendingAttach += ns.pendingAttachRequests.size;
+    });
+    
     logStatus({
         timestamp: now,
         plugins: pluginConnections.size,
@@ -1614,8 +1741,8 @@ setInterval(() => {
         pairs: connectionPairs.size,
         pluginDetails: pluginList,
         clientDetails: clientList,
-        sessions: sessionToClientId.size,
-        pendingAttach: pendingAttachRequests.size
+        sessions: totalSessions,
+        pendingAttach: totalPendingAttach
     });
 }, CONFIG.STATUS_PRINT_INTERVAL);
 

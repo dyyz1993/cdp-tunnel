@@ -11,45 +11,51 @@ var WebSocketManager = (function() {
     }
 
     Config.getWsUrl(function(wsUrl) {
-      Logger.info('[WS] Connecting to', wsUrl);
-      setBadgeStatus('ON');
+      Config.getPluginId(function(pluginId) {
+        if (pluginId) {
+          var sep = wsUrl.indexOf('?') >= 0 ? '&' : '?';
+          wsUrl += sep + 'pluginId=' + encodeURIComponent(pluginId);
+        }
+        Logger.info('[WS] Connecting to', wsUrl);
+        setBadgeStatus('ON');
 
-      try {
-        ws = new WebSocket(wsUrl);
-        State.setWs(ws);
+        try {
+          ws = new WebSocket(wsUrl);
+          State.setWs(ws);
 
-        ws.onopen = function() {
-          Logger.info('[WS] Connected');
-          setBadgeStatus('ON');
-          State.clearReconnectTimer();
-          processQueue();
-          broadcastStateUpdate();
-          var extVersion = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest) 
-            ? chrome.runtime.getManifest().version : 'unknown';
-          send({ type: 'plugin-hello', version: extVersion });
-        };
+          ws.onopen = function() {
+            Logger.info('[WS] Connected');
+            setBadgeStatus('ON');
+            State.clearReconnectTimer();
+            processQueue();
+            broadcastStateUpdate();
+            var extVersion = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest) 
+              ? chrome.runtime.getManifest().version : 'unknown';
+            send({ type: 'plugin-hello', version: extVersion });
+          };
 
-        ws.onclose = function(event) {
-          Logger.info('[WS] Closed:', event.code, event.reason);
-          setBadgeStatus('OFF');
-          scheduleReconnect();
-          broadcastStateUpdate();
-        };
+          ws.onclose = function(event) {
+            Logger.info('[WS] Closed:', event.code, event.reason);
+            setBadgeStatus('OFF');
+            scheduleReconnect();
+            broadcastStateUpdate();
+          };
 
-        ws.onerror = function(error) {
-          Logger.error('[WS] Error:', error);
+          ws.onerror = function(error) {
+            Logger.error('[WS] Error:', error);
+            setBadgeStatus('ERR');
+            broadcastStateUpdate();
+          };
+
+          ws.onmessage = function(event) {
+            handleRawMessage(event.data);
+          };
+        } catch (error) {
+          Logger.error('[WS] Failed to create:', error);
           setBadgeStatus('ERR');
-          broadcastStateUpdate();
-        };
-
-        ws.onmessage = function(event) {
-          handleRawMessage(event.data);
-        };
-      } catch (error) {
-        Logger.error('[WS] Failed to create:', error);
-        setBadgeStatus('ERR');
-        scheduleReconnect();
-      }
+          scheduleReconnect();
+        }
+      });
     });
   }
 

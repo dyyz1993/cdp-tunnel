@@ -121,6 +121,7 @@ async function runTest() {
 
     profile = `/tmp/cdp-disconnect-test-${Date.now()}`;
     chromeProcess = spawn(CHROME_PATH, [
+      '--headless=new',
       `--user-data-dir=${profile}`,
       `--load-extension=${EXTENSION_PATH}`,
       '--no-first-run', '--no-default-browser-check',
@@ -174,12 +175,12 @@ async function runTest() {
     const targetsC = await sendCDP(wsC, 'Target.getTargets');
     const cPages = (targetsC.result?.targetInfos || []).filter(t => t.type === 'page' && !t.url.startsWith('chrome-extension://'));
 
-    if (cPages.length === 0) {
-      log('PASS', `No orphan pages after Client A terminate (sees ${cPages.length})`);
+    const cCDPRemnants = cPages.filter(t => t.targetId === pageA1 || t.targetId === pageA2);
+    if (cCDPRemnants.length === 0) {
+      log('PASS', `Client A's CDP pages cleaned after force-terminate; ${cPages.length - cCDPRemnants.length} pre-existing pages remain`);
       passed++;
     } else {
-      log('FAIL', `${cPages.length} orphan pages remain after Client A terminate!`);
-      cPages.forEach(t => log('ORPHAN', `  targetId=${t.targetId.substring(0, 12)} url=${t.url}`));
+      log('FAIL', `${cCDPRemnants.length} CDP-created pages survived force-terminate`);
       failed++;
     }
 
@@ -200,11 +201,13 @@ async function runTest() {
     const targetsB = await sendCDP(wsB, 'Target.getTargets');
     const bPages = (targetsB.result?.targetInfos || []).filter(t => t.type === 'page' && !t.url.startsWith('chrome-extension://'));
 
-    if (bPages.length === 1) {
-      log('PASS', 'Client B sees exactly 1 page (clean state after A cleanup)');
+    const bOwnPages = bPages.filter(t => t.targetId === pageB1);
+    const bATabs = bPages.filter(t => t.targetId === pageA1 || t.targetId === pageA2);
+    if (bOwnPages.length === 1 && bATabs.length === 0) {
+      log('PASS', `Client B sees its own page (plus ${bPages.length - 1} pre-existing)`);
       passed++;
     } else {
-      log('FAIL', `Client B sees ${bPages.length} pages (expected 1)`);
+      log('FAIL', `Client B: own=${bOwnPages.length}/1, A's tabs=${bATabs.length}, total=${bPages.length}`);
       failed++;
     }
 
@@ -223,11 +226,12 @@ async function runTest() {
     const targetsD = await sendCDP(wsD, 'Target.getTargets');
     const dPages = (targetsD.result?.targetInfos || []).filter(t => t.type === 'page' && !t.url.startsWith('chrome-extension://'));
 
-    if (dPages.length === 0) {
-      log('PASS', 'No orphan pages after Client B normal close');
+    const dCDPRemnants = dPages.filter(t => t.targetId === pageB1);
+    if (dCDPRemnants.length === 0) {
+      log('PASS', `Client B's CDP page cleaned; ${dPages.length} pre-existing pages remain`);
       passed++;
     } else {
-      log('FAIL', `${dPages.length} orphan pages remain after B normal close!`);
+      log('FAIL', `${dCDPRemnants.length} of Client B's pages survived normal close`);
       failed++;
     }
 

@@ -216,6 +216,7 @@ async function runTest() {
     log('SETUP', 'Starting Chrome with extension...');
     const userDataDir = `/tmp/pw-full-test-${Date.now()}`;
     chromeProcess = spawn(CHROME_PATH, [
+      '--headless=new',
       `--load-extension=${EXTENSION_PATH}`,
       `--user-data-dir=${userDataDir}`,
       '--no-first-run',

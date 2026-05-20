@@ -173,6 +173,7 @@ async function runTest() {
     const profile = `/tmp/cdp-user-tab-test-${Date.now()}`;
     log('SETUP', `Launching Chrome`);
     chromeProcess = spawn(CHROME_PATH, [
+      '--headless=new',
       `--user-data-dir=${profile}`,
       `--load-extension=${EXTENSION_PATH}`,
       '--no-first-run', '--no-default-browser-check',

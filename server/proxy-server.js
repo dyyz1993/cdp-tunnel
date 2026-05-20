@@ -167,6 +167,7 @@ class PluginNamespace {
         this.cachedTargets = [];
         this.lastTargetsUpdate = 0;
         this.cachedBrowserVersion = null;
+        this.discoveringClientIds = new Map();
     }
 }
 
@@ -505,6 +506,7 @@ function cleanupClient(ws, id, reason) {
         if (ns.clientIdToBrowserContext.has(id)) {
             ns.clientIdToBrowserContext.delete(id);
         }
+        ns.discoveringClientIds.delete(id);
     }
     for (const [gId, mapping] of globalRequestIdMap.entries()) {
         if (mapping.clientId === id) globalRequestIdMap.delete(gId);
@@ -753,12 +755,10 @@ function handlePluginConnection(ws, clientInfo, request) {
                 const ns = getNamespace(ws);
                 const cdpMsg = {
                     method: parsed.method,
-                    params: parsed.params,
-                    type: 'event'
+                    params: parsed.params
                 };
                 if (parsed.sessionId) {
                     cdpMsg.params.sessionId = parsed.sessionId;
-                    cdpMsg.sessionId = parsed.sessionId;
                 }
 
                 if (parsed.method === 'Target.targetCreated') {
@@ -787,8 +787,26 @@ function handlePluginConnection(ws, clientInfo, request) {
                     }
                 } else if (targetId && (parsed.method === 'Target.targetCreated' || parsed.method === 'Target.attachedToTarget')) {
                     const pendingMap = parsed.method === 'Target.targetCreated' ? ns.pendingTargetCreatedEvents : ns.pendingAttachedEvents;
-                    pendingMap.set(targetId, { parsed: JSON.parse(JSON.stringify(parsed)), cdpData });
-                    console.log(`[TARGET EVENT PENDING] ${parsed.method} targetId=${targetId?.substring(0,8)} (cached, waiting for createTarget response)`);
+                    
+                    let routedToDiscoverer = false;
+                    if (ns.discoveringClientIds.size > 0) {
+                        for (const [discClientId, timestamp] of ns.discoveringClientIds) {
+                            if (Date.now() - timestamp < 30000) {
+                                const discWs = clientById.get(discClientId);
+                                if (discWs && discWs.readyState === WebSocket.OPEN) {
+                                    discWs.send(cdpData);
+                                    routedToDiscoverer = true;
+                                }
+                            } else {
+                                ns.discoveringClientIds.delete(discClientId);
+                            }
+                        }
+                    }
+                    
+                    if (!routedToDiscoverer) {
+                        pendingMap.set(targetId, { parsed: JSON.parse(JSON.stringify(parsed)), cdpData });
+                        console.log(`[TARGET EVENT PENDING] ${parsed.method} targetId=${targetId?.substring(0,8)} (cached, waiting for createTarget response)`);
+                    }
                 } else {
                     console.log(`[TARGET EVENT DROPPED] ${parsed.method} targetId=${targetId?.substring(0,8) || 'none'} (no owner, dropped for isolation)`);
                 }
@@ -905,9 +923,11 @@ function handlePluginConnection(ws, clientInfo, request) {
                     }
                     if (mapping.isGetTargets && parsed.result && parsed.result.targetInfos) {
                         const clientId = mapping.clientId;
+                        const pluginWsForGetTargets = ws;
                         parsed.result.targetInfos = parsed.result.targetInfos.filter(t => {
                             if (t.type !== 'page') return true;
                             const ownerClient = ns.targetIdToClientId.get(t.targetId);
+                            if (!ownerClient) return true;
                             return ownerClient === clientId;
                         });
                         console.log(`[GET TARGETS FILTERED] client=${clientId} returned ${parsed.result.targetInfos.filter(t => t.type === 'page').length} page targets`);
@@ -1215,6 +1235,14 @@ function handleClientConnection(ws, clientInfo, customClientId = null, targetPlu
             const currentMapping = globalRequestIdMap.get(parsed.id);
             if (currentMapping) {
                 currentMapping.isGetTargets = true;
+            }
+        }
+
+                if (parsed && (parsed.method === 'Target.setDiscoverTargets' || parsed.method === 'Target.setAutoAttach')) {
+            const ns = ws.pairedPlugin ? getNamespace(ws.pairedPlugin) : null;
+            if (ns) {
+                ns.discoveringClientIds.set(id, Date.now());
+                console.log(`[DISCOVERING] client=${id} method=${parsed.method}`);
             }
         }
 
@@ -1606,12 +1634,20 @@ const heartbeatInterval = setInterval(() => {
 
     pluginConnections.forEach((ws) => {
         if (!ws.isAlive) {
-            if (shouldLog('warn')) {
-                console.log(`[${now}] Plugin ${ws.id} not responding, terminating...`);
+            ws.missedPings = (ws.missedPings || 0) + 1;
+            if (ws.missedPings >= CONFIG.PLUGIN_MAX_MISSED_PINGS) {
+                if (shouldLog('warn')) {
+                    console.log(`[${now}] Plugin ${ws.id} missed ${ws.missedPings} pings, terminating...`);
+                }
+                logConnectionEvent('HEARTBEAT_TIMEOUT', { type: 'plugin', id: ws.id, missedPings: ws.missedPings });
+                cleanupPlugin(ws, ws.id, 'heartbeat_timeout');
+                return ws.terminate();
             }
-            logConnectionEvent('HEARTBEAT_TIMEOUT', { type: 'plugin', id: ws.id });
-            cleanupPlugin(ws, ws.id, 'heartbeat_timeout');
-            return ws.terminate();
+            if (shouldLog('info')) {
+                console.log(`[${now}] Plugin ${ws.id} missed ping ${ws.missedPings}/${CONFIG.PLUGIN_MAX_MISSED_PINGS}`);
+            }
+        } else {
+            ws.missedPings = 0;
         }
         ws.isAlive = false;
         ws.ping();

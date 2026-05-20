@@ -73,6 +73,7 @@ async function runTest() {
 
     const profile = `/tmp/cdp-group-creation-test-${Date.now()}`;
     chromeProcess = spawn(CHROME_PATH, [
+      '--headless=new',
       `--user-data-dir=${profile}`, `--load-extension=${EXTENSION_PATH}`,
       '--no-first-run', '--no-default-browser-check',
       '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',

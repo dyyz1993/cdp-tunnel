@@ -25,6 +25,7 @@ async function runTest() {
     // Using about:blank + example.com as startup URLs = user-opened tabs
     const profile = `/tmp/cdp-isolation-test-${Date.now()}`;
     const chromeProcess = spawn(CHROME_PATH, [
+      '--headless=new',
       `--user-data-dir=${profile}`,
       `--load-extension=${EXTENSION_SRC}`,
       '--no-first-run', '--no-default-browser-check',

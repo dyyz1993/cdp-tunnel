@@ -33,25 +33,12 @@ var DebuggerManager = (function() {
     if (tagName.toLowerCase() === 'iframe') {
       var originalSetAttribute = element.setAttribute;
       element.setAttribute = function(name, value) {
-        if (name.toLowerCase() === 'src' && isInternalUrl(value)) {
+        if (name.toLowerCase() === 'src' && isInternalUrl(String(value || ''))) {
           console.warn('[CDP-BLOCK] Blocked iframe src:', value);
-          return;
+          return element;
         }
         return originalSetAttribute.call(this, name, value);
       };
-      
-      Object.defineProperty(element, 'src', {
-        set: function(value) {
-          if (isInternalUrl(value)) {
-            console.warn('[CDP-BLOCK] Blocked iframe src via property:', value);
-            return;
-          }
-          originalSetAttribute.call(this, 'src', value);
-        },
-        get: function() {
-          return element.getAttribute('src');
-        }
-      });
     }
     return element;
   };
@@ -68,18 +55,25 @@ var DebuggerManager = (function() {
   
   // 拦截 location 修改
   var locationDescriptor = Object.getOwnPropertyDescriptor(window, 'location');
-  Object.defineProperty(window, 'location', {
-    set: function(value) {
-      if (isInternalUrl(String(value))) {
-        console.warn('[CDP-BLOCK] Blocked location change:', value);
-        return;
-      }
-      locationDescriptor.set.call(window, value);
-    },
-    get: function() {
-      return locationDescriptor.get.call(window);
+  if (locationDescriptor && typeof locationDescriptor.set === 'function') {
+    try {
+      Object.defineProperty(window, 'location', {
+        set: function(value) {
+          if (isInternalUrl(String(value))) {
+            console.warn('[CDP-BLOCK] Blocked location change:', value);
+            return;
+          }
+          locationDescriptor.set.call(window, value);
+        },
+        get: function() {
+          return locationDescriptor.get.call(window);
+        },
+        configurable: true
+      });
+    } catch(e) {
+      // location property cannot be redefined on some contexts, skip silently
     }
-  });
+  }
   
   console.log('[CDP-BLOCK] Internal URL block script injected');
 })();
@@ -222,17 +216,22 @@ var DebuggerManager = (function() {
         return;
       }
       
-      // 在新的执行上下文中也注入拦截脚本
+      // 在新的执行上下文中也注入拦截脚本（data: URL 上下文跳过，避免干扰导航）
       if (isDefaultContext) {
-        chrome.debugger.sendCommand(
-          { tabId: source.tabId },
-          'Runtime.evaluate',
-          { 
-            expression: INTERNAL_URL_BLOCK_SCRIPT,
-            contextId: context.id,
-            runImmediately: true
-          }
-        ).catch(function() {});
+        chrome.tabs.get(source.tabId, function(tab) {
+          if (chrome.runtime.lastError) return;
+          var tabUrl = tab ? (tab.url || tab.pendingUrl || '') : '';
+          if (tabUrl.startsWith('data:')) return;
+          chrome.debugger.sendCommand(
+            { tabId: source.tabId },
+            'Runtime.evaluate',
+            { 
+              expression: INTERNAL_URL_BLOCK_SCRIPT,
+              contextId: context.id,
+              runImmediately: true
+            }
+          ).catch(function() {});
+        });
       }
     }
     

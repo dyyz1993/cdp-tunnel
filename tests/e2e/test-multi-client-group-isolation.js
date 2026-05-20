@@ -28,6 +28,7 @@ async function runTest() {
     // Chrome with USER tabs already open
     const profile = `/tmp/cdp-multi-isolation-${Date.now()}`;
     const chromeProc = spawn(CHROME_PATH, [
+      '--headless=new',
       `--user-data-dir=${profile}`,
       `--load-extension=${EXTENSION_SRC}`,
       '--no-first-run', '--no-default-browser-check',

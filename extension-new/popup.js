@@ -110,5 +110,11 @@
     });
   });
 
+  var versionLink = $('versionLink');
+  if (versionLink) {
+    var manifest = chrome.runtime.getManifest();
+    versionLink.textContent = 'v' + manifest.version;
+  }
+
   loadState();
 })();

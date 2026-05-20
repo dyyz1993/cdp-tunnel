@@ -422,51 +422,49 @@ function checkTabVisibility(tabId) {
 
         var isCDPCreated = State.isCDPCreatedTab(tabId);
         var isOwnedByClient = isCDPCreated && State.getClientIdByTabId(tabId) === clientId;
+        var otherClientOwns = isCDPCreated && !isOwnedByClient;
 
-        if (!isOwnedByClient) {
-          Logger.info('[CDP] Skipping user/other-client tab:', targetId, 'tabId:', tabId, 'cdpCreated:', isCDPCreated);
+        if (otherClientOwns) {
+          Logger.info('[CDP] Skipping other-client tab:', targetId, 'tabId:', tabId);
           State.addEmittedTarget(targetId);
           return;
         }
 
         State.addEmittedTarget(targetId);
         var targetInfo = LocalHandler.mapToTargetInfo(target);
+        var isPreExisting = !isCDPCreated;
         
-        Logger.info('[CDP] Emitting CDP-owned target:', targetId, 'tabId:', tabId);
-        
-        EventBuilder.send('Target.targetCreated', { targetInfo: targetInfo });
+        Logger.info('[CDP] Emitting target:', targetId, 'tabId:', tabId, 'preExisting:', isPreExisting);
+
+        var attachLogic = function(attached) {
+          var sessionId = CDPUtils.generateSessionId();
+          State.mapSession(sessionId, tabId, targetId);
+
+          if (isPreExisting && clientId) {
+            State.setTabIdToClientId(tabId, clientId);
+          }
+          if (isPreExisting) {
+            State.addPreExistingTab(tabId);
+          }
+
+          if (config.waitForDebuggerOnStart) {
+            State.addPendingDebuggerTab(tabId);
+          }
+
+          EventBuilder.send('Target.attachedToTarget', {
+            sessionId: sessionId,
+            targetInfo: Object.assign({}, targetInfo, { attached: true }),
+            waitingForDebugger: config.waitForDebuggerOnStart || false
+          });
+        };
 
         if (target.attached) {
-          promises.push(Promise.resolve().then(function() {
-            var sessionId = CDPUtils.generateSessionId();
-            State.mapSession(sessionId, tabId, targetId);
-
-            if (config.waitForDebuggerOnStart) {
-              State.addPendingDebuggerTab(tabId);
-            }
-
-            EventBuilder.send('Target.attachedToTarget', {
-              sessionId: sessionId,
-              targetInfo: Object.assign({}, targetInfo, { attached: true }),
-              waitingForDebugger: config.waitForDebuggerOnStart || false
-            });
-          }));
+          promises.push(Promise.resolve().then(function() { attachLogic(true); }));
         } else {
           promises.push(
             DebuggerManager.attach(tabId).then(function(attached) {
               if (!attached) return;
-              var sessionId = CDPUtils.generateSessionId();
-              State.mapSession(sessionId, tabId, targetId);
-
-              if (config.waitForDebuggerOnStart) {
-                State.addPendingDebuggerTab(tabId);
-              }
-
-              EventBuilder.send('Target.attachedToTarget', {
-                sessionId: sessionId,
-                targetInfo: Object.assign({}, targetInfo, { attached: true }),
-                waitingForDebugger: config.waitForDebuggerOnStart || false
-              });
+              attachLogic(attached);
             })
           );
         }

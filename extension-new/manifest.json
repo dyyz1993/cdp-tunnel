@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CDP Bridge",
-  "version": "2.5.22",
+  "version": "2.7.1",
   "description": "Chrome DevTools Protocol Bridge for Playwright/Puppeteer automation",
   "permissions": [
     "debugger",
@@ -10,7 +10,8 @@
     "scripting",
     "storage",
     "downloads",
-    "tabGroups"
+    "tabGroups",
+    "alarms"
   ],
   "host_permissions": [
     "<all_urls>"

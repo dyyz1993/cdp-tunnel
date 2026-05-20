@@ -84,6 +84,7 @@ async function runTest() {
 
     const profile = `/tmp/cdp-isolation-test-${Date.now()}`;
     chromeProcess = spawn(CHROME_PATH, [
+      '--headless=new',
       `--user-data-dir=${profile}`, `--load-extension=${EXTENSION_PATH}`,
       '--no-first-run', '--no-default-browser-check',
       '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
@@ -151,8 +152,8 @@ async function runTest() {
       t.targetId !== aTab1Id && t.targetId !== aTab2Id && t.targetId !== bTab1Id
     );
 
-    if (aSeesOwnTabs.length === 2 && aSeesBTabs.length === 0 && aSeesUserTabs.length === 0) {
-      log('PASS', 'Client A: sees only its own tabs (2), no B tabs, no user tabs');
+    if (aSeesOwnTabs.length === 2 && aSeesBTabs.length === 0 && aSeesUserTabs.length === 2) {
+      log('PASS', 'Client A: sees its own tabs (2) + 2 pre-existing user tabs, no B tabs');
       passed++;
     } else {
       log('FAIL', `Client A: own=${aSeesOwnTabs.length}/2, B=${aSeesBTabs.length}, user=${aSeesUserTabs.length}`);
@@ -166,8 +167,8 @@ async function runTest() {
       t.targetId !== bTab1Id && t.targetId !== aTab1Id && t.targetId !== aTab2Id
     );
 
-    if (bSeesOwnTabs.length === 1 && bSeesATabs.length === 0 && bSeesUserTabs.length === 0) {
-      log('PASS', 'Client B: sees only its own tab (1), no A tabs, no user tabs');
+    if (bSeesOwnTabs.length === 1 && bSeesATabs.length === 0 && bSeesUserTabs.length === 2) {
+      log('PASS', 'Client B: sees its own tab (1) + 2 pre-existing user tabs, no A tabs');
       passed++;
     } else {
       log('FAIL', `Client B: own=${bSeesOwnTabs.length}/1, A=${bSeesATabs.length}, user=${bSeesUserTabs.length}`);
@@ -185,8 +186,8 @@ async function runTest() {
     bAfterADiscPages.forEach(t => log('B-AFTER', `  ${t.targetId} — ${t.url}`));
 
     const bStillSeesOwn = bAfterADiscPages.some(t => t.targetId === bTab1Id);
-    if (bStillSeesOwn && bAfterADiscPages.length === 1) {
-      log('PASS', 'Client B still sees only its own tab after A disconnect');
+    if (bStillSeesOwn && bAfterADiscPages.length === 3) {
+      log('PASS', 'Client B sees its own tab (1) + 2 pre-existing user tabs after A disconnect');
       passed++;
     } else {
       log('FAIL', `Client B sees ${bAfterADiscPages.length} tabs after A disconnect`);
@@ -207,9 +208,9 @@ async function runTest() {
     log('FINAL', `After all disconnect: ${finalPages.length} pages visible to new client`);
     finalPages.forEach(t => log('FINAL', `  ${t.targetId} — ${t.url}`));
 
-    // New unowned client should see nothing (all tabs are user tabs, filtered out)
-    if (finalPages.length === 0) {
-      log('PASS', 'No tabs visible to unowned client (user tabs hidden, CDP tabs cleaned)');
+    // New unowned client sees only pre-existing user tabs (CDP-created tabs cleaned up)
+    if (finalPages.length === 2) {
+      log('PASS', 'Only pre-existing user tabs remain (CDP tabs cleaned, user tabs preserved)');
       passed++;
     } else {
       log('FAIL', `New client sees ${finalPages.length} tabs (should see 0)`);

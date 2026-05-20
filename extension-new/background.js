@@ -27,12 +27,13 @@ importScripts('features/automation-badge.js');
     keepAliveInterval = setInterval(function() {
       var ws = State.getWs();
       if (ws && ws.readyState === WebSocket.OPEN) {
-        Logger.info('[KeepAlive] Sending heartbeat');
         WebSocketManager.send({ type: 'keepalive', timestamp: Date.now() });
       }
     }, 20000);
-    
-    Logger.info('[KeepAlive] Started keepalive interval');
+
+    chrome.alarms.clear('sw-keepalive', function() {
+      chrome.alarms.create('sw-keepalive', { periodInMinutes: 0.4 });
+    });
   }
 
   function stopKeepAlive() {
@@ -360,6 +361,17 @@ importScripts('features/automation-badge.js');
       sendResponse({ success: true });
     }
     return true;
+  });
+
+  chrome.alarms.onAlarm.addListener(function(alarm) {
+    if (alarm.name === 'sw-keepalive') {
+      var ws = State.getWs();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        WebSocketManager.send({ type: 'keepalive', timestamp: Date.now() });
+      } else {
+        WebSocketManager.connect();
+      }
+    }
   });
 
   init();

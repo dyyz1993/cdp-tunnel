@@ -37,6 +37,7 @@ var LocalHandler = (function() {
     if (params && params.discover) {
       return getTargetInfos().then(function(targets) {
         targets.forEach(function(targetInfo) {
+          State.addEmittedTarget(targetInfo.targetId);
           EventBuilder.send('Target.targetCreated', { targetInfo: targetInfo });
         });
         return {};

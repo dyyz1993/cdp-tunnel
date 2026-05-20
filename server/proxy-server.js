@@ -923,11 +923,9 @@ function handlePluginConnection(ws, clientInfo, request) {
                     }
                     if (mapping.isGetTargets && parsed.result && parsed.result.targetInfos) {
                         const clientId = mapping.clientId;
-                        const pluginWsForGetTargets = ws;
                         parsed.result.targetInfos = parsed.result.targetInfos.filter(t => {
                             if (t.type !== 'page') return true;
                             const ownerClient = ns.targetIdToClientId.get(t.targetId);
-                            if (!ownerClient) return true;
                             return ownerClient === clientId;
                         });
                         console.log(`[GET TARGETS FILTERED] client=${clientId} returned ${parsed.result.targetInfos.filter(t => t.type === 'page').length} page targets`);

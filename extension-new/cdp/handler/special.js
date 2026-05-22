@@ -424,6 +424,11 @@ function checkTabVisibility(tabId) {
         var isOwnedByClient = isCDPCreated && State.getClientIdByTabId(tabId) === clientId;
         var otherClientOwns = isCDPCreated && !isOwnedByClient;
 
+        if (!isCDPCreated) {
+          Logger.info('[CDP] Skipping non-CDP (user) tab:', targetId, 'tabId:', tabId);
+          return;
+        }
+
         if (otherClientOwns) {
           Logger.info('[CDP] Skipping other-client tab:', targetId, 'tabId:', tabId);
           State.addEmittedTarget(targetId);
@@ -432,20 +437,12 @@ function checkTabVisibility(tabId) {
 
         State.addEmittedTarget(targetId);
         var targetInfo = LocalHandler.mapToTargetInfo(target);
-        var isPreExisting = !isCDPCreated;
         
-        Logger.info('[CDP] Emitting target:', targetId, 'tabId:', tabId, 'preExisting:', isPreExisting);
+        Logger.info('[CDP] Emitting CDP-owned target:', targetId, 'tabId:', tabId);
 
         var attachLogic = function(attached) {
           var sessionId = CDPUtils.generateSessionId();
           State.mapSession(sessionId, tabId, targetId);
-
-          if (isPreExisting && clientId) {
-            State.setTabIdToClientId(tabId, clientId);
-          }
-          if (isPreExisting) {
-            State.addPreExistingTab(tabId);
-          }
 
           if (config.waitForDebuggerOnStart) {
             State.addPendingDebuggerTab(tabId);

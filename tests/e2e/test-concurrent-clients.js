@@ -21,7 +21,7 @@ const fs = require('fs');
 const WebSocket = require('ws');
 const http = require('http');
 
-const PROXY_PORT = 19231;
+const PROXY_PORT = 10000 + Math.floor(Math.random() * 50000);
 const EXTENSION_PATH = path.resolve(__dirname, '../../extension-new');
 const PROXY_PATH = path.resolve(__dirname, '../../server/proxy-server.js');
 const CONFIG_PATH = path.resolve(__dirname, '../../extension-new/utils/config.js');
@@ -57,7 +57,7 @@ function patchConfig(port) {
   originalConfig = fs.readFileSync(CONFIG_PATH, 'utf8');
   fs.writeFileSync(CONFIG_PATH,
     originalConfig.replace(
-      /WS_URL:\s*'ws:\/\/localhost:9221\/plugin'/,
+      /WS_URL:\s*'ws:\/\/localhost:\d+\/plugin'/,
       `WS_URL: 'ws://localhost:${port}/plugin'`
     )
   );
@@ -114,23 +114,22 @@ async function waitForProxy(port, maxWait = 10000) {
   return false;
 }
 
-async function waitForExtension(port, maxWait = 45000) {
-  await sleep(5000);
+async function waitForExtension(port, maxWait = 60000) {
   const start = Date.now();
+  await sleep(5000);
   while (Date.now() - start < maxWait) {
     try {
-      const ws = await connectCDP(port);
-      const result = await Promise.race([
-        sendCDP(ws, 'Target.getTargets'),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))
-      ]);
-      ws.close();
-      _requestId = 0;
-      if (result && result.targetInfos && result.targetInfos.length > 0) return true;
-    } catch (e) {
-      log('SETUP', `  Waiting for extension... (${e.message})`);
-    }
-    await sleep(3000);
+      const list = await new Promise((resolve, reject) => {
+        http.get(`http://localhost:${port}/json/list`, (res) => {
+          let data = '';
+          res.on('data', c => data += c);
+          res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { resolve(null); } });
+        }).on('error', reject);
+      });
+      const pages = (list || []).filter(t => t.type === 'page');
+      if (pages.length > 0) return true;
+    } catch {}
+    await sleep(2000);
   }
   return false;
 }

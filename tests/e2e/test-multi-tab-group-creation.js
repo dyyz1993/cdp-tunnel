@@ -41,17 +41,22 @@ async function waitForProxy(port) {
   return false;
 }
 
-async function waitForExtension(port) {
+async function waitForExtension(port, maxWait = 60000) {
+  const start = Date.now();
   await sleep(8000);
-  for (let i = 0; i < 20; i++) {
+  while (Date.now() - start < maxWait) {
     try {
-      const ws = new WebSocket(`ws://localhost:${port}/client`);
-      await new Promise((r, e) => { ws.on('open', r); ws.on('error', e); });
-      const r = await Promise.race([sendCDP(ws, 'Target.getTargets'), new Promise((_, j) => setTimeout(() => j(), 8000))]);
-      ws.close();
-      if (r?.result?.targetInfos?.length > 0) return true;
+      const list = await new Promise((resolve, reject) => {
+        http.get(`http://localhost:${port}/json/list`, (res) => {
+          let data = '';
+          res.on('data', c => data += c);
+          res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { resolve(null); } });
+        }).on('error', reject);
+      });
+      const pages = (list || []).filter(t => t.type === 'page');
+      if (pages.length > 0) return true;
     } catch {}
-    await sleep(3000);
+    await sleep(2000);
   }
   return false;
 }

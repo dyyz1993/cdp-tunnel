@@ -788,24 +788,34 @@ function handlePluginConnection(ws, clientInfo, request) {
                 } else if (targetId && (parsed.method === 'Target.targetCreated' || parsed.method === 'Target.attachedToTarget')) {
                     const pendingMap = parsed.method === 'Target.targetCreated' ? ns.pendingTargetCreatedEvents : ns.pendingAttachedEvents;
                     
-                    let routedToDiscoverer = false;
-                    if (ns.discoveringClientIds.size > 0) {
-                        for (const [discClientId, timestamp] of ns.discoveringClientIds) {
-                            if (Date.now() - timestamp < 30000) {
-                                const discWs = clientById.get(discClientId);
-                                if (discWs && discWs.readyState === WebSocket.OPEN) {
-                                    discWs.send(cdpData);
-                                    routedToDiscoverer = true;
+                    // Check if there's a pending Target.createTarget from any client.
+                    // If so, cache this event — createTarget response will deliver it to the right client.
+                    // If not, broadcast to discovering clients (for emitAutoAttachForExistingTargets etc.)
+                    const hasPendingCreateTarget = Array.from(globalRequestIdMap.values()).some(m => m.isCreateTarget);
+                    
+                    if (hasPendingCreateTarget) {
+                        pendingMap.set(targetId, { parsed: JSON.parse(JSON.stringify(parsed)), cdpData });
+                        console.log(`[TARGET EVENT PENDING] ${parsed.method} targetId=${targetId?.substring(0,8) || 'none'} (cached, waiting for createTarget response)`);
+                    } else {
+                        // Broadcast to discovering clients
+                        let routedToDiscoverer = false;
+                        if (ns.discoveringClientIds.size > 0) {
+                            for (const [discClientId, timestamp] of ns.discoveringClientIds) {
+                                if (Date.now() - timestamp < 30000) {
+                                    const discWs = clientById.get(discClientId);
+                                    if (discWs && discWs.readyState === WebSocket.OPEN) {
+                                        discWs.send(cdpData);
+                                        routedToDiscoverer = true;
+                                    }
+                                } else {
+                                    ns.discoveringClientIds.delete(discClientId);
                                 }
-                            } else {
-                                ns.discoveringClientIds.delete(discClientId);
                             }
                         }
-                    }
-                    
-                    if (!routedToDiscoverer) {
-                        pendingMap.set(targetId, { parsed: JSON.parse(JSON.stringify(parsed)), cdpData });
-                        console.log(`[TARGET EVENT PENDING] ${parsed.method} targetId=${targetId?.substring(0,8)} (cached, waiting for createTarget response)`);
+                        if (!routedToDiscoverer) {
+                            pendingMap.set(targetId, { parsed: JSON.parse(JSON.stringify(parsed)), cdpData });
+                            console.log(`[TARGET EVENT PENDING] ${parsed.method} targetId=${targetId?.substring(0,8) || 'none'} (cached, no discoverer)`);
+                        }
                     }
                 } else {
                     console.log(`[TARGET EVENT DROPPED] ${parsed.method} targetId=${targetId?.substring(0,8) || 'none'} (no owner, dropped for isolation)`);
@@ -818,7 +828,7 @@ function handlePluginConnection(ws, clientInfo, request) {
                 const sessionId = parsed.params?.sessionId;
                 
                 if (targetId && sessionId) {
-                    const clientId = ws.pairedClientId;
+                    const clientId = ns.targetIdToClientId.get(targetId) || ws.pairedClientId;
                     if (clientId) {
                         ns.sessionToClientId.set(sessionId, clientId);
                         console.log(`[SESSION MAPPED] sessionId=${sessionId?.substring(0,8) || 'none'} -> clientId=${clientId?.substring(0,8) || 'none'}`);

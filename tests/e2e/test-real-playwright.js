@@ -9,7 +9,7 @@ const os = require('os');
 const WebSocket = require('ws');
 const http = require('http');
 
-const PROXY_PORT = 19237;
+const PROXY_PORT = 10000 + Math.floor(Math.random() * 50000);
 const EXTENSION_PATH = path.resolve(__dirname, '../../extension-new');
 const PROXY_PATH = path.resolve(__dirname, '../../server/proxy-server.js');
 const CONFIG_PATH = path.resolve(__dirname, '../../extension-new/utils/config.js');
@@ -32,7 +32,7 @@ function patchConfig(port) {
   fs.writeFileSync(
     CONFIG_PATH,
     configOriginal.replace(
-      /WS_URL:\s*'ws:\/\/localhost:9221\/plugin'/,
+      /WS_URL:\s*'ws:\/\/localhost:\d+\/plugin'/,
       `WS_URL: 'ws://localhost:${port}/plugin'`
     )
   );
@@ -71,43 +71,22 @@ async function waitForProxy(port, maxWait = 15000) {
   return false;
 }
 
-async function waitForExtension(port, maxWait = 45000) {
-  await sleep(5000);
-  let reqId = 0;
+async function waitForExtension(port, maxWait = 60000) {
   const start = Date.now();
+  await sleep(5000);
   while (Date.now() - start < maxWait) {
     try {
-      const ws = new WebSocket(`ws://localhost:${port}/client`);
-      await new Promise((resolve, reject) => {
-        ws.on('open', resolve);
-        ws.on('error', reject);
+      const list = await new Promise((resolve, reject) => {
+        http.get(`http://localhost:${port}/json/list`, (res) => {
+          let data = '';
+          res.on('data', c => data += c);
+          res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { resolve(null); } });
+        }).on('error', reject);
       });
-      const id = ++reqId;
-      const result = await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          ws.off('message', handler);
-          reject(new Error('timeout'));
-        }, 5000);
-        const handler = (data) => {
-          try {
-            const msg = JSON.parse(data.toString());
-            if (msg.id === id) {
-              clearTimeout(timeout);
-              ws.off('message', handler);
-              if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
-              else resolve(msg.result);
-            }
-          } catch {}
-        };
-        ws.on('message', handler);
-        ws.send(JSON.stringify({ id, method: 'Target.getTargets', params: {} }));
-      });
-      ws.close();
-      if (result && result.targetInfos && result.targetInfos.length > 0) return true;
-    } catch (e) {
-      log('SETUP', `  Waiting for extension... (${e.message})`);
-    }
-    await sleep(3000);
+      const pages = (list || []).filter(t => t.type === 'page');
+      if (pages.length > 0) return true;
+    } catch {}
+    await sleep(2000);
   }
   return false;
 }

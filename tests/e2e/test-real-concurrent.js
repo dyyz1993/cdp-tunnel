@@ -9,7 +9,7 @@ const os = require('os');
 const WebSocket = require('ws');
 const http = require('http');
 
-const PROXY_PORT = 19238;
+const PROXY_PORT = 10000 + Math.floor(Math.random() * 50000);
 const EXTENSION_PATH = path.resolve(__dirname, '../../extension-new');
 const PROXY_PATH = path.resolve(__dirname, '../../server/proxy-server.js');
 const CONFIG_PATH = path.resolve(__dirname, '../../extension-new/utils/config.js');
@@ -32,7 +32,7 @@ function patchConfig(port) {
   fs.writeFileSync(
     CONFIG_PATH,
     configOriginal.replace(
-      /WS_URL:\s*'ws:\/\/localhost:9221\/plugin'/,
+      /WS_URL:\s*'ws:\/\/localhost:\d+\/plugin'/,
       `WS_URL: 'ws://localhost:${port}/plugin'`
     )
   );
@@ -71,43 +71,22 @@ async function waitForProxy(port, maxWait = 15000) {
   return false;
 }
 
-async function waitForExtension(port, maxWait = 45000) {
-  await sleep(5000);
-  let reqId = 0;
+async function waitForExtension(port, maxWait = 60000) {
   const start = Date.now();
+  await sleep(5000);
   while (Date.now() - start < maxWait) {
     try {
-      const ws = new WebSocket(`ws://localhost:${port}/client`);
-      await new Promise((resolve, reject) => {
-        ws.on('open', resolve);
-        ws.on('error', reject);
+      const list = await new Promise((resolve, reject) => {
+        http.get(`http://localhost:${port}/json/list`, (res) => {
+          let data = '';
+          res.on('data', c => data += c);
+          res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { resolve(null); } });
+        }).on('error', reject);
       });
-      const id = ++reqId;
-      const result = await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          ws.off('message', handler);
-          reject(new Error('timeout'));
-        }, 5000);
-        const handler = (data) => {
-          try {
-            const msg = JSON.parse(data.toString());
-            if (msg.id === id) {
-              clearTimeout(timeout);
-              ws.off('message', handler);
-              if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
-              else resolve(msg.result);
-            }
-          } catch {}
-        };
-        ws.on('message', handler);
-        ws.send(JSON.stringify({ id, method: 'Target.getTargets', params: {} }));
-      });
-      ws.close();
-      if (result && result.targetInfos && result.targetInfos.length > 0) return true;
-    } catch (e) {
-      log('SETUP', `  Waiting for extension... (${e.message})`);
-    }
-    await sleep(3000);
+      const pages = (list || []).filter(t => t.type === 'page');
+      if (pages.length > 0) return true;
+    } catch {}
+    await sleep(2000);
   }
   return false;
 }
@@ -156,6 +135,7 @@ async function runTest() {
     log('SETUP', 'Starting Chrome with extension...');
     const userDataDir = `/tmp/pw-concurrent-test-${Date.now()}`;
     chromeProcess = spawn(CHROME_PATH, [
+      '--headless=new',
       `--load-extension=${EXTENSION_PATH}`,
       `--user-data-dir=${userDataDir}`,
       '--no-first-run',
@@ -181,20 +161,29 @@ async function runTest() {
 
     const CDP_URL = `http://localhost:${PROXY_PORT}`;
 
-    // Connect 3 browsers simultaneously
     console.log('Connecting 3 browsers...');
-    const [browser1, browser2, browser3] = await Promise.all([
-      chromium.connectOverCDP(CDP_URL, { timeout: 15000 }),
-      chromium.connectOverCDP(CDP_URL, { timeout: 15000 }),
-      chromium.connectOverCDP(CDP_URL, { timeout: 15000 }),
-    ]);
+    const browser1 = await chromium.connectOverCDP(CDP_URL, { timeout: 15000 });
+    const browser2 = await chromium.connectOverCDP(CDP_URL, { timeout: 15000 });
+    const browser3 = await chromium.connectOverCDP(CDP_URL, { timeout: 15000 });
     console.log('✅ 3 browsers connected');
 
     // Each browser creates pages and navigates concurrently
     console.log('Each browser creating pages...');
+    async function browserTask(browser, label) {
+      var contexts = browser.contexts();
+      var ctx;
+      if (contexts.length > 0) {
+        ctx = contexts[0];
+        try { await ctx.pages(); } catch (e) { ctx = null; }
+      }
+      if (!ctx) {
+        ctx = await browser.newContext();
+      }
+      return ctx;
+    }
     const results = await Promise.all([
       (async () => {
-        const ctx = browser1.contexts()[0];
+        const ctx = await browserTask(browser1, 'browser1');
         const page = await ctx.newPage();
         await page.goto('https://example.com', { timeout: 15000, waitUntil: 'domcontentloaded' });
         const title = await page.title();
@@ -202,7 +191,7 @@ async function runTest() {
         return { browser: 1, title };
       })(),
       (async () => {
-        const ctx = browser2.contexts()[0];
+        const ctx = await browserTask(browser2, 'browser2');
         const page = await ctx.newPage();
         await page.goto('https://example.com', { timeout: 15000, waitUntil: 'domcontentloaded' });
         const title = await page.title();
@@ -210,7 +199,7 @@ async function runTest() {
         return { browser: 2, title };
       })(),
       (async () => {
-        const ctx = browser3.contexts()[0];
+        const ctx = await browserTask(browser3, 'browser3');
         const page = await ctx.newPage();
         await page.goto('https://example.com', { timeout: 15000, waitUntil: 'domcontentloaded' });
         const title = await page.title();

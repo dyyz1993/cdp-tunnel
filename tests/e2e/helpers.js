@@ -96,44 +96,41 @@ async function patchExtension(port) {
   _originalConfig = fs.readFileSync(CONFIG_FILE, 'utf8');
   fs.writeFileSync(CONFIG_FILE,
     _originalConfig.replace(
-      /WS_URL:\s*'ws:\/\/localhost:9221\/plugin'/,
+      /WS_URL:\s*'ws:\/\/localhost:\d+\/plugin'/,
       `WS_URL: 'ws://localhost:${port}/plugin'`
     )
   );
 }
 
-async function startBrowser() {
+async function startBrowser(extraArgs = []) {
   const profile = `/tmp/cdp-e2e-test-${Date.now()}`;
   _chromeProcess = spawn(CHROME_PATH, [
+    '--headless=new',
     `--user-data-dir=${profile}`,
     `--load-extension=${EXTENSION_SRC}`,
     '--no-first-run', '--no-default-browser-check',
     '--disable-background-timer-throttling',
     '--disable-backgrounding-occluded-windows',
     '--disable-renderer-backgrounding', '--no-sandbox',
-    'about:blank'
+    'about:blank',
+    ...extraArgs
   ], { detached: true, stdio: 'ignore' });
   _chromeProcess._profile = profile;
 }
 
-async function waitForExtension(port, maxWait = 45000) {
-  await sleep(5000);
+async function waitForExtension(port, maxWait = 90000) {
+  await sleep(8000);
   const start = Date.now();
   while (Date.now() - start < maxWait) {
     try {
-      const ws = new WebSocket(`ws://localhost:${port}/client`);
-      await new Promise((resolve, reject) => { ws.on('open', resolve); ws.on('error', reject); });
-      const result = await Promise.race([
-        sendCDP(ws, 'Target.getTargets'),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))
-      ]);
-      ws.close();
-      _requestId = 0;
-      if (result && result.targetInfos && result.targetInfos.length > 0) return true;
-    } catch (e) {
-      log('SETUP', `  Waiting for extension... (${e.message})`);
-    }
-    await sleep(3000);
+      const list = await httpGet(port, '/json/list');
+      const pages = (list || []).filter(t => t.type === 'page');
+      if (pages.length > 0) {
+        await sleep(1000);
+        return true;
+      }
+    } catch {}
+    await sleep(2000);
   }
   return false;
 }

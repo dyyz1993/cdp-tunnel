@@ -93,26 +93,26 @@ async function waitForProxy(port, maxWait = 10000) {
   return false;
 }
 
-async function waitForExtension(port, maxWait = 60000) {
-  log('WAIT', 'Waiting for extension to connect...');
-  const start = Date.now();
-  await sleep(8000);
-  while (Date.now() - start < maxWait) {
-    try {
-      const ws = new WebSocket(`ws://localhost:${port}/client`);
-      await new Promise((resolve, reject) => { ws.on('open', resolve); ws.on('error', reject); });
-      const result = await Promise.race([
-        sendCDP(ws, 'Target.getTargets'),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
-      ]);
-      ws.close();
-      const targets = result?.result?.targetInfos || [];
-      log('WAIT', `  Got ${targets.length} targets`);
-      if (targets.length > 0) return true;
-    } catch (e) {
-      log('WAIT', `  Not ready: ${e.message}`);
-    }
-    await sleep(3000);
+ async function waitForExtension(port, maxWait = 60000) {
+   log('WAIT', 'Waiting for extension to connect...');
+   const start = Date.now();
+   await sleep(8000);
+   while (Date.now() - start < maxWait) {
+     try {
+       const list = await new Promise((resolve, reject) => {
+         http.get(`http://localhost:${port}/json/list`, (res) => {
+           let data = '';
+           res.on('data', c => data += c);
+           res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { resolve(null); } });
+         }).on('error', reject);
+       });
+       const pages = (list || []).filter(t => t.type === 'page');
+       log('WAIT', `  Got ${pages.length} pages from /json/list`);
+       if (pages.length > 0) return true;
+     } catch (e) {
+       log('WAIT', `  Not ready: ${e.message}`);
+     }
+     await sleep(3000);
   }
   return false;
 }

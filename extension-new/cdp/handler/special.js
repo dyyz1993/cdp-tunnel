@@ -141,8 +141,11 @@ var SpecialHandler = (function() {
 
   function groupTabSilently(tabId, clientId) {
     return new Promise(function(resolve) {
-      addTabToAutomationGroup(tabId, clientId);
-      // 分组操作是异步的，给一点时间让 tab 被收进折叠的 group
+      try {
+        addTabToAutomationGroup(tabId, clientId);
+      } catch (e) {
+        Logger.error('[TabGroup] addTabToAutomationGroup threw:', e.message || e);
+      }
       setTimeout(resolve, 100);
     });
   }
@@ -165,7 +168,11 @@ var SpecialHandler = (function() {
     WebSocketManager.send({ type: 'tabgroup-debug', tabId: tabId, clientId: clientId, phase: 'start' });
 
     setTimeout(function() {
-      muteTabIfNeeded(tabId);
+      try {
+        muteTabIfNeeded(tabId);
+      } catch (e) {
+        Logger.error('[TabGroup] muteTabIfNeeded threw:', e.message || e);
+      }
     }, 200);
 
     var groupClientId = clientId;
@@ -188,6 +195,11 @@ var SpecialHandler = (function() {
   function doGroup(tabId, clientId, baseName, retries) {
     retries = retries || 0;
     Logger.info('[TabGroup] doGroup: tabId=' + tabId + ' clientId=' + (clientId || 'none') + ' baseName=' + baseName + ' retry=' + retries);
+    if (!chrome.tabGroups) {
+      Logger.warn('[TabGroup] chrome.tabGroups API not available (headless mode?), skipping grouping for tab:', tabId);
+      EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'skip', reason: 'tabGroups-unavailable', tabId: tabId });
+      return;
+    }
     chrome.tabGroups.query({}, function(allGroups) {
       if (chrome.runtime.lastError) {
         Logger.error('[TabGroup] tabGroups.query failed:', chrome.runtime.lastError.message);
@@ -223,21 +235,26 @@ var SpecialHandler = (function() {
           }
           Logger.info('[TabGroup] chrome.tabs.group returned groupId:', groupId);
           EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'groupCreated', tabId: tabId, groupId: groupId });
-          if (groupId) {
-            chrome.tabGroups.update(groupId, {
-              title: baseName,
-              color: CDPUtils.getGroupColorForClient(clientId),
-              collapsed: true
-            }, function() {
-              if (chrome.runtime.lastError) {
-                Logger.error('[TabGroup] Failed to update group:', chrome.runtime.lastError.message);
-                EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'updateGroup', error: chrome.runtime.lastError.message, groupId: groupId });
-              } else {
-                State.setGroupIdForClient(clientId, groupId);
-                updateTabGroupName(clientId);
-                Logger.info('[TabGroup] Created new group:', groupId, 'with tab:', tabId);
-              }
-            });
+        if (groupId) {
+            if (chrome.tabGroups) {
+              chrome.tabGroups.update(groupId, {
+                title: baseName,
+                color: CDPUtils.getGroupColorForClient(clientId),
+                collapsed: true
+              }, function() {
+                if (chrome.runtime.lastError) {
+                  Logger.error('[TabGroup] Failed to update group:', chrome.runtime.lastError.message);
+                  EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'updateGroup', error: chrome.runtime.lastError.message, groupId: groupId });
+                } else {
+                  State.setGroupIdForClient(clientId, groupId);
+                  updateTabGroupName(clientId);
+                  Logger.info('[TabGroup] Group updated:', groupId, baseName);
+                }
+              });
+            } else {
+              State.setGroupIdForClient(clientId, groupId);
+              Logger.info('[TabGroup] Group created but tabGroups.update unavailable (headless):', groupId);
+            }
           } else {
             Logger.error('[TabGroup] chrome.tabs.group returned null groupId');
           }

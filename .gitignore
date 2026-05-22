@@ -10,3 +10,4 @@ test-body-screenshot.png
 *.webm
 *.pma
 analysis/
+.codenomad/

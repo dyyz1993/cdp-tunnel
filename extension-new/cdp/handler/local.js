@@ -13,9 +13,7 @@ var LocalHandler = (function() {
   }
 
   function browserClose() {
-    return State.cleanupAllTabs().then(function() {
-      return {};
-    });
+    return Promise.resolve({});
   }
 
   function getWindowForTarget() {

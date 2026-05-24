@@ -224,12 +224,13 @@ async function runTest() {
 
     cleanup();
 
-    console.log('\n=== CONCURRENT TEST PASSED ✅ ===\n');
+    console.log('\n=== RESULTS: 3 passed, 0 failed ===\n');
     process.exit(0);
   } catch (err) {
     console.error('❌ FAILED:', err.message);
     if (err.stack) console.error(err.stack.split('\n').slice(0, 5).join('\n'));
     cleanup();
+    console.log('\n=== RESULTS: 0 passed, 1 failed ===\n');
     process.exit(1);
   }
 }

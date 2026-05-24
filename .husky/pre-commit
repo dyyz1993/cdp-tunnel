@@ -1,1 +1,24 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Check version sync
 node scripts/check-version-sync.js
+
+# Run smoke tests
+echo "🧪 Running smoke tests..."
+ONLY=test-default-page,test-strict-isolation,test-no-user-tab-grab node tests/e2e/run-all.js
+
+if [ $? -eq 0 ]; then
+  echo ""
+  echo "✅ ✅ ✅  ALL SMOKE TESTS PASSED  ✅ ✅ ✅"
+  echo ""
+  # macOS notification
+  osascript -e 'display notification "All smoke tests passed! ✅" with title "cdp-tunnel" sound name "Glass"' 2>/dev/null || true
+else
+  echo ""
+  echo "❌ ❌ ❌  SMOKE TESTS FAILED  ❌ ❌ ❌"
+  echo ""
+  # macOS notification
+  osascript -e 'display notification "Smoke tests FAILED! ❌" with title "cdp-tunnel" sound name "Basso"' 2>/dev/null || true
+  exit 1
+fi

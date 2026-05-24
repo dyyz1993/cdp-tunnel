@@ -54,15 +54,23 @@ var State = (function() {
   }
 
   function findSessionByTabId(tabId) {
-    var entries = _state.sessionIdToTabId.entries();
-    var entry = entries.next();
-    while (!entry.done) {
-      if (entry.value[1] === tabId) {
-        return entry.value[0];
+    var lastMatch = null;
+    _state.sessionIdToTabId.forEach(function(mappedTabId, sessionId) {
+      if (mappedTabId === tabId) {
+        lastMatch = sessionId;
       }
-      entry = entries.next();
-    }
-    return null;
+    });
+    return lastMatch;
+  }
+
+  function findSessionsByTabId(tabId) {
+    var sessions = [];
+    _state.sessionIdToTabId.forEach(function(mappedTabId, sessionId) {
+      if (mappedTabId === tabId) {
+        sessions.push(sessionId);
+      }
+    });
+    return sessions;
   }
 
   function findSessionByTargetId(targetId) {
@@ -453,6 +461,7 @@ var State = (function() {
     getTabIdBySession: getTabIdBySession,
     getTargetIdBySession: getTargetIdBySession,
     findSessionByTabId: findSessionByTabId,
+    findSessionsByTabId: findSessionsByTabId,
     findSessionByTargetId: findSessionByTargetId,
     getTabIdByTargetId: getTabIdByTargetId,
     hasOtherSessionForTab: hasOtherSessionForTab,

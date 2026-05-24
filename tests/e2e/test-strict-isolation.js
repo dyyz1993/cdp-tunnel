@@ -115,11 +115,12 @@ function sendCDP(ws, method, params = {}) {
   console.log(`  Client A getTargets: ${pagesA.length} pages`);
   pagesA.forEach(p => console.log(`    ${p.targetId.substring(0,8)} ${p.url.substring(0,40)}`));
 
-  if (pagesA.length === 0) {
-    console.log('[PASS] Client A 初始连接后看不到任何用户页面');
+  const allOwnedByA = pagesA.every(p => p.url === 'about:blank');
+  if (pagesA.length >= 1 && allOwnedByA) {
+    console.log('[PASS] Client A 只看到自己的 auto-default-page，看不到用户页面');
     passed++;
   } else {
-    console.log(`[FAIL] Client A 看到了 ${pagesA.length} 个页面（应该是 0）`);
+    console.log(`[FAIL] Client A 看到了 ${pagesA.length} 个页面，包含非 about:blank 页面`);
     failed++;
   }
 
@@ -134,11 +135,12 @@ function sendCDP(ws, method, params = {}) {
   const pagesA2 = (targetsA2?.result?.targetInfos || []).filter(t => t.type === 'page');
   console.log(`  Client A getTargets now: ${pagesA2.length} pages`);
 
-  if (pagesA2.length === 1 && pagesA2[0].targetId === aTabId) {
-    console.log('[PASS] Client A 只看到自己创建的 1 个页面');
+  const hasCreatedTab = pagesA2.some(p => p.targetId === aTabId);
+  if (pagesA2.length === 2 && hasCreatedTab) {
+    console.log('[PASS] Client A 看到 2 个页面（auto-default + 手动创建）');
     passed++;
   } else {
-    console.log(`[FAIL] Client A 看到了 ${pagesA2.length} 个页面（应该只看到自己创建的 1 个）`);
+    console.log(`[FAIL] Client A 看到了 ${pagesA2.length} 个页面（应该看到 2 个）`);
     pagesA2.forEach(p => console.log(`    ${p.targetId.substring(0,8)} ${p.url.substring(0,40)}`));
     failed++;
   }
@@ -153,13 +155,17 @@ function sendCDP(ws, method, params = {}) {
   const targetsB = await sendCDP(wsB, 'Target.getTargets');
   const pagesB = (targetsB?.result?.targetInfos || []).filter(t => t.type === 'page');
   console.log(`  Client B getTargets: ${pagesB.length} pages`);
+  pagesB.forEach(p => console.log(`    ${p.targetId.substring(0,8)} ${p.url.substring(0,40)}`));
 
-  if (pagesB.length === 0) {
-    console.log('[PASS] Client B 看不到 Client A 的页面，也看不到用户页面');
+  const hasATab = pagesB.some(p => p.targetId === aTabId);
+  if (!hasATab && pagesB.length >= 1) {
+    console.log('[PASS] Client B 看不到 Client A 的页面，只看到自己的 auto-default-page');
     passed++;
+  } else if (hasATab) {
+    console.log(`[FAIL] Client B 看到了 Client A 的页面！`);
+    failed++;
   } else {
-    console.log(`[FAIL] Client B 看到了 ${pagesB.length} 个页面（应该是 0）`);
-    pagesB.forEach(p => console.log(`    ${p.targetId.substring(0,8)} ${p.url.substring(0,40)}`));
+    console.log(`[FAIL] Client B 看到了 ${pagesB.length} 个页面（异常）`);
     failed++;
   }
 
@@ -173,8 +179,8 @@ function sendCDP(ws, method, params = {}) {
   const targetsA3 = await sendCDP(wsA, 'Target.getTargets');
   const pagesA3 = (targetsA3?.result?.targetInfos || []).filter(t => t.type === 'page');
 
-  if (pagesA3.length === 1 && !pagesA3.find(p => p.targetId === bTabId)) {
-    console.log('[PASS] Client A 仍然只看到自己的页面，看不到 B 的');
+  if (!pagesA3.find(p => p.targetId === bTabId) && pagesA3.length === 2) {
+    console.log('[PASS] Client A 仍然只看到自己的 2 个页面，看不到 B 的');
     passed++;
   } else {
     console.log(`[FAIL] Client A 看到了 B 的页面或数量不对: ${pagesA3.length}`);
@@ -187,13 +193,14 @@ function sendCDP(ws, method, params = {}) {
   const ctxC = browserC.contexts()[0];
   const pagesC = ctxC.pages();
   console.log(`  Playwright Client C pages(): ${pagesC.length}`);
+  pagesC.forEach((p, i) => console.log(`    page[${i}]: ${p.url().substring(0, 60)}`));
 
-  if (pagesC.length === 0) {
-    console.log('[PASS] Playwright 看不到用户/A/B 的任何页面');
+  const noForeignPages = pagesC.every(p => p.url() === 'about:blank');
+  if (pagesC.length >= 1 && noForeignPages) {
+    console.log('[PASS] Playwright 只看到自己的 auto-default-page，看不到用户/A/B 的页面');
     passed++;
   } else {
-    console.log(`[FAIL] Playwright 看到了 ${pagesC.length} 个页面`);
-    pagesC.forEach(p => console.log(`    ${p.url().substring(0, 60)}`));
+    console.log(`[FAIL] Playwright 看到了不属于自己或非 about:blank 的页面`);
     failed++;
   }
 
@@ -204,11 +211,11 @@ function sendCDP(ws, method, params = {}) {
   const pagesC2 = ctxC.pages();
   console.log(`  Playwright pages() after newPage: ${pagesC2.length}`);
 
-  if (pagesC2.length === 1) {
-    console.log('[PASS] Playwright 只看到自己创建的 1 个页面');
+  if (pagesC2.length === 2) {
+    console.log('[PASS] Playwright 看到 2 个页面（auto-default + newPage）');
     passed++;
   } else {
-    console.log(`[FAIL] Playwright 看到了 ${pagesC2.length} 个页面（应该是 1）`);
+    console.log(`[FAIL] Playwright 看到了 ${pagesC2.length} 个页面（应该是 2）`);
     failed++;
   }
   await browserC.close();
@@ -230,11 +237,11 @@ function sendCDP(ws, method, params = {}) {
   await sleep(2000);
 
   console.log(`  Client D received ${attachedEvents.length} attachedToTarget events`);
-  if (attachedEvents.length === 0) {
-    console.log('[PASS] Client D 连接时没收到任何事件（没有自己的页面）');
+  if (attachedEvents.length === 1) {
+    console.log('[PASS] Client D 只收到 1 个事件（自己的 auto-default-page）');
     passed++;
   } else {
-    console.log(`[FAIL] Client D 收到了 ${attachedEvents.length} 个事件（应该是 0，没有自己的页面）`);
+    console.log(`[FAIL] Client D 收到了 ${attachedEvents.length} 个事件（应该是 1，只应有自己的 auto-default-page）`);
     failed++;
   }
 

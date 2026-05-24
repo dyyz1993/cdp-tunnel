@@ -91,12 +91,14 @@ function waitForPort(port, timeout = 15000) {
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`, { timeout: 10000 });
   const ctx = browser.contexts()[0];
 
-  // Playwright pages() should be 0 — user's about:blank should NOT be visible
+  // Playwright pages() should be 1 (auto-default-page only) — user's about:blank should NOT be visible
   const initialPages = ctx.pages();
   console.log(`  pages() after connect: ${initialPages.length}`);
+  initialPages.forEach((p, i) => console.log(`    page[${i}]: ${p.url()}`));
 
-  if (initialPages.length === 0) {
-    console.log('[PASS] User tab not visible to Playwright');
+  const allOwnedPages = initialPages.every(p => p.url() === 'about:blank');
+  if (initialPages.length >= 1 && allOwnedPages) {
+    console.log('[PASS] Only auto-default-page visible, user tab not grabbed');
     passed++;
   } else {
     console.log(`[FAIL] User tab was attached! pages()=${initialPages.length}`);
@@ -104,8 +106,8 @@ function waitForPort(port, timeout = 15000) {
     failed++;
   }
 
-  // ── Test 2: 创建新 tab，只有新 tab 可见 ──
-  console.log('\n[Test 2] 创建新 tab 后只有新 tab 可见');
+  // ── Test 2: 创建新 tab，只有新 tab + auto-default-page 可见 ──
+  console.log('\n[Test 2] 创建新 tab 后只有 CDP 页面可见');
   const newPage = await ctx.newPage();
   await newPage.goto('https://www.baidu.com');
   await sleep(1000);
@@ -114,11 +116,11 @@ function waitForPort(port, timeout = 15000) {
   console.log(`  pages() after newPage: ${pagesAfterCreate.length}`);
   console.log(`  newPage url: ${newPage.url()}`);
 
-  if (pagesAfterCreate.length === 1 && newPage.url().includes('baidu')) {
-    console.log('[PASS] Only CDP-created baidu tab visible');
+  if (pagesAfterCreate.length === 2 && newPage.url().includes('baidu')) {
+    console.log('[PASS] Only CDP-created pages visible (auto-default + baidu)');
     passed++;
   } else {
-    console.log(`[FAIL] Expected 1 page with baidu, got ${pagesAfterCreate.length}`);
+    console.log(`[FAIL] Expected 2 pages with baidu, got ${pagesAfterCreate.length}`);
     pagesAfterCreate.forEach(p => console.log(`    ${p.url()}`));
     failed++;
   }
@@ -144,8 +146,9 @@ function waitForPort(port, timeout = 15000) {
   const pagesAfterDisconnect = ctx2.pages();
   console.log(`  pages() after reconnect: ${pagesAfterDisconnect.length}`);
 
-  if (pagesAfterDisconnect.length === 0) {
-    console.log('[PASS] After disconnect, CDP pages cleaned, user tab not grabbed');
+  const allBlank = pagesAfterDisconnect.every(p => p.url() === 'about:blank');
+  if (pagesAfterDisconnect.length >= 1 && allBlank) {
+    console.log('[PASS] After disconnect, CDP pages cleaned, only new auto-default-page visible, user tab not grabbed');
     passed++;
   } else {
     console.log(`[FAIL] After disconnect, ${pagesAfterDisconnect.length} pages still visible`);

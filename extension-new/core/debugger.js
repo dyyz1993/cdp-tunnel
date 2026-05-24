@@ -203,8 +203,8 @@ var DebuggerManager = (function() {
       return;
     }
 
-    var sessionId = State.findSessionByTabId(source.tabId);
-    Logger.info('[Event] method=' + method + ' tabId=' + source.tabId + ' sessionId=' + (sessionId || 'null'));
+    var sessionIds = State.findSessionsByTabId(source.tabId);
+    Logger.info('[Event] method=' + method + ' tabId=' + source.tabId + ' sessions=' + sessionIds.length);
     
     if (method === 'Runtime.executionContextCreated' && params && params.context) {
       var context = params.context;
@@ -285,7 +285,9 @@ var DebuggerManager = (function() {
       }
     }
     
-    EventBuilder.send(method, params, sessionId);
+    for (var i = 0; i < sessionIds.length; i++) {
+      EventBuilder.send(method, params, sessionIds[i]);
+    }
   }
 
   function handleDetach(source, reason) {

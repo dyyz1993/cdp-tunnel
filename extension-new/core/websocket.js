@@ -281,22 +281,50 @@ var WebSocketManager = (function() {
     Logger.info('[WS] Closing tab group for client:', clientId);
     
     return new Promise(function(resolve) {
-        var groupId = State.getGroupIdForClient(clientId);
+      var timeoutId = setTimeout(function() {
+        Logger.warn('[WS] closeTabGroupByClientId timeout for client:', clientId, '— forcing cleanup');
+        cleanupStaleState(clientId);
+        resolve();
+      }, 5000);
         
-        if (groupId) {
-            closeGroupById(groupId, clientId, resolve);
-        } else {
-            var baseName = CDPUtils.getGroupBaseName(clientId);
-            chrome.tabGroups.query({}, function(allGroups) {
-                var match = CDPUtils.findGroupByName(allGroups, baseName);
-                if (match) {
-                    closeGroupById(match.id, clientId, resolve);
-                } else {
-                    Logger.info('[WS] No tab group found, closing tabs by clientId:', clientId);
-                    closeTabsByClientId(clientId, resolve);
-                }
+      var groupId = State.getGroupIdForClient(clientId);
+      
+      if (groupId) {
+        closeGroupById(groupId, clientId, function() {
+          clearTimeout(timeoutId);
+          cleanupStaleState(clientId);
+          resolve();
+        });
+      } else {
+        var baseName = CDPUtils.getGroupBaseName(clientId);
+        chrome.tabGroups.query({}, function(allGroups) {
+          var match = CDPUtils.findGroupByName(allGroups, baseName);
+          if (match) {
+            closeGroupById(match.id, clientId, function() {
+              clearTimeout(timeoutId);
+              cleanupStaleState(clientId);
+              resolve();
             });
-        }
+          } else {
+            Logger.info('[WS] No tab group found, closing tabs by clientId:', clientId);
+            closeTabsByClientId(clientId, function() {
+              clearTimeout(timeoutId);
+              cleanupStaleState(clientId);
+              resolve();
+            });
+          }
+        });
+      }
+    });
+  }
+
+  function cleanupStaleState(clientId) {
+    if (!clientId) return;
+    var attachedTabs = State.getAttachedTabIds();
+    attachedTabs.forEach(function(tabId) {
+      if (State.getClientIdByTabId(tabId) === clientId) {
+        State.removeTabIdToClientId(tabId);
+      }
     });
   }
 
@@ -306,6 +334,7 @@ var WebSocketManager = (function() {
         if (!tabs || tabs.length === 0) {
             Logger.info('[WS] No tabs in group:', groupId);
             State.removeGroupForClient(clientId);
+            removeEmptyGroup(groupId);
             resolve();
             return;
         }
@@ -338,9 +367,31 @@ var WebSocketManager = (function() {
             });
             
             State.removeGroupForClient(clientId);
+            removeEmptyGroup(groupId);
             resolve();
         });
     });
+  }
+
+  function removeEmptyGroup(groupId) {
+    if (!groupId || !chrome.tabGroups) return;
+    setTimeout(function() {
+      chrome.tabGroups.query({ groupId: groupId }, function(groups) {
+        if (chrome.runtime.lastError) return;
+        if (groups && groups.length > 0) {
+          chrome.tabs.query({ groupId: groupId }, function(tabs) {
+            if (chrome.runtime.lastError) return;
+            if (!tabs || tabs.length === 0) {
+              chrome.tabGroups.remove(groupId, function() {
+                if (!chrome.runtime.lastError) {
+                  Logger.info('[WS] Removed empty group:', groupId);
+                }
+              });
+            }
+          });
+        }
+      });
+    }, 500);
   }
 
   function closeTabsByClientId(clientId, resolve) {

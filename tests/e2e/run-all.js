@@ -1,205 +1,242 @@
-const { log, sleep, sendCDP, httpGet, collectCDPEvents,
-        startProxy, patchExtension, startBrowser, waitForExtension,
-        connectCDP, cleanup } = require('./helpers');
+#!/usr/bin/env node
+'use strict';
 
-const TEST_PORT = 19876;
+const { spawn } = require('child_process');
+const path = require('path');
+const { execSync } = require('child_process');
 
-let passed = 0;
-let failed = 0;
+const TESTS = [
+  { file: 'test-default-page.js', name: 'Default Page (auto about:blank)', timeout: 120000, tier: 'core' },
+  { file: 'test-strict-isolation.js', name: 'Strict Client Isolation', timeout: 120000, tier: 'core' },
+  { file: 'test-no-user-tab-grab.js', name: 'User Tab Protection', timeout: 120000, tier: 'core' },
+  { file: 'test-disconnect-cleanup.js', name: 'Disconnect Cleanup', timeout: 120000, tier: 'core' },
+  { file: 'test-existing-pages.js', name: 'Existing Pages Isolation', timeout: 120000, tier: 'core' },
+  { file: 'test-concurrent-clients.js', name: '3 Concurrent Clients', timeout: 120000, tier: 'core' },
+  { file: 'test-many-pages.js', name: '25-Page Stress', timeout: 180000, tier: 'core' },
+  { file: 'test-group-fixes.js', name: 'Group Naming + Cleanup', timeout: 120000, tier: 'core' },
+  { file: 'test-custom-clientid.js', name: 'Custom clientId Path', timeout: 120000, tier: 'new' },
+  { file: 'test-mid-operation-disconnect.js', name: 'Mid-Operation Disconnect', timeout: 120000, tier: 'new' },
+  { file: 'test-rapid-reconnect.js', name: 'Rapid Reconnect Cycles', timeout: 120000, tier: 'new' },
+  { file: 'test-network-cdp.js', name: 'Network CDP', timeout: 120000, tier: 'new' },
+  { file: 'test-browser-close-hijack.js', name: 'Browser.close Hijack', timeout: 180000, tier: 'core' },
+  { file: 'test-playwright-full.js', name: 'Full Playwright Lifecycle', timeout: 180000, tier: 'extended' },
+  { file: 'test-concurrent-create-target.js', name: 'Concurrent createTarget Race', timeout: 180000, tier: 'core' },
+  { file: 'test-real-concurrent.js', name: '3 Concurrent Playwright', timeout: 180000, tier: 'extended' },
+  { file: 'test-real-playwright.js', name: 'Playwright Compatibility', timeout: 120000, tier: 'extended' },
+];
 
-function assert(condition, msg) {
-  if (!condition) throw new Error(`Assertion failed: ${msg}`);
+const SKIP_EXTENDED = process.env.SKIP_EXTENDED === '1' || process.env.CI === 'true';
+const ONLY = process.env.ONLY ? process.env.ONLY.split(',').map(s => s.trim()) : null;
+
+function getTestsToRun() {
+  let tests = TESTS;
+  if (ONLY) {
+    tests = tests.filter(t => ONLY.some(o => t.file.includes(o)));
+  } else if (SKIP_EXTENDED) {
+    tests = tests.filter(t => t.tier !== 'extended');
+  }
+  return tests;
 }
 
-async function runTest(name, fn) {
-  try {
-    await fn();
-    console.log(`  ✅ ${name}`);
-    passed++;
-  } catch (e) {
-    console.log(`  ❌ ${name}: ${e.message}`);
-    failed++;
+function parseResults(output) {
+  const results = { passed: 0, failed: 0 };
+  const match = output.match(/=== RESULTS: (\d+) passed, (\d+) failed ===/);
+  if (match) {
+    results.passed = parseInt(match[1], 10);
+    results.failed = parseInt(match[2], 10);
   }
+  return results;
+}
+
+function runTest(test, index, total) {
+  return new Promise((resolve) => {
+    const filePath = path.resolve(__dirname, test.file);
+    const label = `[${index + 1}/${total}] ${test.name}`;
+    const startTime = Date.now();
+
+    console.log(`\n${'─'.repeat(60)}`);
+    console.log(`  ▶ ${label}`);
+    console.log(`${'─'.repeat(60)}`);
+
+    const child = spawn(process.execPath, [filePath], {
+      cwd: __dirname,
+      env: {
+        ...process.env,
+        CHROME_PATH: '/Applications/Chromium.app/Contents/MacOS/Chromium',
+        CHROMIUM_FLAGS: '--headless=new',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (d) => {
+      const text = d.toString();
+      stdout += text;
+      process.stdout.write(text);
+    });
+
+    child.stderr.on('data', (d) => {
+      const text = d.toString();
+      stderr += text;
+      process.stderr.write(text);
+    });
+
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      const elapsed = Date.now() - startTime;
+      resolve({
+        ...test,
+        status: 'TIMEOUT',
+        elapsed,
+        passed: 0,
+        failed: 0,
+        error: `Timed out after ${test.timeout / 1000}s`,
+      });
+    }, test.timeout);
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      const elapsed = Date.now() - startTime;
+      const results = parseResults(stdout + stderr);
+
+      let status;
+      let error = null;
+      if (code === 0 && results.failed === 0) {
+        status = 'PASS';
+      } else if (code !== 0) {
+        status = 'FAIL';
+        const errLines = stderr.trim().split('\n').slice(-3).join('\n');
+        error = `exit=${code}${errLines ? ' — ' + errLines : ''}`;
+      } else {
+        status = 'FAIL';
+        error = `${results.failed} sub-test(s) failed`;
+      }
+
+      resolve({
+        ...test,
+        status,
+        elapsed,
+        passed: results.passed,
+        failed: results.failed,
+        error,
+      });
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({
+        ...test,
+        status: 'ERROR',
+        elapsed: Date.now() - startTime,
+        passed: 0,
+        failed: 0,
+        error: err.message,
+      });
+    });
+  });
+}
+
+function printSummary(results) {
+  console.log('\n\n' + '═'.repeat(72));
+  console.log('  CDP TUNNEL — REGRESSION TEST SUMMARY');
+  console.log('═'.repeat(72));
+
+  const tierOrder = { core: 0, new: 1, extended: 2 };
+  const tierLabel = { core: 'CORE', new: 'NEW', extended: 'EXT' };
+
+  for (const tier of ['core', 'new', 'extended']) {
+    const tierResults = results.filter(r => r.tier === tier);
+    if (tierResults.length === 0) continue;
+
+    console.log(`\n  ┌─ ${tierLabel[tier]} TESTS ${'─'.repeat(56)}`);
+    for (const r of tierResults) {
+      const icon = r.status === 'PASS' ? '✅' : r.status === 'SKIP' ? '⏭' : '❌';
+      const time = (r.elapsed / 1000).toFixed(1) + 's';
+      const detail = r.status === 'PASS'
+        ? `${r.passed} passed`
+        : r.error || `${r.failed} failed`;
+      console.log(`  │ ${icon} ${r.name.padEnd(35)} ${time.padStart(7)}  ${detail}`);
+    }
+    const tierIcon = tierResults.every(r => r.status === 'PASS') ? '✅' : '❌';
+    const tierPass = tierResults.filter(r => r.status === 'PASS').length;
+    console.log(`  └─ ${tierIcon} ${tierPass}/${tierResults.length} passed`);
+  }
+
+  const totalPassed = results.filter(r => r.status === 'PASS').length;
+  const totalFailed = results.filter(r => r.status === 'FAIL' || r.status === 'ERROR' || r.status === 'TIMEOUT').length;
+  const totalSubPassed = results.reduce((s, r) => s + r.passed, 0);
+  const totalSubFailed = results.reduce((s, r) => s + r.failed, 0);
+
+  console.log('\n' + '─'.repeat(72));
+  console.log(`  Files:  ${totalPassed} passed / ${totalFailed} failed / ${results.length} total`);
+  console.log(`  Checks: ${totalSubPassed} passed / ${totalSubFailed} failed`);
+  console.log('═'.repeat(72));
+
+  if (totalFailed > 0) {
+    console.log('\n  Failed tests:');
+    for (const r of results.filter(r => r.status !== 'PASS')) {
+      console.log(`    ❌ ${r.file}: ${r.error}`);
+    }
+  }
+
+  return totalFailed === 0;
 }
 
 async function main() {
-  console.log('='.repeat(60));
-  console.log('  CDP Tunnel E2E Test Suite');
-  console.log('='.repeat(60));
+  const tests = getTestsToRun();
 
-  try {
-    log('SETUP', `Starting proxy on port ${TEST_PORT}...`);
-    assert(await startProxy(TEST_PORT), 'Proxy failed to start');
-    log('SETUP', 'Proxy started');
+  console.log('═'.repeat(72));
+  console.log('  CDP TUNNEL — FULL REGRESSION TEST RUNNER');
+  console.log('═'.repeat(72));
+  console.log(`  Tests:    ${tests.length}`);
+  console.log(`  Browser:  /Applications/Chromium.app/Contents/MacOS/Chromium`);
+  console.log(`  Mode:     --headless=new`);
+  console.log(`  Tiers:    ${SKIP_EXTENDED ? 'core + new (extended skipped)' : 'core + new + extended'}`);
+  console.log(`  Started:  ${new Date().toISOString()}`);
+  console.log('═'.repeat(72));
 
-    log('SETUP', 'Patching extension...');
-    await patchExtension(TEST_PORT);
+  const results = [];
+  const globalStart = Date.now();
 
-    log('SETUP', 'Starting browser...');
-    await startBrowser();
+  for (let i = 0; i < tests.length; i++) {
+    const result = await runTest(tests[i], i, tests.length);
+    results.push(result);
 
-    log('SETUP', 'Waiting for extension...');
-    assert(await waitForExtension(TEST_PORT), 'Extension failed to connect');
-    log('SETUP', 'Extension connected');
-
-    await sleep(3000);
-
-    async function cleanupLeftoverPages() {
-      try {
-        const list = await httpGet(TEST_PORT, '/json/list');
-        const leftovers = list.filter(t => t.url && t.url.includes('example.com'));
-        if (leftovers.length > 0) {
-          log('CLEANUP', `Found ${leftovers.length} leftover pages from previous test, cleaning...`);
-          const ws = await connectCDP(TEST_PORT);
-          await sendCDP(ws, 'Target.setDiscoverTargets', { discover: true });
-          for (const t of leftovers) {
-            try { await sendCDP(ws, 'Target.closeTarget', { targetId: t.id }); } catch {}
-          }
-          ws.close();
-          await sleep(3000);
-        }
-      } catch {}
-    }
-
-    // ===== T2: Single client disconnect =====
-    await cleanupLeftoverPages();
-    await runTest('T2: Client disconnect kills all pages', async () => {
-      const ws = await connectCDP(TEST_PORT);
-      await sendCDP(ws, 'Target.setDiscoverTargets', { discover: true });
-
-      const pages = [];
-      for (let i = 0; i < 2; i++) {
-        const r = await sendCDP(ws, 'Target.createTarget', { url: `https://www.example.com/?t2_${i}` });
-        pages.push(r.targetId);
-      }
-      await sleep(8000);
-
-      ws.close();
-      await sleep(10000);
-
-      const list = await httpGet(TEST_PORT, '/json/list');
-      const surviving = list.filter(t => pages.includes(t.id));
-      assert(surviving.length === 0, `${surviving.length} pages survived disconnect`);
-    });
-    await sleep(5000);
-
-    // ===== T1: Single client Browser.close =====
-    await cleanupLeftoverPages();
-    await runTest('T1: Browser.close kills all pages', async () => {
-      const ws = await connectCDP(TEST_PORT);
-      await sendCDP(ws, 'Target.setDiscoverTargets', { discover: true });
-
-      const pages = [];
-      for (let i = 0; i < 3; i++) {
-        const r = await sendCDP(ws, 'Target.createTarget', { url: `https://www.example.com/?t1_${i}` });
-        pages.push(r.targetId);
-      }
-      await sleep(5000);
-
-      await sendCDP(ws, 'Browser.close');
-      await sleep(6000);
-
-      const list = await httpGet(TEST_PORT, '/json/list');
-      const surviving = list.filter(t => pages.includes(t.id));
-      assert(surviving.length === 0, `${surviving.length} pages survived Browser.close`);
-    });
-    await sleep(5000);
-
-    // ===== T3: Multi-client isolation - getTargets =====
-    await cleanupLeftoverPages();
-    await runTest('T3: Multi-client Target.getTargets isolation', async () => {
-      const wsA = await connectCDP(TEST_PORT);
-      const wsB = await connectCDP(TEST_PORT);
-      await sendCDP(wsA, 'Target.setDiscoverTargets', { discover: true });
-      await sendCDP(wsB, 'Target.setDiscoverTargets', { discover: true });
-
-      const rA = await sendCDP(wsA, 'Target.createTarget', { url: 'https://www.example.com/?clientA' });
-      const rB = await sendCDP(wsB, 'Target.createTarget', { url: 'https://www.example.com/?clientB' });
-      await sleep(3000);
-
-      const targetsA = await sendCDP(wsA, 'Target.getTargets');
-      const targetsB = await sendCDP(wsB, 'Target.getTargets');
-
-      const pagesA = targetsA.targetInfos.filter(t => t.type === 'page' && t.url.includes('client'));
-      const pagesB = targetsB.targetInfos.filter(t => t.type === 'page' && t.url.includes('client'));
-
-      assert(!pagesA.some(p => p.url.includes('clientB')), 'Client A sees Client B pages!');
-      assert(!pagesB.some(p => p.url.includes('clientA')), 'Client B sees Client A pages!');
-      assert(pagesA.some(p => p.url.includes('clientA')), 'Client A cannot see own pages');
-      assert(pagesB.some(p => p.url.includes('clientB')), 'Client B cannot see own pages');
-
-      wsA.close();
-      wsB.close();
-      await sleep(8000);
-    });
-    await sleep(5000);
-
-    // ===== T4: Close individual page =====
-    await cleanupLeftoverPages();
-    await runTest('T4: Close individual page without affecting others', async () => {
-      const ws = await connectCDP(TEST_PORT);
-      await sendCDP(ws, 'Target.setDiscoverTargets', { discover: true });
-
-      const r1 = await sendCDP(ws, 'Target.createTarget', { url: 'https://www.example.com/?t4_keep' });
-      const r2 = await sendCDP(ws, 'Target.createTarget', { url: 'https://www.example.com/?t4_close' });
-      await sleep(3000);
-
-      await sendCDP(ws, 'Target.closeTarget', { targetId: r2.targetId });
-      await sleep(2000);
-
-      const targets = await sendCDP(ws, 'Target.getTargets');
-      const pages = targets.targetInfos.filter(t => t.type === 'page' && t.url.includes('t4'));
-      
-      assert(pages.some(p => p.url.includes('t4_keep')), 't4_keep should still exist');
-      assert(!pages.some(p => p.url.includes('t4_close')), 't4_close should be gone');
-
-      await sendCDP(ws, 'Browser.close');
-      await sleep(6000);
-    });
-    await sleep(5000);
-
-    // ===== T5: No cross-client page leakage =====
-    await cleanupLeftoverPages();
-    await runTest('T5: No page leakage across clients', async () => {
-      const wsA = await connectCDP(TEST_PORT);
-      const wsB = await connectCDP(TEST_PORT);
-      await sendCDP(wsA, 'Target.setDiscoverTargets', { discover: true });
-      await sendCDP(wsB, 'Target.setDiscoverTargets', { discover: true });
-
-      // Client A creates a page
-      const rA = await sendCDP(wsA, 'Target.createTarget', { url: 'https://www.example.com/?t5_A' });
-      await sleep(3000);
-
-      // Client B should not see it
-      const targetsB = await sendCDP(wsB, 'Target.getTargets');
-      const pagesB = targetsB.targetInfos.filter(t => t.type === 'page' && t.url.includes('t5'));
-      assert(pagesB.length === 0, `Client B sees ${pagesB.length} of Client A pages`);
-
-      // Client A closes, B should not be affected
-      await sendCDP(wsA, 'Browser.close');
-      await sleep(6000);
-
-      const targetsB2 = await sendCDP(wsB, 'Target.getTargets');
-      assert(targetsB2.targetInfos !== undefined, 'Client B should still be functional');
-
-      wsB.close();
-      await sleep(8000);
-    });
-    await sleep(5000);
-
-  } catch (e) {
-    console.error(`\nSetup failed: ${e.message}`);
-    console.error(e.stack);
+    const icon = result.status === 'PASS' ? '✅' : '❌';
+    const time = (result.elapsed / 1000).toFixed(1);
+    console.log(`\n  ${icon} ${result.name} — ${result.status} (${time}s)`);
   }
 
-  await cleanup();
+  const globalElapsed = ((Date.now() - globalStart) / 1000).toFixed(1);
+  const allPass = printSummary(results);
 
-  console.log('\n' + '='.repeat(60));
-  console.log(`  Results: ${passed} passed, ${failed} failed`);
-  console.log('='.repeat(60));
+  const totalPassed = results.filter(r => r.status === 'PASS').length;
+  const totalFailed = results.filter(r => r.status === 'FAIL' || r.status === 'ERROR' || r.status === 'TIMEOUT').length;
+  const totalSubPassed = results.reduce((s, r) => s + r.passed, 0);
 
-  process.exit(failed > 0 ? 1 : 0);
+  console.log(`\n  Total time: ${globalElapsed}s`);
+  console.log(`  Finished:   ${new Date().toISOString()}\n`);
+
+  if (allPass) {
+    console.log(`\n✅ ✅ ✅  ALL ${results.length} TESTS PASSED (${totalSubPassed} checks)  ✅ ✅ ✅\n`);
+    try {
+      execSync(`osascript -e 'display notification "All ${results.length} tests passed!" with title "cdp-tunnel" sound name "Glass"'`, { stdio: 'ignore' });
+    } catch {}
+  } else {
+    console.log(`\n❌ ❌ ❌  ${totalFailed}/${results.length} TESTS FAILED  ❌ ❌ ❌\n`);
+    try {
+      execSync(`osascript -e 'display notification "${totalFailed} tests failed!" with title "cdp-tunnel" sound name "Basso"'`, { stdio: 'ignore' });
+    } catch {}
+  }
+
+  process.exit(allPass ? 0 : 1);
 }
 
-process.on('SIGINT', async () => { await cleanup(); process.exit(130); });
+process.on('SIGINT', () => {
+  console.log('\n  Interrupted — exiting.');
+  process.exit(130);
+});
+
 main();

@@ -325,8 +325,7 @@ async function runTest() {
   results.forEach(r => {
     console.log(`  ${r.pass ? '✅' : '❌'} ${r.name}`);
   });
-  console.log(`\nTotal: ${passed} passed, ${failed} failed`);
-  console.log('===============\n');
+  console.log(`\n=== RESULTS: ${passed} passed, ${failed} failed ===\n`);
 
   process.exit(failed > 0 ? 1 : 0);
 }

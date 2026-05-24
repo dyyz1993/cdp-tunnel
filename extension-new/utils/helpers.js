@@ -44,7 +44,13 @@ var CDPUtils = (function() {
 
   function buildGroupName(clientId) {
     if (!clientId) return 'CDP';
-    var suffix = clientId.length > 8 ? clientId.substring(clientId.length - 8) : clientId;
+    var hash = 0;
+    for (var i = 0; i < clientId.length; i++) {
+      var chr = clientId.charCodeAt(i);
+      hash = ((hash << 5) - hash) + chr;
+      hash = hash | 0;
+    }
+    var suffix = Math.abs(hash).toString(16).substring(0, 8).padStart(8, '0');
     return 'CDP-' + suffix;
   }
 
@@ -55,7 +61,7 @@ var CDPUtils = (function() {
   function findGroupByName(allGroups, baseName) {
     for (var i = 0; i < allGroups.length; i++) {
       var g = allGroups[i];
-      if (g.title && g.title.indexOf(baseName) === 0) return g;
+      if (g.title === baseName || (g.title && g.title.indexOf(baseName + ' (') === 0)) return g;
     }
     return null;
   }

@@ -487,11 +487,33 @@ function cleanupClient(ws, id, reason) {
     }
 
     if (ws.pairedPlugin) {
-        safeSend(ws.pairedPlugin, JSON.stringify({
+        const sendOk = safeSend(ws.pairedPlugin, JSON.stringify({
             type: 'client-disconnected',
             clientId: id,
             sessions: []
         }), 'plugin');
+        if (!sendOk) {
+            console.log(`[WARN] cleanupClient: failed to send client-disconnected for ${id} to plugin`);
+        }
+
+        const pluginNs = getNamespace(ws.pairedPlugin);
+        if (pluginNs) {
+            const targetsToClose = [];
+            for (const [tId, cId] of pluginNs.targetIdToClientId.entries()) {
+                if (cId === id) {
+                    targetsToClose.push(tId);
+                }
+            }
+            targetsToClose.forEach(function(tId) {
+                const closeReq = JSON.stringify({
+                    id: -1,
+                    method: 'Target.closeTarget',
+                    params: { targetId: tId },
+                    __clientId: id
+                });
+                safeSend(ws.pairedPlugin, closeReq, 'plugin');
+            });
+        }
     }
 
     broadcastClientList();
@@ -797,25 +819,7 @@ function handlePluginConnection(ws, clientInfo, request) {
                         pendingMap.set(targetId, { parsed: JSON.parse(JSON.stringify(parsed)), cdpData });
                         console.log(`[TARGET EVENT PENDING] ${parsed.method} targetId=${targetId?.substring(0,8) || 'none'} (cached, waiting for createTarget response)`);
                     } else {
-                        // Broadcast to discovering clients
-                        let routedToDiscoverer = false;
-                        if (ns.discoveringClientIds.size > 0) {
-                            for (const [discClientId, timestamp] of ns.discoveringClientIds) {
-                                if (Date.now() - timestamp < 30000) {
-                                    const discWs = clientById.get(discClientId);
-                                    if (discWs && discWs.readyState === WebSocket.OPEN) {
-                                        discWs.send(cdpData);
-                                        routedToDiscoverer = true;
-                                    }
-                                } else {
-                                    ns.discoveringClientIds.delete(discClientId);
-                                }
-                            }
-                        }
-                        if (!routedToDiscoverer) {
-                            pendingMap.set(targetId, { parsed: JSON.parse(JSON.stringify(parsed)), cdpData });
-                            console.log(`[TARGET EVENT PENDING] ${parsed.method} targetId=${targetId?.substring(0,8) || 'none'} (cached, no discoverer)`);
-                        }
+                        console.log(`[TARGET EVENT DROPPED] ${parsed.method} targetId=${targetId?.substring(0,8) || 'none'} (no owner, dropped for isolation)`);
                     }
                 } else {
                     console.log(`[TARGET EVENT DROPPED] ${parsed.method} targetId=${targetId?.substring(0,8) || 'none'} (no owner, dropped for isolation)`);
@@ -948,15 +952,33 @@ function handlePluginConnection(ws, clientInfo, request) {
                         invalidateTargetsCache(ws);
                     }
                     
-                    const originalId = mapping.originalId;
-                    parsed.id = originalId;
-                    if (mapping.sessionId && !parsed.sessionId) {
-                        parsed.sessionId = mapping.sessionId;
+                    if (mapping.isAutoDefaultPage) {
+                        console.log(`[AUTO DEFAULT PAGE] createTarget response received for client=${mapping.clientId}, targetId=${parsed.result?.targetId?.substring(0,8) || 'none'} — skipping response send to client`);
+                        
+                        if (mapping.pendingSetAutoAttach) {
+                            const pending = mapping.pendingSetAutoAttach;
+                            const pendingParsed = pending.parsed;
+                            const pendingClientId = pending.clientId;
+                            
+                            console.log(`[AUTO DEFAULT PAGE] Now forwarding pending setAutoAttach for client=${pendingClientId}`);
+                            
+                            if (ws.readyState === WebSocket.OPEN) {
+                                const forwardMsg = { ...pendingParsed, __clientId: pendingClientId };
+                                ws.send(JSON.stringify(forwardMsg));
+                                console.log(`[SEND TO PLUGIN] Forwarding setAutoAttach for client=${pendingClientId}`);
+                            }
+                        }
+                    } else {
+                        const originalId = mapping.originalId;
+                        parsed.id = originalId;
+                        if (mapping.sessionId && !parsed.sessionId) {
+                            parsed.sessionId = mapping.sessionId;
+                        }
+                        const responseStr = JSON.stringify(parsed);
+                        console.log(`[SEND TO CLIENT] ${responseStr.substring(0, 300)}`);
+                        clientWs.send(responseStr);
+                        console.log(`[ROUTE] Response global=${globalId} -> original=${originalId} -> client=${mapping.clientId} sessionId=${parsed.sessionId?.substring(0,8) || 'none'}`);
                     }
-                    const responseStr = JSON.stringify(parsed);
-                    console.log(`[SEND TO CLIENT] ${responseStr.substring(0, 300)}`);
-                    clientWs.send(responseStr);
-                    console.log(`[ROUTE] Response global=${globalId} -> original=${originalId} -> client=${mapping.clientId} sessionId=${parsed.sessionId?.substring(0,8) || 'none'}`);
                 }
                 globalRequestIdMap.delete(globalId);
             } else {
@@ -1050,6 +1072,52 @@ function handlePluginConnection(ws, clientInfo, request) {
         fresh: (Date.now() - SERVER_START_TIME) < 5000,
         timestamp: Date.now()
     }));
+}
+
+function autoCreateDefaultPageAndForward(clientWs, setAutoAttachParsed, originalData, clientId, originalRequestId) {
+    const pluginWs = clientWs.pairedPlugin;
+    if (!pluginWs || pluginWs.readyState !== WebSocket.OPEN) {
+        forwardToPlugin(clientWs, originalData, clientId);
+        return;
+    }
+
+    globalRequestIdCounter++;
+    const createGlobalId = globalRequestIdCounter;
+
+    globalRequestIdMap.set(createGlobalId, {
+        clientId: clientId,
+        originalId: -1,
+        sessionId: null,
+        method: 'Target.createTarget',
+        isCreateTarget: true,
+        isAutoDefaultPage: true,
+        pendingSetAutoAttach: {
+            parsed: setAutoAttachParsed,
+            data: originalData,
+            clientId: clientId,
+            originalRequestId: originalRequestId
+        }
+    });
+
+    const request = {
+        id: createGlobalId,
+        method: 'Target.createTarget',
+        params: { url: 'about:blank' },
+        __clientId: clientId
+    };
+
+    console.log(`[AUTO DEFAULT PAGE] Sending Target.createTarget for client=${clientId} globalId=${createGlobalId}, will forward setAutoAttach after`);
+    pluginWs.send(JSON.stringify(request));
+}
+
+function forwardToPlugin(clientWs, data, clientId) {
+    const pluginWs = clientWs.pairedPlugin;
+    if (pluginWs && pluginWs.readyState === WebSocket.OPEN) {
+        console.log(`[SEND TO PLUGIN] method=Target.setAutoAttach clientId=${clientId}`);
+        pluginWs.send(data);
+    } else {
+        broadcastToPlugins(data, clientWs);
+    }
 }
 
 /**
@@ -1254,10 +1322,22 @@ function handleClientConnection(ws, clientInfo, customClientId = null, targetPlu
             }
         }
 
+        if (parsed && parsed.method === 'Target.setAutoAttach' && parsed.params?.autoAttach && !ws._autoDefaultPageSent) {
+            ws._autoDefaultPageSent = true;
+            autoCreateDefaultPageAndForward(ws, parsed, modifiedData, id, originalId);
+            return;
+        }
+
         if (parsed && parsed.method === 'Browser.close') {
-            if (shouldLog('info')) {
-                console.log(`\n[BROWSER CLOSE] Client ${id} requested Browser.close, forwarding to plugin`);
+            console.log(`[BROWSER CLOSE] Client ${id} requested Browser.close — closing client group only`);
+            if (ws.pairedPlugin) {
+                safeSend(ws.pairedPlugin, JSON.stringify({
+                    type: 'browser-close',
+                    clientId: id
+                }), 'plugin');
             }
+            safeSend(ws, JSON.stringify({ id: originalId, result: {} }), 'client');
+            return;
         }
 
         if (parsed && parsed.method) {

@@ -396,7 +396,7 @@ async function runTest() {
       if (r.ok) passed++;
       else failed++;
     });
-    console.log(`\nTotal: ${passed} passed, ${failed} failed`);
+    console.log(`\n=== RESULTS: ${passed} passed, ${failed} failed ===`);
 
     if (failed > 0) {
       console.log('\n=== PROXY LOGS (last 50 lines) ===');

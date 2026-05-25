@@ -488,24 +488,17 @@ var WebSocketManager = (function() {
           Logger.info('[Monitor] Tab', tabId, 'escaped! Forcing regroup for client:', clientId);
           if (groupId) {
             chrome.tabs.group({ tabIds: tabId, groupId: groupId }, function() {
-              Logger.info('[Monitor] Re-added tab', tabId, 'to existing group:', groupId);
+              if (chrome.runtime.lastError) {
+                Logger.error('[Monitor] Failed to re-add tab', tabId, 'to group', groupId, ':', chrome.runtime.lastError?.message);
+                State.removeGroupForClient(clientId);
+                SpecialHandler.addTabToAutomationGroup(tabId, clientId);
+              } else {
+                Logger.info('[Monitor] Re-added tab', tabId, 'to existing group:', groupId);
+              }
             });
           } else {
-            var baseName = CDPUtils.getGroupBaseName(clientId);
-            chrome.tabs.group({ tabIds: tabId }, function(newGroupId) {
-              if (chrome.runtime.lastError || !newGroupId) {
-                Logger.error('[Monitor] Failed to create group for tab', tabId, ':', chrome.runtime.lastError?.message);
-                return;
-              }
-              chrome.tabGroups.update(newGroupId, {
-                title: baseName,
-                color: CDPUtils.getGroupColorForClient(clientId),
-                collapsed: true
-              }, function() {
-                State.setGroupIdForClient(clientId, newGroupId);
-                Logger.info('[Monitor] Created new group', newGroupId, 'for escaped tab', tabId);
-              });
-            });
+            Logger.info('[Monitor] No cached groupId for client', clientId, '— delegating to addTabToAutomationGroup for tab', tabId);
+            SpecialHandler.addTabToAutomationGroup(tabId, clientId);
           }
         });
       });

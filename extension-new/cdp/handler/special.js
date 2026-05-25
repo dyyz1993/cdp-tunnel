@@ -227,6 +227,25 @@ var SpecialHandler = (function() {
       if (callback) callback(false);
       return;
     }
+    var cachedGroupId = State.getGroupIdForClient(clientId);
+    if (cachedGroupId) {
+      Logger.info('[TabGroup] Using cached groupId:', cachedGroupId, 'for client:', clientId);
+      chrome.tabs.group({ tabIds: tabId, groupId: cachedGroupId }, function(result) {
+        if (!chrome.runtime.lastError) {
+          updateTabGroupName(clientId);
+          Logger.info('[TabGroup] Tab', tabId, 'added to cached group:', cachedGroupId);
+          if (callback) callback(true);
+          return;
+        }
+        Logger.warn('[TabGroup] Cached groupId', cachedGroupId, 'failed:', chrome.runtime.lastError.message, '— falling back to query');
+        doGroupQuery(tabId, clientId, baseName, retries, callback);
+      });
+      return;
+    }
+    doGroupQuery(tabId, clientId, baseName, retries, callback);
+  }
+
+  function doGroupQuery(tabId, clientId, baseName, retries, callback) {
     chrome.tabGroups.query({}, function(allGroups) {
       if (chrome.runtime.lastError) {
         Logger.error('[TabGroup] tabGroups.query failed:', chrome.runtime.lastError.message);
@@ -267,7 +286,7 @@ var SpecialHandler = (function() {
           }
           Logger.info('[TabGroup] chrome.tabs.group returned groupId:', groupId);
           EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'groupCreated', tabId: tabId, groupId: groupId });
-        if (groupId) {
+          if (groupId) {
             if (chrome.tabGroups) {
               chrome.tabGroups.update(groupId, {
                 title: baseName,

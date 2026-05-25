@@ -20,6 +20,7 @@ const TESTS = [
   { file: 'test-network-cdp.js', name: 'Network CDP', timeout: 120000, tier: 'new' },
   { file: 'test-browser-close-hijack.js', name: 'Browser.close Hijack', timeout: 180000, tier: 'core' },
   { file: 'test-playwright-full.js', name: 'Full Playwright Lifecycle', timeout: 180000, tier: 'extended' },
+  { file: 'test-single-group-per-client.js', name: 'Single Group Per Client', timeout: 180000, tier: 'core' },
   { file: 'test-concurrent-create-target.js', name: 'Concurrent createTarget Race', timeout: 180000, tier: 'core' },
   { file: 'test-real-concurrent.js', name: '3 Concurrent Playwright', timeout: 180000, tier: 'extended' },
   { file: 'test-real-playwright.js', name: 'Playwright Compatibility', timeout: 120000, tier: 'extended' },

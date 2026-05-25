@@ -142,9 +142,56 @@ importScripts('features/automation-badge.js');
     State.removeTabIdToClientId(tabId);
   });
 
+  if (chrome.tabGroups) {
+    chrome.tabGroups.onRemoved.addListener(function(group) {
+      if (!group) return;
+      var removedGroupId = group.id;
+      Logger.info('[TabGroups] Group removed:', removedGroupId);
+
+      var clients = State.getCDPClients() || [];
+      for (var i = 0; i < clients.length; i++) {
+        var clientId = clients[i].id;
+        if (State.getGroupIdForClient(clientId) === removedGroupId) {
+          Logger.info('[TabGroups] Clearing cached groupId for client:', clientId);
+          State.setGroupIdForClient(clientId, null);
+
+          var attached = State.getAttachedTabIds();
+          attached.forEach(function(tid) {
+            if (State.getClientIdByTabId(tid) === clientId && !State.isPreExistingTab(tid)) {
+              Logger.info('[TabGroups] Re-grouping tab', tid, 'for client:', clientId);
+              SpecialHandler.addTabToAutomationGroup(tid, clientId);
+            }
+          });
+          break;
+        }
+      }
+    });
+  }
+
   chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
     if (changeInfo.status === 'complete' && State.isTabAttached(tabId)) {
       // 不再注入自动化标识，改为通过标签分组区分
+    }
+
+    if (changeInfo.groupId !== undefined && changeInfo.groupId === -1) {
+      if (State.isTabAttached(tabId) && !State.isPreExistingTab(tabId)) {
+        var clientId = State.getClientIdByTabId(tabId);
+        if (clientId) {
+          var cachedGroupId = State.getGroupIdForClient(clientId);
+          if (cachedGroupId) {
+            Logger.info('[Tabs] Tab', tabId, 'left group, re-adding to cached group:', cachedGroupId);
+            chrome.tabs.group({ tabIds: tabId, groupId: cachedGroupId }, function() {
+              if (chrome.runtime.lastError) {
+                Logger.warn('[Tabs] Failed to re-add tab to group:', chrome.runtime.lastError.message);
+                SpecialHandler.addTabToAutomationGroup(tabId, clientId);
+              }
+            });
+          } else {
+            Logger.info('[Tabs] Tab', tabId, 'left group, no cached groupId — delegating to addTabToAutomationGroup');
+            SpecialHandler.addTabToAutomationGroup(tabId, clientId);
+          }
+        }
+      }
     }
   });
 

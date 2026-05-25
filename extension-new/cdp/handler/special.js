@@ -165,8 +165,13 @@ var SpecialHandler = (function() {
     var prev = _groupQueue.get(key) || Promise.resolve();
 
     var next = prev.then(function() {
-      return new Promise(function(resolve) {
+      return new Promise(function(resolve, reject) {
+        var timeoutId = setTimeout(function() {
+          reject(new Error('addTabToAutomationGroup timeout after 10s'));
+        }, 10000);
+
         _addTabToAutomationGroupInner(tabId, clientId, function(success) {
+          clearTimeout(timeoutId);
           resolve(success);
         });
       });
@@ -251,7 +256,16 @@ var SpecialHandler = (function() {
         Logger.error('[TabGroup] tabGroups.query failed:', chrome.runtime.lastError.message);
         EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'query', error: chrome.runtime.lastError.message });
       }
-      Logger.info('[TabGroup] query result: ' + (allGroups ? allGroups.length : 'null') + ' groups');
+      if (!allGroups) {
+        Logger.error('[TabGroup] tabGroups.query returned null');
+        if (retries < 3) {
+          setTimeout(function() { doGroup(tabId, clientId, baseName, retries + 1, callback); }, 500);
+        } else {
+          if (callback) callback(false);
+        }
+        return;
+      }
+      Logger.info('[TabGroup] query result: ' + allGroups.length + ' groups');
       var existing = CDPUtils.findGroupByName(allGroups, baseName);
       if (existing) {
         Logger.info('[TabGroup] Found existing group:', existing.id, 'title:', existing.title);

@@ -3,6 +3,7 @@ var WebSocketManager = (function() {
   var _isSending = false;
   var _maxQueueSize = 100;
   var _bufferThreshold = 512 * 1024;
+  var _groupCreationPending = new Set();
 
   function connect() {
     var ws = State.getWs();
@@ -204,6 +205,7 @@ var WebSocketManager = (function() {
       case 'client-disconnected':
         Logger.info('[WS] Client disconnected:', message.clientId);
         var discClientId = message.clientId;
+        _groupCreationPending.delete(discClientId);
         closeTabGroupByClientId(discClientId).then(function() {
           return new Promise(function(resolve) {
             closeTabsByClientId(discClientId, resolve);
@@ -456,24 +458,34 @@ var WebSocketManager = (function() {
   function createGroupForClient(clientId) {
     if (!clientId || !chrome.tabGroups) return;
 
+    if (_groupCreationPending.has(clientId)) {
+      Logger.info('[WS] Group creation already pending for client:', clientId);
+      return;
+    }
+
     var existingGroupId = State.getGroupIdForClient(clientId);
     if (existingGroupId) {
       Logger.info('[WS] Group already cached for client:', clientId, 'groupId:', existingGroupId);
       return;
     }
 
+    _groupCreationPending.add(clientId);
+
     var baseName = CDPUtils.getGroupBaseName(clientId);
     chrome.tabs.query({ currentWindow: true }, function(tabs) {
       if (!tabs || tabs.length === 0) {
         Logger.warn('[WS] No tabs found for group creation');
+        _groupCreationPending.delete(clientId);
         return;
       }
       var windowId = tabs[0].windowId;
       chrome.tabs.group({ createProperties: { windowId: windowId } }, function(groupId) {
         if (chrome.runtime.lastError) {
           Logger.warn('[WS] Failed to create group on connect:', chrome.runtime.lastError.message);
+          _groupCreationPending.delete(clientId);
           return;
         }
+        _groupCreationPending.delete(clientId);
         chrome.tabGroups.update(groupId, {
           title: baseName,
           color: CDPUtils.getGroupColorForClient(clientId),

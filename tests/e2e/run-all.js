@@ -25,6 +25,7 @@ const TESTS = [
   { file: 'test-real-concurrent.js', name: '3 Concurrent Playwright', timeout: 180000, tier: 'extended' },
   { file: 'test-real-playwright.js', name: 'Playwright Compatibility', timeout: 120000, tier: 'extended' },
   { file: 'test-group-root-fix.js', name: 'Group Root Fix', timeout: 180000, tier: 'new' },
+  { file: 'test-rapid-reconnect-group.js', name: 'Rapid Reconnect Group Race', timeout: 180000, tier: 'core' },
 ];
 
 const SKIP_EXTENDED = process.env.SKIP_EXTENDED === '1' || process.env.CI === 'true';

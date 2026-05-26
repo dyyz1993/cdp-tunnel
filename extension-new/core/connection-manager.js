@@ -41,8 +41,11 @@ var ConnectionManager = (function() {
     var entry = _connections.get(connectionId);
     if (!entry) return;
 
+    entry.wsManager._removed = true;
     entry.state.clearReconnectTimer();
     if (entry.state.ws) {
+      entry.state.ws.onclose = null;
+      entry.state.ws.onerror = null;
       try { entry.state.ws.close(); } catch(e) {}
     }
     entry.state.clearAllState();
@@ -97,10 +100,12 @@ var ConnectionManager = (function() {
 
   function disconnectAll() {
     _connections.forEach(function(entry) {
+      entry.state.clearReconnectTimer();
       if (entry.state.ws) {
+        entry.state.ws.onclose = null;
+        entry.state.ws.onerror = null;
         try { entry.state.ws.close(); } catch(e) {}
       }
-      entry.state.clearReconnectTimer();
     });
   }
 

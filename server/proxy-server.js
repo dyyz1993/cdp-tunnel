@@ -350,7 +350,8 @@ async function handleHttpRequest(req, res) {
             'User-Agent': userAgent,
             'V8-Version': ver?.jsVersion || '',
             'WebKit-Version': '537.36',
-            webSocketDebuggerUrl: `ws://${getHost(req)}/devtools/browser/${browserId}`
+            webSocketDebuggerUrl: `ws://${getHost(req)}/devtools/browser/${browserId}`,
+            totalPlugins: pluginConnections.size
         };
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(payload));

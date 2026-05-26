@@ -32,10 +32,15 @@ var WebSocketConnection = (function() {
     this._maxQueueSize = 100;
     this._bufferThreshold = 512 * 1024;
     this._groupCreationPending = new Set();
+    this._removed = false;
   }
 
   WebSocketConnection.prototype.connect = function() {
     var self = this;
+    if (self._removed) {
+      Logger.info('[WS:' + self.connectionId + '] Skipping connect, connection removed');
+      return;
+    }
     var ws = self.state.getWs();
     if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
       return;
@@ -43,6 +48,10 @@ var WebSocketConnection = (function() {
 
     var wsUrl = self.config.url;
     Config.getPluginId(function(pluginId) {
+      if (self._removed) {
+        Logger.info('[WS:' + self.connectionId + '] Aborting connect (async), connection removed');
+        return;
+      }
       if (pluginId) {
         var sep = wsUrl.indexOf('?') >= 0 ? '&' : '?';
         wsUrl += sep + 'pluginId=' + encodeURIComponent(pluginId);
@@ -150,9 +159,14 @@ var WebSocketConnection = (function() {
   };
 
   WebSocketConnection.prototype._scheduleReconnect = function() {
+    if (this._removed) {
+      Logger.info('[WS:' + this.connectionId + '] Skipping reconnect, connection removed');
+      return;
+    }
     this.state.clearReconnectTimer();
     var self = this;
     var timer = setTimeout(function() {
+      if (self._removed) return;
       Logger.info('[WS:' + self.connectionId + '] Attempting to reconnect...');
       self.connect();
     }, Config.RECONNECT_DELAY);

@@ -78,7 +78,7 @@ function routeCDPCommand(message, connState, wsManager) {
   var logType = route ? route.type : 'FORWARD';
   Logger.info('[CDP] RECV id=' + id + ' method=' + method + ' type=' + logType + ' sessionId=' + (sessionId || 'null') + ' clientId=' + (clientId || 'null'));
 
-  var ctx = { id: id, method: method, params: params, sessionId: sessionId, clientId: clientId, _state: state, _wsManager: wsManager };
+  var ctx = { id: id, method: method, params: params, sessionId: sessionId, clientId: clientId, mode: message.mode, _state: state, _wsManager: wsManager };
 
   return new Promise(function(resolve) {
     if (route) {

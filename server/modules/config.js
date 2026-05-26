@@ -10,7 +10,8 @@ const CONFIG = {
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
   AUTO_RESTART: process.env.AUTO_RESTART === 'true',
   CHROME_RESTART_COOLDOWN: 30000,
-  PLUGIN_MAX_MISSED_PINGS: 3
+  PLUGIN_MAX_MISSED_PINGS: 3,
+  TAKEOVER_PORT: process.env.TAKEOVER_PORT ? parseInt(process.env.TAKEOVER_PORT) : (parseInt(process.env.PORT || '9221') + 1)
 };
 
 const LOG_LEVELS = {

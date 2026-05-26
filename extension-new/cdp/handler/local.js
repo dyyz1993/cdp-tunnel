@@ -42,9 +42,35 @@ var LocalHandler = (function() {
     var state = _getState(context);
     var params = context.params;
     var wsManager = context._wsManager;
+    var mode = context ? context.mode : null;
     state.setDiscoverTargets(!!(params && params.discover));
 
     if (params && params.discover) {
+      if (mode === 'takeover') {
+        return chrome.debugger.getTargets().then(function(targets) {
+          return new Promise(function(resolve) {
+            var pageTargets = targets.filter(function(t) { return t.type === 'page' && t.tabId; });
+            var checked = 0;
+            if (pageTargets.length === 0) { resolve({}); return; }
+            pageTargets.forEach(function(target) {
+              var tabId = target.tabId;
+              var targetId = target.id;
+              chrome.tabs.get(tabId, function(tab) {
+                checked++;
+                if (chrome.runtime.lastError || !tab) { if (checked === pageTargets.length) resolve({}); return; }
+                var isGrouped = tab.groupId != null && tab.groupId !== -1;
+                var isCDPCreated = state.isCDPCreatedTab(tabId);
+                if (!isGrouped && !isCDPCreated && !state.hasEmittedTarget(targetId)) {
+                  state.addEmittedTarget(targetId);
+                  var targetInfo = mapToTargetInfo(target);
+                  EventBuilder.send('Target.targetCreated', { targetInfo: targetInfo }, null, wsManager);
+                }
+                if (checked === pageTargets.length) resolve({});
+              });
+            });
+          });
+        });
+      }
       return getTargetInfos().then(function(targets) {
         targets.forEach(function(targetInfo) {
           state.addEmittedTarget(targetInfo.targetId);
@@ -56,9 +82,48 @@ var LocalHandler = (function() {
     return Promise.resolve({});
   }
 
-  function targetGetTargets() {
+  function targetGetTargets(context) {
+    var mode = context ? context.mode : null;
+    var state = context ? context._state : null;
+
+    if (mode === 'takeover') {
+      return chrome.debugger.getTargets().then(function(targets) {
+        return filterTakeoverTargetsFromRaw(targets, state);
+      });
+    }
     return getTargetInfos().then(function(targetInfos) {
       return { targetInfos: targetInfos };
+    });
+  }
+
+  function filterTakeoverTargetsFromRaw(targets, state) {
+    return new Promise(function(resolve) {
+      var pageTargets = targets.filter(function(t) { return t.type === 'page' && t.tabId; });
+      var nonPageTargets = targets.filter(function(t) { return t.type !== 'page'; }).map(mapToTargetInfo);
+
+      if (pageTargets.length === 0) {
+        resolve({ targetInfos: nonPageTargets });
+        return;
+      }
+
+      var checked = 0;
+      var filtered = [];
+      pageTargets.forEach(function(target) {
+        var tabId = target.tabId;
+        chrome.tabs.get(tabId, function(tab) {
+          checked++;
+          if (!chrome.runtime.lastError && tab) {
+            var isGrouped = tab.groupId != null && tab.groupId !== -1;
+            var isCDPCreated = state ? state.isCDPCreatedTab(tabId) : false;
+            if (!isGrouped && !isCDPCreated) {
+              filtered.push(mapToTargetInfo(target));
+            }
+          }
+          if (checked === pageTargets.length) {
+            resolve({ targetInfos: nonPageTargets.concat(filtered) });
+          }
+        });
+      });
     });
   }
 

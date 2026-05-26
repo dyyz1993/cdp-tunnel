@@ -227,7 +227,54 @@ var WebSocketConnection = (function() {
         Logger.info('[WS:' + self.connectionId + '] Client connected, resuming event forwarding');
         self.state.setHasConnectedClient(true);
         self.state.addCDPClient(message.clientId, message.clientId);
-        self._createGroupForClient(message.clientId);
+        self._createGroupForClient(message.clientId, message.__mode);
+        self._broadcastStateUpdate();
+        break;
+
+      case 'takeover-disconnect':
+        Logger.info('[WS:' + self.connectionId + '] Takeover disconnect:', message.clientId);
+        var takeClientId = message.clientId;
+        self._groupCreationPending.delete(takeClientId);
+        var takeAttachedTabs = self.state.getAttachedTabIds();
+        var takeToDetach = takeAttachedTabs.filter(function(tid) {
+          return self.state.getClientIdByTabId(tid) === takeClientId;
+        });
+        var takeTargetIds = [];
+        self.state.sessionIdToTargetId.forEach(function(tTargetId, sessId) {
+          var tTabId = self.state.sessionIdToTabId.get(sessId);
+          if (tTabId && self.state.getClientIdByTabId(tTabId) === takeClientId) {
+            takeTargetIds.push(tTargetId);
+          }
+        });
+        takeToDetach.forEach(function(tid) {
+          chrome.debugger.detach({ tabId: tid }).catch(function() {});
+          self.state.removeAttachedTab(tid);
+        });
+        takeTargetIds.forEach(function(tTargetId) {
+          self.state.emittedTargets.delete(tTargetId);
+        });
+        self.state.clearPreExistingTabsForClient(takeClientId);
+        var takeSessions = self.state.sessionIdToTabId.entries();
+        var takeEntry = takeSessions.next();
+        while (!takeEntry.done) {
+          var sessId = takeEntry.value[0];
+          var tTabId = takeEntry.value[1];
+          if (self.state.getClientIdByTabId(tTabId) === takeClientId) {
+            self.state.unmapSession(sessId);
+          }
+          takeEntry = takeSessions.next();
+        }
+        takeToDetach.forEach(function(tid) {
+          self.state.removeTabIdToClientId(tid);
+          var sessions = self.state.findSessionsByTabId(tid);
+          sessions.forEach(function(sid) { self.state.unmapSession(sid); });
+        });
+        self.state.removeGroupForClient(takeClientId);
+        self.state.removeCDPClient(takeClientId);
+        if (self.state.getCDPClients().length === 0) {
+          self.state.setHasConnectedClient(false);
+        }
+        self._cleanupStaleState(takeClientId);
         self._broadcastStateUpdate();
         break;
 
@@ -282,6 +329,7 @@ var WebSocketConnection = (function() {
             tabId: tabId,
             sessionId: sessionId,
             clientId: message.__clientId,
+            mode: message.__mode,
             connectionId: self.connectionId
           }, self.state, self);
         }
@@ -296,6 +344,7 @@ var WebSocketConnection = (function() {
             tabId: tabId,
             sessionId: sessionId,
             clientId: message.__clientId,
+            mode: message.__mode,
             connectionId: self.connectionId
           }, self.state, self);
         }
@@ -324,9 +373,10 @@ var WebSocketConnection = (function() {
           resolve();
         });
       } else {
-        var baseName = CDPUtils.getGroupBaseName(clientId, self.config ? self.config.tag : null);
+        var cdpBaseName = CDPUtils.getGroupBaseName(clientId, self.config ? self.config.tag : null, 'create');
+        var takeBaseName = CDPUtils.getGroupBaseName(clientId, self.config ? self.config.tag : null, 'takeover');
         chrome.tabGroups.query({}, function(allGroups) {
-          var match = CDPUtils.findGroupByName(allGroups, baseName);
+          var match = CDPUtils.findGroupByName(allGroups, cdpBaseName) || CDPUtils.findGroupByName(allGroups, takeBaseName);
           if (match) {
             self._closeGroupById(match.id, clientId, function() {
               clearTimeout(timeoutId);
@@ -488,7 +538,7 @@ var WebSocketConnection = (function() {
     });
   };
 
-  WebSocketConnection.prototype._createGroupForClient = function(clientId) {
+  WebSocketConnection.prototype._createGroupForClient = function(clientId, mode) {
     var self = this;
     if (!clientId || !chrome.tabGroups) return;
 
@@ -505,7 +555,7 @@ var WebSocketConnection = (function() {
 
     self._groupCreationPending.add(clientId);
 
-    var baseName = CDPUtils.getGroupBaseName(clientId, self.config ? self.config.tag : null);
+    var baseName = CDPUtils.getGroupBaseName(clientId, self.config ? self.config.tag : null, mode);
     chrome.tabs.query({ currentWindow: true }, function(tabs) {
       if (!tabs || tabs.length === 0) {
         Logger.warn('[WS:' + self.connectionId + '] No tabs found for group creation');

@@ -1,5 +1,5 @@
 var Config = {
-  WS_URL: 'ws://localhost:9221/plugin',
+  WS_URL: 'ws://localhost:19065/plugin',
   RECONNECT_DELAY: 3000,
   DEBUGGER_VERSION: '1.3',
   HEARTBEAT_INTERVAL: 25000,

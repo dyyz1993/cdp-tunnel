@@ -82,6 +82,10 @@ var SpecialHandler = (function() {
 
         if (state.isCDPCreatedTab(tabId)) {
           addTabToAutomationGroup(tabId, clientId, null, context);
+        } else if (context.mode === 'takeover') {
+          state.addPreExistingTab(tabId);
+          addTabToAutomationGroup(tabId, clientId, null, context);
+          Logger.info('[CDP TAKEOVER] Target.attachToTarget: added to TAKE group. tabId:', tabId);
         } else {
           state.addPreExistingTab(tabId);
           Logger.info('[CDP] Target.attachToTarget: user tab not CDP-created, treating as pre-existing. tabId:', tabId);
@@ -236,7 +240,7 @@ var SpecialHandler = (function() {
         return;
       }
     }
-    var baseName = CDPUtils.getGroupBaseName(groupClientId, _getConnectionTag(context));
+    var baseName = CDPUtils.getGroupBaseName(groupClientId, _getConnectionTag(context), context ? context.mode : null);
 
     Logger.info('[TabGroup] Grouping tab immediately for:', baseName);
     doGroup(tabId, groupClientId, baseName, 0, callback, context);
@@ -258,7 +262,7 @@ var SpecialHandler = (function() {
       Logger.info('[TabGroup] Using cached groupId:', cachedGroupId, 'for client:', clientId);
       chrome.tabs.group({ tabIds: tabId, groupId: cachedGroupId }, function(result) {
         if (!chrome.runtime.lastError) {
-          updateTabGroupName(clientId, state, wsManager);
+          updateTabGroupName(clientId, state, wsManager, context ? context.mode : null);
           Logger.info('[TabGroup] Tab', tabId, 'added to cached group:', cachedGroupId);
           if (callback) callback(true);
           return;
@@ -303,7 +307,7 @@ var SpecialHandler = (function() {
             }
           } else {
             if (state) state.setGroupIdForClient(clientId, existing.id);
-            updateTabGroupName(clientId, state, wsManager);
+            updateTabGroupName(clientId, state, wsManager, context ? context.mode : null);
             Logger.info('[TabGroup] Tab', tabId, 'added to existing group:', existing.id);
             if (callback) callback(true);
           }
@@ -335,7 +339,7 @@ var SpecialHandler = (function() {
                   EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'updateGroup', error: chrome.runtime.lastError.message, groupId: groupId }, null, wsManager);
                 } else {
                   if (state) state.setGroupIdForClient(clientId, groupId);
-                  updateTabGroupName(clientId, state, wsManager);
+                  updateTabGroupName(clientId, state, wsManager, context ? context.mode : null);
                   Logger.info('[TabGroup] Group updated:', groupId, baseName);
                 }
                 if (callback) callback(true);
@@ -354,7 +358,7 @@ var SpecialHandler = (function() {
     });
   }
 
-  function updateTabGroupName(clientId, state, wsManager) {
+  function updateTabGroupName(clientId, state, wsManager, mode) {
     if (!clientId) return;
 
     var groupId = state ? state.getGroupIdForClient(clientId) : null;
@@ -365,7 +369,7 @@ var SpecialHandler = (function() {
     chrome.tabs.query({ groupId: groupId }, function(tabs) {
       if (chrome.runtime.lastError || !tabs) return;
 
-      var baseName = CDPUtils.getGroupBaseName(clientId, connectionTag);
+      var baseName = CDPUtils.getGroupBaseName(clientId, connectionTag, mode);
       var newName = baseName + ' (' + tabs.length + ')';
 
       chrome.tabGroups.update(groupId, {
@@ -407,7 +411,7 @@ var SpecialHandler = (function() {
           chrome.tabs.remove(tabId, function() {
             state.removeAttachedTab(tabId);
             if (closeClientId) {
-              updateTabGroupName(closeClientId, state, _getWSManager(context));
+              updateTabGroupName(closeClientId, state, _getWSManager(context), context ? context.mode : null);
             }
             resolve({ success: true });
           });
@@ -516,12 +520,60 @@ function checkTabVisibility(tabId) {
     var state = _getState(context);
     var wsManager = _getWSManager(context);
     var clientId = context ? context.clientId : null;
+    var mode = context ? context.mode : null;
     var config = state.getAutoAttachConfig();
 
     return chrome.debugger.getTargets().then(function(targets) {
       var promises = [];
 
-      Logger.info('[CDP] emitAutoAttachForExistingTargets: checking', targets.length, 'targets, clientId:', clientId);
+      Logger.info('[CDP] emitAutoAttachForExistingTargets: checking', targets.length, 'targets, clientId:', clientId, 'mode:', mode);
+
+      if (mode === 'takeover') {
+        var takeoverPromises = [];
+        targets.forEach(function(target) {
+          if (target.type !== 'page' || !target.tabId) return;
+          var targetId = target.id;
+          var tabId = target.tabId;
+          if (state.hasEmittedTarget(targetId)) return;
+
+          takeoverPromises.push(new Promise(function(resolve) {
+            chrome.tabs.get(tabId, function(tab) {
+              if (chrome.runtime.lastError || !tab) { resolve(); return; }
+              var isGrouped = tab.groupId != null && tab.groupId !== -1;
+              var isCDPCreated = state.isCDPCreatedTab(tabId);
+              if (isGrouped || isCDPCreated) { resolve(); return; }
+
+              state.addEmittedTarget(targetId);
+              state.addPreExistingTab(tabId);
+              if (clientId) state.setTabIdToClientId(tabId, clientId);
+              var targetInfo = LocalHandler.mapToTargetInfo(target);
+              Logger.info('[CDP TAKEOVER] Emitting ungrouped target:', targetId, 'tabId:', tabId);
+
+              var attachLogic = function(attached) {
+                var sessionId = CDPUtils.generateSessionId();
+                state.mapSession(sessionId, tabId, targetId);
+                EventBuilder.send('Target.attachedToTarget', {
+                  sessionId: sessionId,
+                  targetInfo: Object.assign({}, targetInfo, { attached: true }),
+                  waitingForDebugger: false
+                }, null, wsManager);
+              };
+
+              if (target.attached) {
+                attachLogic(true);
+                resolve();
+              } else {
+                DebuggerManager.attach(tabId, state).then(function(attached) {
+                  if (!attached) { resolve(); return; }
+                  attachLogic(attached);
+                  resolve();
+                }).catch(resolve);
+              }
+            });
+          }));
+        });
+        return Promise.all(takeoverPromises);
+      }
 
       targets.forEach(function(target) {
         if (target.type !== 'page' && target.type !== 'background_page') return;

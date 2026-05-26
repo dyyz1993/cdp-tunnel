@@ -16,6 +16,7 @@ const path = require('path');
 const os = require('os');
 const { execSync, spawn: spawnProcess } = require('child_process');
 const { CONFIG, BROWSER_ID, shouldLog } = require('./modules/config');
+const TAKEOVER_PORT = CONFIG.TAKEOVER_PORT;
 const { logCDP, logEvent, clearLog, logStatus, logConnectionEvent, flushAllLogs, logDisconnect } = require('./modules/logger');
 
 try {
@@ -195,6 +196,8 @@ console.log(`  Server started on port ${PORT}`);
 console.log(`  - Plugin path: ws://localhost:${PORT}/plugin`);
 console.log(`  - Client path: ws://localhost:${PORT}/client`);
 console.log(`  - CDP endpoint: http://localhost:${PORT}`);
+console.log(`  - Takeover port: ${TAKEOVER_PORT} (mode=takeover)`);
+console.log(`  - Takeover CDP:  http://localhost:${TAKEOVER_PORT}`);
 console.log('='.repeat(60));
 
 /**
@@ -436,7 +439,8 @@ wss.on('connection', (ws, req) => {
         } else if (pathParts[0] === 'devtools' && pathParts[1] === 'browser' && pathParts[2]) {
             targetPluginId = pathParts[2];
         }
-        handleClientConnection(ws, clientInfo, customClientId, targetPluginId);
+        const mode = req._takeoverMode ? 'takeover' : 'create';
+        handleClientConnection(ws, clientInfo, customClientId, targetPluginId, mode);
     } else if (path.startsWith('/devtools/page/')) {
         const targetId = path.replace('/devtools/page/', '');
         handlePageConnection(ws, clientInfo, targetId);
@@ -449,6 +453,7 @@ wss.on('connection', (ws, req) => {
 function cleanupClient(ws, id, reason) {
     const pluginWs = ws.pairedPlugin || clientIdToPlugin.get(id);
     const ns = pluginWs ? getNamespace(pluginWs) : null;
+    const isTakeover = ws.mode === 'takeover';
 
     if (ns) {
         const sessionsToClean = [];
@@ -467,6 +472,7 @@ function cleanupClient(ws, id, reason) {
     logConnectionEvent('CLIENT_DISCONNECTED', {
         id,
         reason,
+        mode: ws.mode || 'create',
         totalPlugins: pluginConnections.size,
         totalClients: clientConnections.size
     });
@@ -474,6 +480,7 @@ function cleanupClient(ws, id, reason) {
     logDisconnect('CLIENT_CLEANUP', {
         clientId: id,
         reason,
+        mode: ws.mode || 'create',
         cdpMethodsUsed: ws.cdpTrace ? [...new Set(ws.cdpTrace)] : [],
         uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
         remainingClients: clientConnections.size,
@@ -487,32 +494,41 @@ function cleanupClient(ws, id, reason) {
     }
 
     if (ws.pairedPlugin) {
-        const sendOk = safeSend(ws.pairedPlugin, JSON.stringify({
-            type: 'client-disconnected',
-            clientId: id,
-            sessions: []
-        }), 'plugin');
-        if (!sendOk) {
-            console.log(`[WARN] cleanupClient: failed to send client-disconnected for ${id} to plugin`);
-        }
-
-        const pluginNs = getNamespace(ws.pairedPlugin);
-        if (pluginNs) {
-            const targetsToClose = [];
-            for (const [tId, cId] of pluginNs.targetIdToClientId.entries()) {
-                if (cId === id) {
-                    targetsToClose.push(tId);
-                }
+        if (isTakeover) {
+            safeSend(ws.pairedPlugin, JSON.stringify({
+                type: 'takeover-disconnect',
+                clientId: id,
+                sessions: []
+            }), 'plugin');
+            console.log(`[TAKEOVER DISCONNECT] client=${id} — detaching only, not closing tabs`);
+        } else {
+            const sendOk = safeSend(ws.pairedPlugin, JSON.stringify({
+                type: 'client-disconnected',
+                clientId: id,
+                sessions: []
+            }), 'plugin');
+            if (!sendOk) {
+                console.log(`[WARN] cleanupClient: failed to send client-disconnected for ${id} to plugin`);
             }
-            targetsToClose.forEach(function(tId) {
-                const closeReq = JSON.stringify({
-                    id: -1,
-                    method: 'Target.closeTarget',
-                    params: { targetId: tId },
-                    __clientId: id
+
+            const pluginNs = getNamespace(ws.pairedPlugin);
+            if (pluginNs) {
+                const targetsToClose = [];
+                for (const [tId, cId] of pluginNs.targetIdToClientId.entries()) {
+                    if (cId === id) {
+                        targetsToClose.push(tId);
+                    }
+                }
+                targetsToClose.forEach(function(tId) {
+                    const closeReq = JSON.stringify({
+                        id: -1,
+                        method: 'Target.closeTarget',
+                        params: { targetId: tId },
+                        __clientId: id
+                    });
+                    safeSend(ws.pairedPlugin, closeReq, 'plugin');
                 });
-                safeSend(ws.pairedPlugin, closeReq, 'plugin');
-            });
+            }
         }
     }
 
@@ -819,7 +835,23 @@ function handlePluginConnection(ws, clientInfo, request) {
                         pendingMap.set(targetId, { parsed: JSON.parse(JSON.stringify(parsed)), cdpData });
                         console.log(`[TARGET EVENT PENDING] ${parsed.method} targetId=${targetId?.substring(0,8) || 'none'} (cached, waiting for createTarget response)`);
                     } else {
-                        console.log(`[TARGET EVENT DROPPED] ${parsed.method} targetId=${targetId?.substring(0,8) || 'none'} (no owner, dropped for isolation)`);
+                        let takeoverRouted = false;
+                        ns.discoveringClientIds.forEach((timestamp, discClientId) => {
+                            if (takeoverRouted) return;
+                            const discWs = clientById.get(discClientId);
+                            if (discWs && discWs.mode === 'takeover' && discWs.readyState === WebSocket.OPEN) {
+                                discWs.send(cdpData);
+                                takeoverRouted = true;
+                                console.log(`[TAKEOVER EVENT ROUTED] ${parsed.method} targetId=${targetId?.substring(0,8)} -> clientId=${discClientId}`);
+                                if (parsed.params?.sessionId) {
+                                    ns.sessionToClientId.set(parsed.params.sessionId, discClientId);
+                                }
+                                ns.targetIdToClientId.set(targetId, discClientId);
+                            }
+                        });
+                        if (!takeoverRouted) {
+                            console.log(`[TARGET EVENT DROPPED] ${parsed.method} targetId=${targetId?.substring(0,8) || 'none'} (no owner, dropped for isolation)`);
+                        }
                     }
                 } else {
                     console.log(`[TARGET EVENT DROPPED] ${parsed.method} targetId=${targetId?.substring(0,8) || 'none'} (no owner, dropped for isolation)`);
@@ -893,6 +925,10 @@ function handlePluginConnection(ws, clientInfo, request) {
                     if (parsed.result?.sessionId && mapping.method === 'Target.attachToTarget') {
                         ns.sessionToClientId.set(parsed.result.sessionId, mapping.clientId);
                         console.log(`[SESSION MAPPED from attach response] sessionId=${parsed.result.sessionId?.substring(0,8)} -> clientId=${mapping.clientId?.substring(0,8)}`);
+                        if (mapping.attachTargetId && !ns.targetIdToClientId.has(mapping.attachTargetId)) {
+                            ns.targetIdToClientId.set(mapping.attachTargetId, mapping.clientId);
+                            console.log(`[TARGET MAPPED from attach] targetId=${mapping.attachTargetId?.substring(0,8)} -> clientId=${mapping.clientId}`);
+                        }
                     }
                     
                     if (mapping.isCreateTarget && parsed.result?.targetId) {
@@ -937,12 +973,16 @@ function handlePluginConnection(ws, clientInfo, request) {
                     }
                     if (mapping.isGetTargets && parsed.result && parsed.result.targetInfos) {
                         const clientId = mapping.clientId;
-                        parsed.result.targetInfos = parsed.result.targetInfos.filter(t => {
-                            if (t.type !== 'page') return true;
-                            const ownerClient = ns.targetIdToClientId.get(t.targetId);
-                            return ownerClient === clientId;
-                        });
-                        console.log(`[GET TARGETS FILTERED] client=${clientId} returned ${parsed.result.targetInfos.filter(t => t.type === 'page').length} page targets`);
+                        if (mapping.isTakeover) {
+                            console.log(`[GET TARGETS TAKEOVER] client=${clientId} returning unfiltered targets (${parsed.result.targetInfos.length})`);
+                        } else {
+                            parsed.result.targetInfos = parsed.result.targetInfos.filter(t => {
+                                if (t.type !== 'page') return true;
+                                const ownerClient = ns.targetIdToClientId.get(t.targetId);
+                                return ownerClient === clientId;
+                            });
+                            console.log(`[GET TARGETS FILTERED] client=${clientId} returned ${parsed.result.targetInfos.filter(t => t.type === 'page').length} page targets`);
+                        }
                     }
                     if (parsed.result && parsed.result.success !== undefined && mapping.method === 'Target.closeTarget') {
                         if (mapping.closeTargetId) {
@@ -1123,11 +1163,12 @@ function forwardToPlugin(clientWs, data, clientId) {
 /**
  * 处理 CDP 客户端连接 (Playwright/Puppeteer)
  */
-function handleClientConnection(ws, clientInfo, customClientId = null, targetPluginId = null) {
+function handleClientConnection(ws, clientInfo, customClientId = null, targetPluginId = null, mode = 'create') {
     clientConnections.add(ws);
     const id = customClientId || generateId('client');
+    ws.mode = mode;
     if (shouldLog('info')) {
-        console.log(`\n[CLIENT CONNECTED] ID: ${id}${customClientId ? ' (custom)' : ''}${targetPluginId ? ` targetPlugin=${targetPluginId}` : ''}`);
+        console.log(`\n[CLIENT CONNECTED] ID: ${id}${customClientId ? ' (custom)' : ''}${targetPluginId ? ` targetPlugin=${targetPluginId}` : ''} mode=${mode}`);
         console.log(`  - Remote: ${clientInfo.ip}:${clientInfo.port}`);
         console.log(`  - Total client connections: ${clientConnections.size}`);
     }
@@ -1296,6 +1337,10 @@ function handleClientConnection(ws, clientInfo, customClientId = null, targetPlu
                     safeSend(ws, errMsg, 'client');
                     return;
                 }
+                const currentMapping = globalRequestIdMap.get(parsed.id);
+                if (currentMapping && targetId) {
+                    currentMapping.attachTargetId = targetId;
+                }
             }
         }
         
@@ -1311,6 +1356,9 @@ function handleClientConnection(ws, clientInfo, customClientId = null, targetPlu
             const currentMapping = globalRequestIdMap.get(parsed.id);
             if (currentMapping) {
                 currentMapping.isGetTargets = true;
+                if (ws.mode === 'takeover') {
+                    currentMapping.isTakeover = true;
+                }
             }
         }
 
@@ -1324,17 +1372,31 @@ function handleClientConnection(ws, clientInfo, customClientId = null, targetPlu
 
         if (parsed && parsed.method === 'Target.setAutoAttach' && parsed.params?.autoAttach && !ws._autoDefaultPageSent) {
             ws._autoDefaultPageSent = true;
-            autoCreateDefaultPageAndForward(ws, parsed, modifiedData, id, originalId);
+            if (ws.mode === 'takeover') {
+                const takeoverMsg = { ...parsed, __clientId: id, __mode: 'takeover' };
+                if (ws.pairedPlugin && ws.pairedPlugin.readyState === WebSocket.OPEN) {
+                    ws.pairedPlugin.send(JSON.stringify(takeoverMsg));
+                }
+            } else {
+                autoCreateDefaultPageAndForward(ws, parsed, modifiedData, id, originalId);
+            }
             return;
         }
 
         if (parsed && parsed.method === 'Browser.close') {
-            console.log(`[BROWSER CLOSE] Client ${id} requested Browser.close — closing client group only`);
+            console.log(`[BROWSER CLOSE] Client ${id} mode=${ws.mode} requested Browser.close`);
             if (ws.pairedPlugin) {
-                safeSend(ws.pairedPlugin, JSON.stringify({
-                    type: 'browser-close',
-                    clientId: id
-                }), 'plugin');
+                if (ws.mode === 'takeover') {
+                    safeSend(ws.pairedPlugin, JSON.stringify({
+                        type: 'takeover-disconnect',
+                        clientId: id
+                    }), 'plugin');
+                } else {
+                    safeSend(ws.pairedPlugin, JSON.stringify({
+                        type: 'browser-close',
+                        clientId: id
+                    }), 'plugin');
+                }
             }
             safeSend(ws, JSON.stringify({ id: originalId, result: {} }), 'client');
             return;
@@ -1353,8 +1415,10 @@ function handleClientConnection(ws, clientInfo, customClientId = null, targetPlu
         // 发送给配对的 plugin (或广播)
         if (ws.pairedPlugin && ws.pairedPlugin.readyState === WebSocket.OPEN) {
             console.log(`[SEND TO PLUGIN] id=${parsed?.id} method=${parsed?.method} sessionId=${parsed?.sessionId?.substring(0,8) || 'none'} clientId=${id}`);
-            // 在消息中附加 clientId 信息
             const pluginMsg = { ...parsed, __clientId: id };
+            if (ws.mode === 'takeover') {
+                pluginMsg.__mode = 'takeover';
+            }
             ws.pairedPlugin.send(JSON.stringify(pluginMsg));
         } else {
             broadcastToPlugins(modifiedData, ws);
@@ -1920,3 +1984,35 @@ server.on('error', (err) => {
 });
 
 server.listen(PORT, '0.0.0.0');
+
+const takeoverServer = http.createServer((req, res) => handleHttpRequest(req, res));
+takeoverServer.on('upgrade', (req, socket, head) => {
+    req._takeoverMode = true;
+    const url = new URL(req.url, `http://localhost:${TAKEOVER_PORT}`);
+    const path = url.pathname;
+    const isPlugin = path === '/plugin';
+    const isClient = path === '/client' ||
+                     path.startsWith('/client/') ||
+                     path.startsWith('/client-') ||
+                     path.startsWith('/devtools/browser/') ||
+                     path.startsWith('/devtools/page/');
+
+    if (!isPlugin && !isClient) {
+        socket.destroy();
+        return;
+    }
+
+    wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req);
+    });
+});
+takeoverServer.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`[WARN] Takeover port ${TAKEOVER_PORT} is already in use. Takeover mode disabled.`);
+    } else {
+        console.error('[WARN] Takeover server error:', err.message);
+    }
+});
+takeoverServer.listen(TAKEOVER_PORT, '0.0.0.0', () => {
+    console.log(`[TAKEOVER] Listening on port ${TAKEOVER_PORT}`);
+});

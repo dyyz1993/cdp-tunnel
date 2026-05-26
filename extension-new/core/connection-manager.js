@@ -23,7 +23,7 @@ var ConnectionManager = (function() {
       return;
     }
 
-    var state = new ConnectionState(config.id);
+    var state = new ConnectionState(config.id, config.mode);
     var wsManager = new WebSocketConnection(config.id, state, config);
 
     _connections.set(config.id, {

@@ -32,9 +32,11 @@
       var dot = document.createElement('span');
       dot.className = 'conn-dot ' + conn.status;
 
+      var modeIcon = conn.mode === 'takeover' ? '🔗 ' : '🆕 ';
+
       var tag = document.createElement('span');
       tag.className = 'conn-tag';
-      tag.textContent = conn.tag;
+      tag.textContent = modeIcon + conn.tag;
 
       header.appendChild(dot);
       header.appendChild(tag);

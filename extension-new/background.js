@@ -466,14 +466,14 @@ importScripts('features/automation-badge.js');
               status = 'error';
             }
           }
-          return { id: conn.id, tag: conn.tag, url: conn.url, status: status, attachedCount: attachedCount };
+          return { id: conn.id, tag: conn.tag, url: conn.url, mode: conn.mode || 'create', status: status, attachedCount: attachedCount };
         });
         sendResponse({ connections: list });
       });
       return true;
     } else if (message.type === 'add-connection') {
-      Logger.info('[Runtime] Adding connection:', message.tag, message.url);
-      Config.addConnection({ tag: message.tag, url: message.url }, function(conn) {
+      Logger.info('[Runtime] Adding connection:', message.tag, message.url, 'mode:', message.mode);
+      Config.addConnection({ tag: message.tag, url: message.url, mode: message.mode || 'create' }, function(conn) {
         if (conn && conn.enabled) {
           ConnectionManager.addConnection(conn);
           var entry = ConnectionManager.getConnection(conn.id);

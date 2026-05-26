@@ -58,6 +58,7 @@ var Config = {
         id: 'conn_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
         tag: opts.tag || 'unnamed',
         url: opts.url || '',
+        mode: opts.mode || 'create',
         enabled: opts.enabled !== undefined ? opts.enabled : true
       };
       connections.push(conn);
@@ -91,6 +92,7 @@ var Config = {
         if (c.id === id) {
           if (updates.tag !== undefined) c.tag = updates.tag;
           if (updates.url !== undefined) c.url = updates.url;
+          if (updates.mode !== undefined) c.mode = updates.mode;
         }
       });
       Config.setConnections(connections, callback);

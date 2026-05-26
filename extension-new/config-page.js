@@ -27,6 +27,7 @@
     newConnTag: document.getElementById('newConnTag'),
     newConnUrl: document.getElementById('newConnUrl'),
     addConnBtn: document.getElementById('addConnBtn'),
+    inputMode: document.getElementById('inputMode'),
     autoMuteToggle: document.getElementById('autoMuteToggle'),
     pluginIdDisplay: document.getElementById('pluginIdDisplay')
   };
@@ -99,7 +100,7 @@
           '<input type="checkbox" class="conn-toggle" data-id="' + conn.id + '"' + (conn.enabled ? ' checked' : '') + ' title="启用/禁用">' +
           '<span class="status-dot ' + statusClass + '" title="' + statusClass + '"></span>' +
           '<div class="conn-config-info">' +
-            '<div class="conn-config-tag">' + escapeHtml(conn.tag) + '</div>' +
+            '<div class="conn-config-tag">' + (conn.mode === 'takeover' ? '🔗 ' : '🆕 ') + escapeHtml(conn.tag) + '</div>' +
             '<div class="conn-config-url" title="' + escapeAttr(conn.url) + '">' + escapeHtml(conn.url) + '</div>' +
           '</div>' +
           '<button class="btn-delete" data-id="' + conn.id + '" title="删除">删除</button>' +
@@ -333,6 +334,7 @@
   elements.addConnBtn.addEventListener('click', function() {
     var tag = elements.newConnTag.value.trim();
     var url = elements.newConnUrl.value.trim();
+    var mode = elements.inputMode.value || 'create';
 
     if (!tag) {
       showToast('请输入连接名称', 'error');
@@ -344,16 +346,18 @@
     }
 
     if (typeof chrome !== 'undefined' && chrome.runtime) {
-      chrome.runtime.sendMessage({ type: 'add-connection', tag: tag, url: url }, function() {
+      chrome.runtime.sendMessage({ type: 'add-connection', tag: tag, url: url, mode: mode }, function() {
         elements.newConnTag.value = '';
         elements.newConnUrl.value = '';
+        elements.inputMode.value = 'create';
         loadAndRenderConnections();
         showToast('连接已添加');
       });
     } else if (typeof Config !== 'undefined') {
-      Config.addConnection({ tag: tag, url: url }, function() {
+      Config.addConnection({ tag: tag, url: url, mode: mode }, function() {
         elements.newConnTag.value = '';
         elements.newConnUrl.value = '';
+        elements.inputMode.value = 'create';
         loadAndRenderConnections();
         showToast('连接已添加');
       });

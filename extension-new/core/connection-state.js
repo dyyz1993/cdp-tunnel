@@ -1,5 +1,6 @@
-function ConnectionState(connectionId) {
+function ConnectionState(connectionId, mode) {
   this.connectionId = connectionId;
+  this.mode = mode || 'create';
   this.ws = null;
   this.reconnectTimer = null;
   this._hasConnectedClient = false;

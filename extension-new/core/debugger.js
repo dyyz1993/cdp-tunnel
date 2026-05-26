@@ -8,17 +8,14 @@ var DebuggerManager = (function() {
   
   function isInternalUrl(url) {
     if (!url) return false;
-    // Whitelist: only allow http/https/about/data/blob/file
     if (url.startsWith('http:') || url.startsWith('https:') || url.startsWith('about:') || url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('file:')) {
       return false;
     }
-    // Also check explicit blocked list for common custom protocols
     for (var i = 0; i < blockedProtocols.length; i++) {
       if (url.startsWith(blockedProtocols[i])) {
         return true;
       }
     }
-    // Block any other custom protocol (xxx://)
     var colonIdx = url.indexOf(':');
     if (colonIdx > 0 && colonIdx < 20 && url.substring(colonIdx, colonIdx + 3) === '://') {
       return true;
@@ -26,7 +23,6 @@ var DebuggerManager = (function() {
     return false;
   }
   
-  // 拦截 iframe 创建
   var originalCreateElement = document.createElement;
   document.createElement = function(tagName) {
     var element = originalCreateElement.call(document, tagName);
@@ -43,7 +39,6 @@ var DebuggerManager = (function() {
     return element;
   };
   
-  // 拦截 window.open
   var originalWindowOpen = window.open;
   window.open = function(url) {
     if (isInternalUrl(url)) {
@@ -53,7 +48,6 @@ var DebuggerManager = (function() {
     return originalWindowOpen.apply(this, arguments);
   };
   
-  // 拦截 location 修改
   var locationDescriptor = Object.getOwnPropertyDescriptor(window, 'location');
   if (locationDescriptor && typeof locationDescriptor.set === 'function') {
     try {
@@ -71,7 +65,6 @@ var DebuggerManager = (function() {
         configurable: true
       });
     } catch(e) {
-      // location property cannot be redefined on some contexts, skip silently
     }
   }
   
@@ -79,7 +72,8 @@ var DebuggerManager = (function() {
 })();
 `;
 
-  function attach(tabId) {
+  function attach(tabId, connState) {
+    var state = connState || _getAnyStateForTab(tabId);
     if (tabId == null) {
       return Promise.resolve(false);
     }
@@ -87,7 +81,7 @@ var DebuggerManager = (function() {
     return ensureTabExists(tabId).then(function(exists) {
       if (!exists) {
         Logger.warn('[Debugger] Tab', tabId, 'does not exist');
-        State.persist(null, false);
+        if (state) state.persist(null, false);
         return false;
       }
 
@@ -95,23 +89,28 @@ var DebuggerManager = (function() {
         if (isAttached) {
           Logger.info('[Debugger] Tab', tabId, 'already attached, detaching first...');
           return chrome.debugger.detach({ tabId: tabId }).catch(function() {}).then(function() {
-            return doAttach(tabId);
+            return doAttach(tabId, state);
           });
         }
-        return doAttach(tabId);
+        return doAttach(tabId, state);
       });
     });
   }
 
-  function doAttach(tabId) {
+  function _getAnyStateForTab(tabId) {
+    var entry = ConnectionManager.getConnectionByTabId(tabId);
+    return entry ? entry.state : null;
+  }
+
+  function doAttach(tabId, state) {
     return chrome.debugger.attach({ tabId: tabId }, Config.DEBUGGER_VERSION)
       .then(function() {
         Logger.info('[Debugger] Attached to tab', tabId);
-        State.addAttachedTab(tabId);
-        State.setCurrentTabId(tabId);
-        State.persist(tabId, true);
-        
-        // 注入内部URL拦截脚本
+        if (state) {
+          state.addAttachedTab(tabId);
+          state.setCurrentTabId(tabId);
+          state.persist(tabId, true);
+        }
         return injectInternalUrlBlocker(tabId);
       })
       .then(function() {
@@ -142,7 +141,8 @@ var DebuggerManager = (function() {
     });
   }
 
-  function detach(tabId) {
+  function detach(tabId, connState) {
+    var state = connState || _getAnyStateForTab(tabId);
     if (tabId == null) {
       return Promise.resolve();
     }
@@ -152,16 +152,18 @@ var DebuggerManager = (function() {
     return chrome.debugger.detach({ tabId: tabId })
       .then(function() {
         Logger.info('[Debugger] Detached from tab', tabId);
-        State.removeAttachedTab(tabId);
+        if (state) {
+          state.removeAttachedTab(tabId);
+          if (state.getCurrentTabId() === tabId) {
+            state.persist(null, false);
+          }
+        }
         AutomationBadge.remove(tabId);
         Screencast.stopPolling(tabId);
-        if (State.getCurrentTabId() === tabId) {
-          State.persist(null, false);
-        }
       })
       .catch(function(error) {
         Logger.error('[Debugger] Failed to detach from tab', tabId, ':', error.message);
-        State.removeAttachedTab(tabId);
+        if (state) state.removeAttachedTab(tabId);
         AutomationBadge.remove(tabId);
         Screencast.stopPolling(tabId);
       });
@@ -191,11 +193,17 @@ var DebuggerManager = (function() {
   }
 
   function handleDebuggerEvent(source, method, params) {
-    if (!State.isTabAttached(source.tabId)) {
+    var entry = ConnectionManager.getConnectionByTabId(source.tabId);
+    if (!entry) return;
+
+    var state = entry.state;
+    var wsManager = entry.wsManager;
+
+    if (!state.isTabAttached(source.tabId)) {
       return;
     }
 
-    if (!State.hasConnectedClient()) {
+    if (!state.hasConnectedClient()) {
       return;
     }
 
@@ -203,20 +211,19 @@ var DebuggerManager = (function() {
       return;
     }
 
-    var sessionIds = State.findSessionsByTabId(source.tabId);
+    var sessionIds = state.findSessionsByTabId(source.tabId);
     Logger.info('[Event] method=' + method + ' tabId=' + source.tabId + ' sessions=' + sessionIds.length);
-    
+
     if (method === 'Runtime.executionContextCreated' && params && params.context) {
       var context = params.context;
       var isPlaywrightContext = context.name && context.name.indexOf('__playwright') === 0;
       var isDefaultContext = context.auxData && context.auxData.isDefault;
-      
+
       if (!isPlaywrightContext && !isDefaultContext) {
         Logger.info('[Event] Filtering non-Playwright Runtime.executionContextCreated:', context.name);
         return;
       }
-      
-      // 在新的执行上下文中也注入拦截脚本（data: URL 上下文跳过，避免干扰导航）
+
       if (isDefaultContext) {
         chrome.tabs.get(source.tabId, function(tab) {
           if (chrome.runtime.lastError) return;
@@ -234,7 +241,7 @@ var DebuggerManager = (function() {
         });
       }
     }
-    
+
     if (method === 'Page.frameRequestedNavigation' && params) {
       var url = params.url || '';
       var reason = params.reason || '';
@@ -245,12 +252,11 @@ var DebuggerManager = (function() {
       Logger.warn('  Reason:', reason);
       Logger.warn('  Disposition:', disposition);
       Logger.warn('  FrameId:', frameId);
-      
+
       if (url && !url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('about:') && !url.startsWith('data:') && !url.startsWith('blob:') && !url.startsWith('file://')) {
         Logger.error('[NAVIGATION] ⚠️ 检测到导航到内部页面，尝试阻止!');
         Logger.error('[NAVIGATION] 目标URL:', url);
-        
-        // 尝试方法1: 停止页面加载
+
         chrome.debugger.sendCommand(
           { tabId: source.tabId },
           'Page.stopLoading',
@@ -260,8 +266,7 @@ var DebuggerManager = (function() {
         }).catch(function(e) {
           Logger.error('[NAVIGATION] Page.stopLoading 失败:', e.message);
         });
-        
-        // 尝试方法2: 获取当前页面URL并导航回去
+
         chrome.tabs.get(source.tabId, function(tab) {
           if (tab && tab.url && !tab.url.startsWith('bitbrowser://')) {
             Logger.info('[NAVIGATION] 尝试导航回原页面:', tab.url);
@@ -278,36 +283,44 @@ var DebuggerManager = (function() {
             }, 100);
           }
         });
-        
-        // 不转发这个导航事件给客户端
+
         Logger.warn('[NAVIGATION] 阻止转发导航事件到客户端');
         return;
       }
     }
-    
+
     for (var i = 0; i < sessionIds.length; i++) {
-      EventBuilder.send(method, params, sessionIds[i]);
+      EventBuilder.send(method, params, sessionIds[i], wsManager);
     }
   }
 
   function handleDetach(source, reason) {
     Logger.info('[Debugger] Detached from tab', source.tabId, ', reason:', reason);
-    State.removeAttachedTab(source.tabId);
+
+    var entry = ConnectionManager.getConnectionByTabId(source.tabId);
+    var state = entry ? entry.state : null;
+    var wsManager = entry ? entry.wsManager : null;
+
+    if (state) {
+      state.removeAttachedTab(source.tabId);
+    }
     Screencast.stopPolling(source.tabId);
     AutomationBadge.remove(source.tabId);
 
-    var sessionId = State.findSessionByTabId(source.tabId);
-    if (sessionId) {
-      var targetId = State.getTargetIdBySession(sessionId);
-      EventBuilder.send('Target.detachedFromTarget', {
-        sessionId: sessionId,
-        targetId: targetId
-      });
-      State.unmapSession(sessionId);
-    }
+    if (state) {
+      var sessionId = state.findSessionByTabId(source.tabId);
+      if (sessionId) {
+        var targetId = state.getTargetIdBySession(sessionId);
+        EventBuilder.send('Target.detachedFromTarget', {
+          sessionId: sessionId,
+          targetId: targetId
+        }, null, wsManager);
+        state.unmapSession(sessionId);
+      }
 
-    if (State.getCurrentTabId() === source.tabId) {
-      State.persist(null, false);
+      if (state.getCurrentTabId() === source.tabId) {
+        state.persist(null, false);
+      }
     }
   }
 

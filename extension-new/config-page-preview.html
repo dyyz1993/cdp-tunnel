@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CDP Bridge - 配置管理</title>
+  <title>CDP Bridge - 连接管理</title>
   <style>
     * {
       margin: 0;
@@ -215,6 +215,124 @@
       min-height: 0;
     }
 
+    /* --- Connection Config List --- */
+    .conn-config-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .conn-config-item {
+      display: flex;
+      align-items: center;
+      padding: 10px 12px;
+      background: #f9fafb;
+      border-radius: 8px;
+      gap: 10px;
+      border: 2px solid transparent;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .conn-config-item:hover {
+      background: #f3f4f6;
+    }
+
+    .conn-config-item.active {
+      border-color: #10b981;
+      background: rgba(16, 185, 129, 0.05);
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .status-dot.connected { background: #4caf50; box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2); }
+    .status-dot.error { background: #f44336; box-shadow: 0 0 0 2px rgba(244, 67, 54, 0.2); }
+    .status-dot.disabled { background: #9e9e9e; }
+
+    .conn-config-item input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      flex-shrink: 0;
+      accent-color: #667eea;
+    }
+
+    .conn-config-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .conn-config-tag {
+      font-weight: 600;
+      font-size: 13px;
+      color: #1f2937;
+      margin-bottom: 2px;
+    }
+
+    .conn-config-url {
+      font-size: 11px;
+      color: #6b7280;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: 'Monaco', 'Menlo', monospace;
+    }
+
+    .conn-config-item .btn-delete {
+      padding: 4px 10px;
+      border: none;
+      background: transparent;
+      color: #9ca3af;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .conn-config-item .btn-delete:hover {
+      background: #fef2f2;
+      color: #dc2626;
+    }
+
+    /* --- Add Connection Form --- */
+    .add-conn-form {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .add-conn-form input {
+      padding: 8px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .add-conn-form input:focus {
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+    }
+
+    .add-conn-form .input-tag {
+      width: 100px;
+      flex-shrink: 0;
+    }
+
+    .add-conn-form .input-url {
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* --- Existing UI components --- */
     .connection-list {
       display: flex;
       flex-direction: column;
@@ -253,19 +371,8 @@
       box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
     }
 
-    .connection-item .status-indicator.busy {
-      background: #f59e0b;
-      box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
-      animation: blink 0.5s infinite;
-    }
-
     .connection-item .status-indicator.offline {
       background: #9ca3af;
-    }
-
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
     }
 
     .connection-item .connection-info {
@@ -298,11 +405,6 @@
       color: #2563eb;
     }
 
-    .connection-item .connection-tag.puppeteer {
-      background: #fef3c7;
-      color: #d97706;
-    }
-
     .connection-item .connection-tag.cdp {
       background: #e0e7ff;
       color: #4f46e5;
@@ -314,28 +416,6 @@
       gap: 12px;
       font-size: 11px;
       color: #6b7280;
-    }
-
-    .connection-item .page-info {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      max-width: 200px;
-      overflow: hidden;
-    }
-
-    .connection-item .page-title {
-      color: #1f2937;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .connection-item .connection-meta {
-      text-align: right;
-      flex-shrink: 0;
-      font-size: 11px;
-      color: #9ca3af;
     }
 
     .connection-item .connection-actions {
@@ -368,11 +448,6 @@
     .connection-item .action-btn:hover {
       background: #e5e7eb;
       color: #1f2937;
-    }
-
-    .connection-item .action-btn.danger:hover {
-      background: #fef2f2;
-      color: #dc2626;
     }
 
     .sidebar {
@@ -491,6 +566,30 @@
       height: 1px;
       background: #e5e7eb;
       margin: 16px 0;
+    }
+
+    .config-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .plugin-id-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 12px;
+    }
+
+    .plugin-id-label {
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    .plugin-id-value {
+      font-size: 11px;
+      color: #4a9eff;
+      font-family: monospace;
     }
 
     .usage-guide {
@@ -699,6 +798,27 @@
 
     <div class="content-grid">
       <div class="left-panel">
+        <!-- Connection Config Card -->
+        <div class="card">
+          <div class="card-header">
+            <h3>连接配置</h3>
+          </div>
+          <div class="card-body">
+            <div class="conn-config-list" id="connConfigList">
+              <div class="empty-state">
+                <div class="icon">🔗</div>
+                <div class="title">暂无连接配置</div>
+                <div class="desc">在下方添加一个 WebSocket 连接</div>
+              </div>
+            </div>
+            <div class="add-conn-form">
+              <input type="text" class="input-tag" id="newConnTag" placeholder="名称">
+              <input type="text" class="input-url" id="newConnUrl" placeholder="ws://localhost:58288/plugin">
+              <button class="btn btn-primary btn-sm" id="addConnBtn">添加连接</button>
+            </div>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-header">
             <h3>
@@ -723,7 +843,7 @@
               受控页面
               <span class="badge" id="pageCount">0 个</span>
             </h3>
-            <button class="btn btn-secondary btn-sm" id="refreshBtn">🔄 刷新</button>
+            <button class="btn btn-secondary btn-sm" id="refreshBtn">刷新</button>
           </div>
           <div class="card-body">
             <div class="connection-list" id="pageList">
@@ -743,27 +863,23 @@
             <h3>插件配置</h3>
           </div>
           <div class="card-body">
-            <div class="form-group">
-              <label>服务器地址</label>
-              <input type="text" id="serverAddress" value="ws://localhost:9221/plugin" placeholder="ws://your-server:9221/plugin">
-              <div class="description">WebSocket 服务器地址，插件将连接到此服务器</div>
-            </div>
-            <button class="btn btn-primary btn-block" id="connectBtn">🔗 保存并连接</button>
-
-            <div class="config-item" style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px;">
-              <label style="font-size: 13px; color: #666;">
-                🔇 自动静音新标签页
-              </label>
+            <div class="config-item">
+              <label style="font-size: 13px; color: #666;">🔇 自动静音新标签页</label>
               <label class="toggle-switch">
                 <input type="checkbox" id="autoMuteToggle" checked>
                 <span class="toggle-slider"></span>
               </label>
             </div>
 
+            <div class="plugin-id-row">
+              <span class="plugin-id-label">插件 ID:</span>
+              <span class="plugin-id-value" id="pluginIdDisplay">-</span>
+            </div>
+
             <div class="divider"></div>
 
             <div class="usage-guide">
-              <h4>📖 客户端连接方式</h4>
+              <h4>客户端连接方式</h4>
               <p>插件连接后，客户端通过 CDP 端点连接：</p>
               <div class="example">
                 <pre><span class="comment">// Playwright</span>
@@ -803,6 +919,7 @@
     <span class="message">操作成功</span>
   </div>
 
+  <script src="utils/config.js"></script>
   <script src="config-page.js"></script>
 </body>
 </html>

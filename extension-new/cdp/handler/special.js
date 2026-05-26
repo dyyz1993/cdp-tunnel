@@ -1,6 +1,19 @@
 var SpecialHandler = (function() {
   var _groupQueue = new Map();
 
+  function _getState(ctx) {
+    return ctx._state;
+  }
+
+  function _getWSManager(ctx) {
+    return ctx._wsManager;
+  }
+
+  function _getConnectionTag(ctx) {
+    var wm = ctx._wsManager;
+    return (wm && wm.config && wm.config.tag) || null;
+  }
+
   function muteTabIfNeeded(tabId) {
     Config.getAutoMute(function(enabled) {
       if (!enabled) return;
@@ -15,8 +28,9 @@ var SpecialHandler = (function() {
   }
 
   function targetSetAutoAttach(context) {
+    var state = _getState(context);
     var params = context.params;
-    State.setAutoAttachConfig({
+    state.setAutoAttachConfig({
       autoAttach: !!(params && params.autoAttach),
       waitForDebuggerOnStart: !!(params && params.waitForDebuggerOnStart),
       flatten: !(params && params.flatten === false)
@@ -31,6 +45,7 @@ var SpecialHandler = (function() {
   }
 
   function targetAttachToTarget(context) {
+    var state = _getState(context);
     var params = context.params;
     var targetId = params && params.targetId;
     var clientId = context.clientId;
@@ -43,31 +58,32 @@ var SpecialHandler = (function() {
         throw new Error('Target not found');
       }
 
-      var isAlreadyAttached = State.isTabAttached(tabId);
+      var isAlreadyAttached = state.isTabAttached(tabId);
 
       if (isAlreadyAttached) {
         var newSessionId = CDPUtils.generateSessionId();
-        State.mapSession(newSessionId, tabId, targetId);
+        state.mapSession(newSessionId, tabId, targetId);
         muteTabIfNeeded(tabId);
         Logger.info('[CDP] Created additional session:', newSessionId, 'for tab:', tabId);
         return { sessionId: newSessionId };
       }
 
-      return DebuggerManager.attach(tabId).then(function(attached) {
+      return DebuggerManager.attach(tabId, state).then(function(attached) {
         if (!attached) {
           throw new Error('Failed to attach');
         }
 
         var sessionId = CDPUtils.generateSessionId();
-        State.mapSession(sessionId, tabId, targetId);
+        state.mapSession(sessionId, tabId, targetId);
 
         if (clientId) {
-          State.setTabIdToClientId(tabId, clientId);
+          state.setTabIdToClientId(tabId, clientId);
         }
 
-        if (State.isCDPCreatedTab(tabId)) {
-          addTabToAutomationGroup(tabId, clientId);
-        } else {          State.addPreExistingTab(tabId);
+        if (state.isCDPCreatedTab(tabId)) {
+          addTabToAutomationGroup(tabId, clientId, null, context);
+        } else {
+          state.addPreExistingTab(tabId);
           Logger.info('[CDP] Target.attachToTarget: user tab not CDP-created, treating as pre-existing. tabId:', tabId);
         }
 
@@ -77,17 +93,18 @@ var SpecialHandler = (function() {
   }
 
   function targetDetachFromTarget(context) {
+    var state = _getState(context);
     var params = context.params;
     var sessionId = params && params.sessionId;
     if (!sessionId) {
       return Promise.resolve({});
     }
 
-    var tabId = State.getTabIdBySession(sessionId);
-    State.unmapSession(sessionId);
+    var tabId = state.getTabIdBySession(sessionId);
+    state.unmapSession(sessionId);
 
-    if (tabId && !State.hasOtherSessionForTab(tabId)) {
-      return DebuggerManager.detach(tabId).then(function() {
+    if (tabId && !state.hasOtherSessionForTab(tabId)) {
+      return DebuggerManager.detach(tabId, state).then(function() {
         return {};
       }).catch(function() {
         return {};
@@ -97,6 +114,8 @@ var SpecialHandler = (function() {
   }
 
   function targetCreateTarget(context) {
+    var state = _getState(context);
+    var wsManager = _getWSManager(context);
     var params = context.params;
     var url = (params && params.url) || 'about:blank';
     var browserContextId = (params && params.browserContextId) || 'default';
@@ -104,7 +123,6 @@ var SpecialHandler = (function() {
     var needsNavigate = url !== 'about:blank' && url !== '';
 
     return new Promise(function(resolve, reject) {
-      // Step 1: 先创建 about:blank (不加载任何资源，tab bar 闪烁最小)
       chrome.tabs.create({ url: 'about:blank', active: false }, function(tab) {
         if (!tab || !tab.id) {
           reject(new Error('Failed to create tab'));
@@ -112,19 +130,16 @@ var SpecialHandler = (function() {
         }
 
         if (clientId) {
-          State.setTabIdToClientId(tab.id, clientId);
+          state.setTabIdToClientId(tab.id, clientId);
         }
 
-        State.addCDPCreatedTab(tab.id);
+        state.addCDPCreatedTab(tab.id);
 
-        // Step 2: 立刻分组折叠 (用户在 tab bar 上看不到)
-        groupTabSilently(tab.id, clientId).then(function() {
-          // Step 3: 获取 targetId 并 attach debugger
+        groupTabSilently(tab.id, clientId, context).then(function() {
           return getTargetIdByTabId(tab.id).then(function(targetId) {
-            return emitAutoAttachEvents(tab.id, targetId, browserContextId).then(function() {
-              // Step 4: 折叠+attach 完成后，再导航到真实 URL
+            return emitAutoAttachEvents(tab.id, targetId, browserContextId, context).then(function() {
               if (needsNavigate) {
-                State.addPendingCreatedTabUrl(url);
+                state.addPendingCreatedTabUrl(url);
                 return navigateTabQuietly(tab.id, url).then(function() {
                   resolve({ targetId: targetId });
                 });
@@ -140,11 +155,11 @@ var SpecialHandler = (function() {
     });
   }
 
-  function groupTabSilently(tabId, clientId) {
+  function groupTabSilently(tabId, clientId, context) {
     return new Promise(function(resolve) {
       addTabToAutomationGroup(tabId, clientId, function(success) {
         setTimeout(resolve, 50);
-      });
+      }, context);
     });
   }
 
@@ -154,13 +169,12 @@ var SpecialHandler = (function() {
         if (chrome.runtime.lastError) {
           Logger.warn('[NavigateQuietly] Failed:', chrome.runtime.lastError.message);
         }
-        // 不管成功失败都 resolve，让调用者继续
         resolve();
       });
     });
   }
 
-  function addTabToAutomationGroup(tabId, clientId, callback) {
+  function addTabToAutomationGroup(tabId, clientId, callback, context) {
     var key = clientId || '__no_client__';
     var prev = _groupQueue.get(key) || Promise.resolve();
 
@@ -173,7 +187,7 @@ var SpecialHandler = (function() {
         _addTabToAutomationGroupInner(tabId, clientId, function(success) {
           clearTimeout(timeoutId);
           resolve(success);
-        });
+        }, context);
       });
     }).catch(function(err) {
       Logger.error('[addTabToAutomationGroup] queue error:', err.message || err);
@@ -192,10 +206,15 @@ var SpecialHandler = (function() {
     }
   }
 
-  function _addTabToAutomationGroupInner(tabId, clientId, callback) {
+  function _addTabToAutomationGroupInner(tabId, clientId, callback, context) {
+    var state = context ? _getState(context) : null;
+    var wsManager = context ? _getWSManager(context) : null;
+
     Logger.info('[TabGroup] Starting addTabToAutomationGroup for tabId:', tabId, 'clientId:', clientId);
 
-    WebSocketManager.send({ type: 'tabgroup-debug', tabId: tabId, clientId: clientId, phase: 'start' });
+    if (wsManager) {
+      wsManager.send({ type: 'tabgroup-debug', tabId: tabId, clientId: clientId, phase: 'start' });
+    }
 
     setTimeout(function() {
       try {
@@ -207,7 +226,7 @@ var SpecialHandler = (function() {
 
     var groupClientId = clientId;
     if (!groupClientId) {
-      var cdpClients = State.getCDPClients() || [];
+      var cdpClients = state ? state.getCDPClients() : [];
       if (cdpClients.length > 0 && cdpClients[0] && cdpClients[0].id) {
         groupClientId = cdpClients[0].id;
         Logger.warn('[TabGroup] No clientId for tab:', tabId, 'fallback to first client:', groupClientId);
@@ -217,49 +236,53 @@ var SpecialHandler = (function() {
         return;
       }
     }
-    var baseName = CDPUtils.getGroupBaseName(groupClientId);
+    var baseName = CDPUtils.getGroupBaseName(groupClientId, _getConnectionTag(context));
 
     Logger.info('[TabGroup] Grouping tab immediately for:', baseName);
-    doGroup(tabId, groupClientId, baseName, 0, callback);
+    doGroup(tabId, groupClientId, baseName, 0, callback, context);
   }
 
-  function doGroup(tabId, clientId, baseName, retries, callback) {
+  function doGroup(tabId, clientId, baseName, retries, callback, context) {
+    var state = context ? _getState(context) : null;
+    var wsManager = context ? _getWSManager(context) : null;
     retries = retries || 0;
     Logger.info('[TabGroup] doGroup: tabId=' + tabId + ' clientId=' + (clientId || 'none') + ' baseName=' + baseName + ' retry=' + retries);
     if (!chrome.tabGroups) {
       Logger.warn('[TabGroup] chrome.tabGroups API not available (headless mode?), skipping grouping for tab:', tabId);
-      EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'skip', reason: 'tabGroups-unavailable', tabId: tabId });
+      EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'skip', reason: 'tabGroups-unavailable', tabId: tabId }, null, wsManager);
       if (callback) callback(false);
       return;
     }
-    var cachedGroupId = State.getGroupIdForClient(clientId);
+    var cachedGroupId = state ? state.getGroupIdForClient(clientId) : null;
     if (cachedGroupId) {
       Logger.info('[TabGroup] Using cached groupId:', cachedGroupId, 'for client:', clientId);
       chrome.tabs.group({ tabIds: tabId, groupId: cachedGroupId }, function(result) {
         if (!chrome.runtime.lastError) {
-          updateTabGroupName(clientId);
+          updateTabGroupName(clientId, state, wsManager);
           Logger.info('[TabGroup] Tab', tabId, 'added to cached group:', cachedGroupId);
           if (callback) callback(true);
           return;
         }
         Logger.warn('[TabGroup] Cached groupId', cachedGroupId, 'failed:', chrome.runtime.lastError.message, '— falling back to query');
-        doGroupQuery(tabId, clientId, baseName, retries, callback);
+        doGroupQuery(tabId, clientId, baseName, retries, callback, context);
       });
       return;
     }
-    doGroupQuery(tabId, clientId, baseName, retries, callback);
+    doGroupQuery(tabId, clientId, baseName, retries, callback, context);
   }
 
-  function doGroupQuery(tabId, clientId, baseName, retries, callback) {
+  function doGroupQuery(tabId, clientId, baseName, retries, callback, context) {
+    var state = context ? _getState(context) : null;
+    var wsManager = context ? _getWSManager(context) : null;
     chrome.tabGroups.query({}, function(allGroups) {
       if (chrome.runtime.lastError) {
         Logger.error('[TabGroup] tabGroups.query failed:', chrome.runtime.lastError.message);
-        EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'query', error: chrome.runtime.lastError.message });
+        EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'query', error: chrome.runtime.lastError.message }, null, wsManager);
       }
       if (!allGroups) {
         Logger.error('[TabGroup] tabGroups.query returned null');
         if (retries < 3) {
-          setTimeout(function() { doGroup(tabId, clientId, baseName, retries + 1, callback); }, 500);
+          setTimeout(function() { doGroup(tabId, clientId, baseName, retries + 1, callback, context); }, 500);
         } else {
           if (callback) callback(false);
         }
@@ -272,15 +295,15 @@ var SpecialHandler = (function() {
         chrome.tabs.group({ tabIds: tabId, groupId: existing.id }, function(result) {
           if (chrome.runtime.lastError) {
             Logger.error('[TabGroup] Failed to add tab to group:', chrome.runtime.lastError.message, 'retries:', retries);
-            EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'addToExisting', error: chrome.runtime.lastError.message, tabId: tabId, groupId: existing.id });
+            EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'addToExisting', error: chrome.runtime.lastError.message, tabId: tabId, groupId: existing.id }, null, wsManager);
             if (retries < 3) {
-              setTimeout(function() { doGroup(tabId, clientId, baseName, retries + 1, callback); }, 500);
+              setTimeout(function() { doGroup(tabId, clientId, baseName, retries + 1, callback, context); }, 500);
             } else {
               if (callback) callback(false);
             }
           } else {
-            State.setGroupIdForClient(clientId, existing.id);
-            updateTabGroupName(clientId);
+            if (state) state.setGroupIdForClient(clientId, existing.id);
+            updateTabGroupName(clientId, state, wsManager);
             Logger.info('[TabGroup] Tab', tabId, 'added to existing group:', existing.id);
             if (callback) callback(true);
           }
@@ -290,16 +313,16 @@ var SpecialHandler = (function() {
         chrome.tabs.group({ tabIds: tabId }, function(groupId) {
           if (chrome.runtime.lastError) {
             Logger.error('[TabGroup] Failed to create group:', chrome.runtime.lastError.message, 'retries:', retries);
-            EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'createGroup', error: chrome.runtime.lastError.message, tabId: tabId });
+            EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'createGroup', error: chrome.runtime.lastError.message, tabId: tabId }, null, wsManager);
             if (retries < 3) {
-              setTimeout(function() { doGroup(tabId, clientId, baseName, retries + 1, callback); }, 500);
+              setTimeout(function() { doGroup(tabId, clientId, baseName, retries + 1, callback, context); }, 500);
             } else {
               if (callback) callback(false);
             }
             return;
           }
           Logger.info('[TabGroup] chrome.tabs.group returned groupId:', groupId);
-          EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'groupCreated', tabId: tabId, groupId: groupId });
+          EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'groupCreated', tabId: tabId, groupId: groupId }, null, wsManager);
           if (groupId) {
             if (chrome.tabGroups) {
               chrome.tabGroups.update(groupId, {
@@ -309,16 +332,16 @@ var SpecialHandler = (function() {
               }, function() {
                 if (chrome.runtime.lastError) {
                   Logger.error('[TabGroup] Failed to update group:', chrome.runtime.lastError.message);
-                  EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'updateGroup', error: chrome.runtime.lastError.message, groupId: groupId });
+                  EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'updateGroup', error: chrome.runtime.lastError.message, groupId: groupId }, null, wsManager);
                 } else {
-                  State.setGroupIdForClient(clientId, groupId);
-                  updateTabGroupName(clientId);
+                  if (state) state.setGroupIdForClient(clientId, groupId);
+                  updateTabGroupName(clientId, state, wsManager);
                   Logger.info('[TabGroup] Group updated:', groupId, baseName);
                 }
                 if (callback) callback(true);
               });
             } else {
-              State.setGroupIdForClient(clientId, groupId);
+              if (state) state.setGroupIdForClient(clientId, groupId);
               Logger.info('[TabGroup] Group created but tabGroups.update unavailable (headless):', groupId);
               if (callback) callback(true);
             }
@@ -331,18 +354,20 @@ var SpecialHandler = (function() {
     });
   }
 
-  function updateTabGroupName(clientId) {
+  function updateTabGroupName(clientId, state, wsManager) {
     if (!clientId) return;
-    
-    var groupId = State.getGroupIdForClient(clientId);
+
+    var groupId = state ? state.getGroupIdForClient(clientId) : null;
     if (!groupId) return;
-    
+
+    var connectionTag = (wsManager && wsManager.config && wsManager.config.tag) || null;
+
     chrome.tabs.query({ groupId: groupId }, function(tabs) {
       if (chrome.runtime.lastError || !tabs) return;
-      
-      var baseName = CDPUtils.getGroupBaseName(clientId);
+
+      var baseName = CDPUtils.getGroupBaseName(clientId, connectionTag);
       var newName = baseName + ' (' + tabs.length + ')';
-      
+
       chrome.tabGroups.update(groupId, {
         title: newName
       }, function() {
@@ -354,7 +379,7 @@ var SpecialHandler = (function() {
       });
     });
   }
-  
+
   function targetActivateTarget(context) {
     var params = context.params;
     var targetId = params && params.targetId;
@@ -371,22 +396,23 @@ var SpecialHandler = (function() {
   }
 
   function targetCloseTarget(context) {
+    var state = _getState(context);
     var params = context.params;
     var targetId = params && params.targetId;
     if (targetId) {
-      var tabId = State.getTabIdByTargetId(targetId);
+      var tabId = state.getTabIdByTargetId(targetId);
       if (tabId) {
-        var closeClientId = State.getClientIdByTabId(tabId);
+        var closeClientId = state.getClientIdByTabId(tabId);
         return new Promise(function(resolve) {
           chrome.tabs.remove(tabId, function() {
-            State.removeAttachedTab(tabId);
+            state.removeAttachedTab(tabId);
             if (closeClientId) {
-              updateTabGroupName(closeClientId);
+              updateTabGroupName(closeClientId, state, _getWSManager(context));
             }
             resolve({ success: true });
           });
         }).catch(function() {
-          State.removeAttachedTab(tabId);
+          state.removeAttachedTab(tabId);
           return { success: true };
         });
       }
@@ -395,52 +421,55 @@ var SpecialHandler = (function() {
   }
 
   function pageStartScreencast(context) {
+    var state = _getState(context);
     var params = context.params;
     var sessionId = context.sessionId;
-    var tabId = sessionId ? State.getTabIdBySession(sessionId) : State.getCurrentTabId();
+    var tabId = sessionId ? state.getTabIdBySession(sessionId) : state.getCurrentTabId();
 
     return checkTabVisibility(tabId).then(function(isVisible) {
       if (!isVisible) {
-        return Screencast.startPolling(tabId, params, sessionId).then(function() {
+        return Screencast.startPolling(tabId, params, sessionId, state).then(function() {
           return {};
         });
       }
-      return ForwardHandler.execute({ id: context.id, method: 'Page.startScreencast', params: params, sessionId: sessionId });
+      return ForwardHandler.execute(context);
     });
   }
 
   function pageStopScreencast(context) {
+    var state = _getState(context);
     var sessionId = context.sessionId;
-    var tabId = sessionId ? State.getTabIdBySession(sessionId) : State.getCurrentTabId();
-    var session = tabId ? State.getScreencastSession(tabId) : null;
-    
+    var tabId = sessionId ? state.getTabIdBySession(sessionId) : state.getCurrentTabId();
+    var session = tabId ? state.getScreencastSession(tabId) : null;
+
     if (session) {
-      Screencast.stopPolling(tabId);
+      Screencast.stopPolling(tabId, state);
     }
-    
+
     return {};
   }
 
   function pageScreencastFrameAck(context) {
-    var params = context.params;
+    var state = _getState(context);
     var sessionId = context.sessionId;
-    var tabId = sessionId ? State.getTabIdBySession(sessionId) : State.getCurrentTabId();
-    var session = tabId ? State.getScreencastSession(tabId) : null;
-    
+    var tabId = sessionId ? state.getTabIdBySession(sessionId) : state.getCurrentTabId();
+    var session = tabId ? state.getScreencastSession(tabId) : null;
+
     if (session) {
-      Screencast.ackFrame(tabId, params && params.sessionId);
+      Screencast.ackFrame(tabId, (context.params && context.params.sessionId), state);
       return {};
     }
-    
+
     return {};
   }
 
   function runtimeRunIfWaitingForDebugger(context) {
+    var state = _getState(context);
     var sessionId = context.sessionId;
-    var tabId = sessionId ? State.getTabIdBySession(sessionId) : State.getCurrentTabId();
+    var tabId = sessionId ? state.getTabIdBySession(sessionId) : state.getCurrentTabId();
 
-    if (tabId && State.isPendingDebuggerTab(tabId)) {
-      State.removePendingDebuggerTab(tabId);
+    if (tabId && state.isPendingDebuggerTab(tabId)) {
+      state.removePendingDebuggerTab(tabId);
     }
     return {};
   }
@@ -484,8 +513,10 @@ function checkTabVisibility(tabId) {
 }
 
   function emitAutoAttachForExistingTargets(context) {
+    var state = _getState(context);
+    var wsManager = _getWSManager(context);
     var clientId = context ? context.clientId : null;
-    var config = State.getAutoAttachConfig();
+    var config = state.getAutoAttachConfig();
 
     return chrome.debugger.getTargets().then(function(targets) {
       var promises = [];
@@ -498,15 +529,15 @@ function checkTabVisibility(tabId) {
 
         var targetId = target.id;
         var tabId = target.tabId;
-        var hasEmitted = State.hasEmittedTarget(targetId);
+        var hasEmitted = state.hasEmittedTarget(targetId);
 
         if (hasEmitted) {
           Logger.info('[CDP] Target already emitted, skipping:', targetId);
           return;
         }
 
-        var isCDPCreated = State.isCDPCreatedTab(tabId);
-        var isOwnedByClient = isCDPCreated && State.getClientIdByTabId(tabId) === clientId;
+        var isCDPCreated = state.isCDPCreatedTab(tabId);
+        var isOwnedByClient = isCDPCreated && state.getClientIdByTabId(tabId) === clientId;
         var otherClientOwns = isCDPCreated && !isOwnedByClient;
 
         if (!isCDPCreated) {
@@ -516,35 +547,35 @@ function checkTabVisibility(tabId) {
 
         if (otherClientOwns) {
           Logger.info('[CDP] Skipping other-client tab:', targetId, 'tabId:', tabId);
-          State.addEmittedTarget(targetId);
+          state.addEmittedTarget(targetId);
           return;
         }
 
-        State.addEmittedTarget(targetId);
+        state.addEmittedTarget(targetId);
         var targetInfo = LocalHandler.mapToTargetInfo(target);
-        
+
         Logger.info('[CDP] Emitting CDP-owned target:', targetId, 'tabId:', tabId);
 
         var attachLogic = function(attached) {
           var sessionId = CDPUtils.generateSessionId();
-          State.mapSession(sessionId, tabId, targetId);
+          state.mapSession(sessionId, tabId, targetId);
 
           if (config.waitForDebuggerOnStart) {
-            State.addPendingDebuggerTab(tabId);
+            state.addPendingDebuggerTab(tabId);
           }
 
           EventBuilder.send('Target.attachedToTarget', {
             sessionId: sessionId,
             targetInfo: Object.assign({}, targetInfo, { attached: true }),
             waitingForDebugger: config.waitForDebuggerOnStart || false
-          });
+          }, null, wsManager);
         };
 
         if (target.attached) {
           promises.push(Promise.resolve().then(function() { attachLogic(true); }));
         } else {
           promises.push(
-            DebuggerManager.attach(tabId).then(function(attached) {
+            DebuggerManager.attach(tabId, state).then(function(attached) {
               if (!attached) return;
               attachLogic(attached);
             })
@@ -556,54 +587,48 @@ function checkTabVisibility(tabId) {
     });
   }
 
-  function emitAutoAttachEvents(tabId, targetId, browserContextId) {
-    if (State.hasEmittedTarget(targetId)) {
+  function emitAutoAttachEvents(tabId, targetId, browserContextId, context) {
+    var state = _getState(context);
+    var wsManager = _getWSManager(context);
+    if (state.hasEmittedTarget(targetId)) {
       Logger.info('[CDP] Target already emitted, skipping emitAutoAttachEvents:', targetId);
       return Promise.resolve();
     }
-    
-    State.addEmittedTarget(targetId);
+
+    state.addEmittedTarget(targetId);
 
     return LocalHandler.getTargetInfoById(targetId).then(function(targetInfo) {
       if (browserContextId && browserContextId !== 'default') {
         targetInfo.browserContextId = browserContextId;
       }
-      EventBuilder.send('Target.targetCreated', { targetInfo: targetInfo });
+      EventBuilder.send('Target.targetCreated', { targetInfo: targetInfo }, null, wsManager);
 
-      return DebuggerManager.attach(tabId).then(function(attached) {
+      return DebuggerManager.attach(tabId, state).then(function(attached) {
         if (!attached) return;
 
         var sessionId = CDPUtils.generateSessionId();
-        State.mapSession(sessionId, tabId, targetId);
+        state.mapSession(sessionId, tabId, targetId);
 
-        var config = State.getAutoAttachConfig();
+        var config = state.getAutoAttachConfig();
         if (config.waitForDebuggerOnStart) {
-          State.addPendingDebuggerTab(tabId);
+          state.addPendingDebuggerTab(tabId);
         }
 
         EventBuilder.send('Target.attachedToTarget', {
           sessionId: sessionId,
           targetInfo: targetInfo,
           waitingForDebugger: config.waitForDebuggerOnStart
-        });
+        }, null, wsManager);
       });
     });
   }
 
   function pageCreateIsolatedWorld(context) {
-    var params = context.params;
-    var sessionId = context.sessionId;
-    var tabId = sessionId ? State.getTabIdBySession(sessionId) : State.getCurrentTabId();
-
-    return ForwardHandler.execute({ id: context.id, method: 'Page.createIsolatedWorld', params: params, sessionId: sessionId });
+    return ForwardHandler.execute(context);
   }
 
   function pageAddScriptToEvaluateOnNewDocument(context) {
-    var params = context.params;
-    var sessionId = context.sessionId;
-    var tabId = sessionId ? State.getTabIdBySession(sessionId) : State.getCurrentTabId();
-
-    return ForwardHandler.execute({ id: context.id, method: 'Page.addScriptToEvaluateOnNewDocument', params: params, sessionId: sessionId });
+    return ForwardHandler.execute(context);
   }
 
   function domSetFileInputFiles(context) {
@@ -612,7 +637,7 @@ function checkTabVisibility(tabId) {
     var files = params && params.files;
 
     if (!files || !Array.isArray(files) || files.length === 0) {
-      return ForwardHandler.execute({ id: context.id, method: 'DOM.setFileInputFiles', params: params, sessionId: sessionId });
+      return ForwardHandler.execute(context);
     }
 
     var hasUrl = files.some(function(f) {
@@ -620,16 +645,17 @@ function checkTabVisibility(tabId) {
     });
 
     if (!hasUrl) {
-      return ForwardHandler.execute({ id: context.id, method: 'DOM.setFileInputFiles', params: params, sessionId: sessionId });
+      return ForwardHandler.execute(context);
     }
 
     Logger.info('[CDP] DOM.setFileInputFiles: 检测到远程 URL, 开始下载...');
 
     return downloadRemoteFiles(files).then(function(localFiles) {
       Logger.info('[CDP] DOM.setFileInputFiles: 下载完成, 本地路径:', localFiles);
-      
+
       var newParams = Object.assign({}, params, { files: localFiles });
-      return ForwardHandler.execute({ id: context.id, method: 'DOM.setFileInputFiles', params: newParams, sessionId: sessionId });
+      var newContext = Object.assign({}, context, { params: newParams });
+      return ForwardHandler.execute(newContext);
     });
   }
 
@@ -647,7 +673,7 @@ function checkTabVisibility(tabId) {
   function downloadRemoteFile(url) {
     return new Promise(function(resolve, reject) {
       var filename = 'cdp_upload_' + Date.now() + '_' + url.split('/').pop().split('?')[0];
-      
+
       chrome.downloads.download({
         url: url,
         filename: filename,
@@ -668,7 +694,7 @@ function checkTabVisibility(tabId) {
             reject(new Error('Download item not found'));
             return;
           }
-          
+
           var filePath = results[0].filename;
           Logger.info('[CDP] 下载完成, 本地路径:', filePath);
           resolve(filePath);

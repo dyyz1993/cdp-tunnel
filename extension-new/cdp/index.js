@@ -58,26 +58,35 @@ var CDP_HANDLERS = {
   'DOM.setFileInputFiles': { type: 'SPECIAL', handler: SpecialHandler.domSetFileInputFiles }
 };
 
-function routeCDPCommand(message) {
+function routeCDPCommand(message, connState, wsManager) {
   var id = message.id;
   var method = message.method;
   var params = message.params;
   var sessionId = message.sessionId;
   var clientId = message.clientId;
+  var state = connState;
 
-  console.log('[CDP] routeCDPCommand id=' + id + ' (type: ' + typeof id + ') method=' + method + ' clientId=' + (clientId || 'none'));
+  if (!state) {
+    var entry = ConnectionManager.getPrimaryConnection();
+    state = entry ? entry.state : null;
+    wsManager = wsManager || (entry ? entry.wsManager : null);
+  }
+
+  console.log('[CDP] routeCDPCommand id=' + id + ' (type: ' + typeof id + ') method=' + method + ' clientId=' + (clientId || 'none') + ' connId=' + (message.connectionId || 'none'));
 
   var route = CDP_HANDLERS[method];
   var logType = route ? route.type : 'FORWARD';
   Logger.info('[CDP] RECV id=' + id + ' method=' + method + ' type=' + logType + ' sessionId=' + (sessionId || 'null') + ' clientId=' + (clientId || 'null'));
 
+  var ctx = { id: id, method: method, params: params, sessionId: sessionId, clientId: clientId, _state: state, _wsManager: wsManager };
+
   return new Promise(function(resolve) {
     if (route) {
-      Promise.resolve(route.handler({ id: id, method: method, params: params, sessionId: sessionId, clientId: clientId }))
+      Promise.resolve(route.handler(ctx))
         .then(function(result) {
           if (result === null && route.type === 'SPECIAL') {
             Logger.info('[CDP] SPECIAL null -> FORWARD id=' + id + ' method=' + method);
-            return ForwardHandler.execute({ id: id, method: method, params: params, sessionId: sessionId, clientId: clientId });
+            return ForwardHandler.execute(ctx);
           }
           return result;
         })
@@ -90,7 +99,7 @@ function routeCDPCommand(message) {
           resolve({ error: { code: error.code || -32000, message: error.message || String(error) } });
         });
     } else {
-      ForwardHandler.execute({ id: id, method: method, params: params, sessionId: sessionId, clientId: clientId })
+      ForwardHandler.execute(ctx)
         .then(function(result) {
           Logger.info('[CDP] SEND id=' + id + ' method=' + method + ' hasError=false (forwarded)');
           resolve({ result: result });
@@ -102,9 +111,9 @@ function routeCDPCommand(message) {
     }
   }).then(function(response) {
     if (response.error) {
-      ResponseBuilder.send(id, null, sessionId, response.error.message);
+      ResponseBuilder.send(id, null, sessionId, response.error.message, wsManager);
     } else {
-      ResponseBuilder.send(id, response.result, sessionId);
+      ResponseBuilder.send(id, response.result, sessionId, null, wsManager);
     }
     return response;
   });

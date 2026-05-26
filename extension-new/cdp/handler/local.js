@@ -1,4 +1,13 @@
 var LocalHandler = (function() {
+  function _getState(ctx) {
+    return ctx._state;
+  }
+
+  function _getConnectionTag(ctx) {
+    var wm = ctx._wsManager;
+    return (wm && wm.config && wm.config.tag) || null;
+  }
+
   function browserGetVersion() {
     var userAgent = navigator.userAgent || '';
     var match = userAgent.match(/Chrome\/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/);
@@ -29,14 +38,17 @@ var LocalHandler = (function() {
     };
   }
 
-  function targetSetDiscoverTargets(params) {
-    State.setDiscoverTargets(!!(params && params.discover));
-    
+  function targetSetDiscoverTargets(context) {
+    var state = _getState(context);
+    var params = context.params;
+    var wsManager = context._wsManager;
+    state.setDiscoverTargets(!!(params && params.discover));
+
     if (params && params.discover) {
       return getTargetInfos().then(function(targets) {
         targets.forEach(function(targetInfo) {
-          State.addEmittedTarget(targetInfo.targetId);
-          EventBuilder.send('Target.targetCreated', { targetInfo: targetInfo });
+          state.addEmittedTarget(targetInfo.targetId);
+          EventBuilder.send('Target.targetCreated', { targetInfo: targetInfo }, null, wsManager);
         });
         return {};
       });
@@ -65,19 +77,23 @@ var LocalHandler = (function() {
     });
   }
 
-  function targetCreateBrowserContext() {
+  function targetCreateBrowserContext(context) {
+    var state = _getState(context);
     var browserContextId = 'context-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
-    State.addBrowserContext(browserContextId);
+    state.addBrowserContext(browserContextId);
     return { browserContextId: browserContextId };
   }
 
-  function targetGetBrowserContexts() {
-    return { browserContextIds: State.getBrowserContexts() };
+  function targetGetBrowserContexts(context) {
+    var state = _getState(context);
+    return { browserContextIds: state.getBrowserContexts() };
   }
 
-  function targetDisposeBrowserContext(params) {
+  function targetDisposeBrowserContext(context) {
+    var state = _getState(context);
+    var params = context.params;
     if (params && params.browserContextId) {
-      State.removeBrowserContext(params.browserContextId);
+      state.removeBrowserContext(params.browserContextId);
     }
     return {};
   }
@@ -136,10 +152,11 @@ var LocalHandler = (function() {
   }
 
   function tabUngroup(context) {
+    var state = _getState(context);
     var clientId = context.clientId;
     var groupId = null;
     try {
-      groupId = State.getGroupIdForClient(clientId);
+      groupId = state.getGroupIdForClient(clientId);
     } catch (e) {
       Logger.error('[TabUngroup] Error getting groupId: ' + (e.message || e));
       return Promise.resolve({ success: false, ungroupedCount: 0, error: e.message || String(e) });
@@ -165,7 +182,7 @@ var LocalHandler = (function() {
             resolve({ success: false, ungroupedCount: 0, error: chrome.runtime.lastError.message });
             return;
           }
-          State.removeGroupForClient(clientId);
+          state.removeGroupForClient(clientId);
           resolve({ success: true, ungroupedCount: tabIds.length });
         });
       });
@@ -173,20 +190,21 @@ var LocalHandler = (function() {
   }
 
   function tabGetGroupInfo(context) {
+    var state = _getState(context);
     var clientId = context.clientId;
     var cachedGroupId = null;
     var baseName = null;
     try {
-      cachedGroupId = State.getGroupIdForClient(clientId);
-      baseName = CDPUtils.getGroupBaseName(clientId);
+      cachedGroupId = state.getGroupIdForClient(clientId);
+      baseName = CDPUtils.getGroupBaseName(clientId, _getConnectionTag(context));
     } catch (e) {
       Logger.error('[TabGetGroupInfo] Error: ' + (e.message || e));
     }
 
-    var attachedTabIds = State.getAttachedTabIds();
+    var attachedTabIds = state.getAttachedTabIds();
     var matchedTabId = null;
     for (var i = 0; i < attachedTabIds.length; i++) {
-      if (State.getClientIdByTabId(attachedTabIds[i]) === clientId) {
+      if (state.getClientIdByTabId(attachedTabIds[i]) === clientId) {
         matchedTabId = attachedTabIds[i];
         break;
       }
@@ -228,10 +246,11 @@ var LocalHandler = (function() {
   }
 
   function tabSimulateUserOpen(context) {
-    var attachedTabIds = State.getAttachedTabIds();
+    var state = _getState(context);
+    var attachedTabIds = state.getAttachedTabIds();
     var openerTabId = null;
     for (var i = 0; i < attachedTabIds.length; i++) {
-      if (State.isCDPCreatedTab(attachedTabIds[i])) {
+      if (state.isCDPCreatedTab(attachedTabIds[i])) {
         openerTabId = attachedTabIds[i];
         break;
       }
@@ -277,9 +296,11 @@ var LocalHandler = (function() {
     });
   }
 
-  function tabGetMuteStatus(params) {
+  function tabGetMuteStatus(context) {
+    var state = _getState(context);
+    var params = context.params;
     var cdpOnly = params && params.cdpOnly;
-    var attachedTabIds = State.getAttachedTabIds();
+    var attachedTabIds = state.getAttachedTabIds();
 
     return new Promise(function(resolve) {
       chrome.tabs.query({}, function(tabs) {
@@ -312,13 +333,12 @@ var LocalHandler = (function() {
 
   function getTargetInfos() {
     return chrome.debugger.getTargets().then(function(targets) {
-      // 为每个有 tabId 的 target 查询 openerTabId
-      const promises = targets.map(function(target) {
+      var promises = targets.map(function(target) {
         if (target.tabId) {
           return new Promise(function(resolve) {
             chrome.tabs.get(target.tabId, function(tab) {
               if (tab && tab.openerTabId) {
-                const openerMatch = targets.find(function(t) {
+                var openerMatch = targets.find(function(t) {
                   return String(t.tabId) === String(tab.openerTabId);
                 });
                 if (openerMatch) {
@@ -342,14 +362,12 @@ var LocalHandler = (function() {
         return t.id === targetId || String(t.tabId) === String(targetId);
       });
       if (!match) return null;
-      
-      // 获取 tab 信息以获取 openerTabId
+
       var tabId = match.tabId;
       if (tabId) {
         return new Promise(function(resolve) {
           chrome.tabs.get(tabId, function(tab) {
             if (tab && tab.openerTabId) {
-              // 查找 opener 的 targetId
               var openerMatch = targets.find(function(t) {
                 return String(t.tabId) === String(tab.openerTabId);
               });
@@ -361,24 +379,28 @@ var LocalHandler = (function() {
           });
         });
       }
-      
+
       return mapToTargetInfo(match);
     });
   }
 
   function getFallbackTargetId() {
-    var currentTabId = State.getCurrentTabId();
-    if (currentTabId != null) {
-      return ensureTabExists(currentTabId).then(function(exists) {
-        if (exists) return String(currentTabId);
-        return getActiveTabId().then(function(activeId) {
-          if (activeId != null) return String(activeId);
-          return getTargetInfos().then(function(infos) {
-            var page = infos.find(function(t) { return t.type === 'page'; });
-            return page ? page.targetId : null;
+    var entry = ConnectionManager.getPrimaryConnection();
+    var state = entry ? entry.state : null;
+    if (state) {
+      var currentTabId = state.getCurrentTabId();
+      if (currentTabId != null) {
+        return ensureTabExists(currentTabId).then(function(exists) {
+          if (exists) return String(currentTabId);
+          return getActiveTabId().then(function(activeId) {
+            if (activeId != null) return String(activeId);
+            return getTargetInfos().then(function(infos) {
+              var page = infos.find(function(t) { return t.type === 'page'; });
+              return page ? page.targetId : null;
+            });
           });
         });
-      });
+      }
     }
     return getActiveTabId().then(function(activeId) {
       if (activeId != null) return String(activeId);
@@ -419,7 +441,6 @@ var LocalHandler = (function() {
       canAccessOpener: false,
       browserContextId: 'default'
     };
-    // 添加 openerId（如果有）
     if (target.openerId) {
       info.openerId = target.openerId;
     }

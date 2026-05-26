@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CDP Bridge",
-  "version": "2.7.10",
+  "version": "2.8.0",
   "description": "Chrome DevTools Protocol Bridge for Playwright/Puppeteer automation",
   "permissions": [
     "debugger",
@@ -37,7 +37,8 @@
     {
       "resources": [
         "config-page-preview.html",
-        "config-page.js"
+        "config-page.js",
+        "utils/config.js"
       ],
       "matches": [
         "<all_urls>"

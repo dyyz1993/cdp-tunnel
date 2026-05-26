@@ -11,14 +11,18 @@ var ResponseBuilder = (function() {
     return response;
   }
 
-  function send(id, result, sessionId, errorMessage) {
+  function send(id, result, sessionId, errorMessage, wsManager) {
     var response;
     if (errorMessage) {
       response = ResponseBuilder.error(id, errorMessage, sessionId);
     } else {
       response = ResponseBuilder.success(id, result, sessionId);
     }
-    WebSocketManager.send(response);
+    if (wsManager) {
+      wsManager.send(response);
+    } else {
+      WebSocketManager.send(response);
+    }
     return response;
   }
 
@@ -36,9 +40,13 @@ var EventBuilder = (function() {
     return event;
   }
 
-  function send(method, params, sessionId) {
+  function send(method, params, sessionId, wsManager) {
     var event = EventBuilder.build(method, params, sessionId);
-    WebSocketManager.send(event);
+    if (wsManager) {
+      wsManager.send(event);
+    } else {
+      WebSocketManager.send(event);
+    }
     console.log('[EventBuilder.send]', method);
     return event;
   }

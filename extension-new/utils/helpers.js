@@ -42,7 +42,7 @@ var CDPUtils = (function() {
     return 0;
   }
 
-  function buildGroupName(clientId) {
+  function buildGroupName(clientId, connectionTag) {
     if (!clientId) return 'CDP';
     var hash = 0;
     for (var i = 0; i < clientId.length; i++) {
@@ -51,11 +51,12 @@ var CDPUtils = (function() {
       hash = hash | 0;
     }
     var suffix = Math.abs(hash).toString(16).substring(0, 8).padStart(8, '0');
-    return 'CDP-' + suffix;
+    var tag = (connectionTag && connectionTag !== 'default') ? connectionTag + '-' : '';
+    return 'CDP-' + tag + suffix;
   }
 
-  function getGroupBaseName(clientId) {
-    return buildGroupName(clientId);
+  function getGroupBaseName(clientId, connectionTag) {
+    return buildGroupName(clientId, connectionTag);
   }
 
   function findGroupByName(allGroups, baseName) {

@@ -1,70 +1,75 @@
-var WebSocketManager = (function() {
-  var _sendQueue = [];
-  var _isSending = false;
-  var _maxQueueSize = 100;
-  var _bufferThreshold = 512 * 1024;
-  var _groupCreationPending = new Set();
+var WebSocketConnection = (function() {
+  function WebSocketConnection(connectionId, state, config) {
+    this.connectionId = connectionId;
+    this.state = state;
+    this.config = config;
+    this._sendQueue = [];
+    this._isSending = false;
+    this._maxQueueSize = 100;
+    this._bufferThreshold = 512 * 1024;
+    this._groupCreationPending = new Set();
+  }
 
-  function connect() {
-    var ws = State.getWs();
+  WebSocketConnection.prototype.connect = function() {
+    var self = this;
+    var ws = self.state.getWs();
     if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
       return;
     }
 
-    Config.getWsUrl(function(wsUrl) {
-      Config.getPluginId(function(pluginId) {
-        if (pluginId) {
-          var sep = wsUrl.indexOf('?') >= 0 ? '&' : '?';
-          wsUrl += sep + 'pluginId=' + encodeURIComponent(pluginId);
-        }
-        Logger.info('[WS] Connecting to', wsUrl);
-        setBadgeStatus('ON');
+    var wsUrl = self.config.url;
+    Config.getPluginId(function(pluginId) {
+      if (pluginId) {
+        var sep = wsUrl.indexOf('?') >= 0 ? '&' : '?';
+        wsUrl += sep + 'pluginId=' + encodeURIComponent(pluginId);
+      }
+      Logger.info('[WS:' + self.connectionId + '] Connecting to', wsUrl);
+      setBadgeStatus('ON');
 
-        try {
-          ws = new WebSocket(wsUrl);
-          State.setWs(ws);
+      try {
+        ws = new WebSocket(wsUrl);
+        self.state.setWs(ws);
 
-          ws.onopen = function() {
-            Logger.info('[WS] Connected');
-            setBadgeStatus('ON');
-            State.clearReconnectTimer();
-            processQueue();
-            broadcastStateUpdate();
-            var extVersion = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest) 
-              ? chrome.runtime.getManifest().version : 'unknown';
-            send({ type: 'plugin-hello', version: extVersion });
-          };
+        ws.onopen = function() {
+          Logger.info('[WS:' + self.connectionId + '] Connected');
+          setBadgeStatus('ON');
+          self.state.clearReconnectTimer();
+          self._processQueue();
+          self._broadcastStateUpdate();
+          var extVersion = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest)
+            ? chrome.runtime.getManifest().version : 'unknown';
+          self.send({ type: 'plugin-hello', version: extVersion });
+        };
 
-          ws.onclose = function(event) {
-            Logger.info('[WS] Closed:', event.code, event.reason);
-            setBadgeStatus('OFF');
-            scheduleReconnect();
-            broadcastStateUpdate();
-          };
+        ws.onclose = function(event) {
+          Logger.info('[WS:' + self.connectionId + '] Closed:', event.code, event.reason);
+          setBadgeStatus('OFF');
+          self._scheduleReconnect();
+          self._broadcastStateUpdate();
+        };
 
-          ws.onerror = function(error) {
-            Logger.error('[WS] Error:', error);
-            setBadgeStatus('ERR');
-            broadcastStateUpdate();
-          };
-
-          ws.onmessage = function(event) {
-            handleRawMessage(event.data);
-          };
-        } catch (error) {
-          Logger.error('[WS] Failed to create:', error);
+        ws.onerror = function(error) {
+          Logger.error('[WS:' + self.connectionId + '] Error:', error);
           setBadgeStatus('ERR');
-          scheduleReconnect();
-        }
-      });
-    });
-  }
+          self._broadcastStateUpdate();
+        };
 
-  function send(message) {
-    var ws = State.getWs();
+        ws.onmessage = function(event) {
+          self._handleRawMessage(event.data);
+        };
+      } catch (error) {
+        Logger.error('[WS:' + self.connectionId + '] Failed to create:', error);
+        setBadgeStatus('ERR');
+        self._scheduleReconnect();
+      }
+    });
+  };
+
+  WebSocketConnection.prototype.send = function(message) {
+    var ws = this.state.getWs();
     var wsState = ws ? ws.readyState : 'no ws';
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      Logger.warn('[WS] Cannot send, WebSocket not open. State:', wsState);
+      Logger.warn('[WS:' + this.connectionId + '] Cannot send, WebSocket not open. State:', wsState);
       return false;
     }
 
@@ -72,91 +77,91 @@ var WebSocketManager = (function() {
     try {
       jsonStr = JSON.stringify(message);
     } catch (e) {
-      Logger.error('[WS] Failed to stringify message:', e);
+      Logger.error('[WS:' + this.connectionId + '] Failed to stringify message:', e);
       return false;
     }
 
     var msgSize = jsonStr.length;
-    
     if (msgSize > 1024 * 1024) {
-      Logger.warn('[WS] Large message:', msgSize, 'bytes, method:', message.method || message.type);
+      Logger.warn('[WS:' + this.connectionId + '] Large message:', msgSize, 'bytes, method:', message.method || message.type);
     }
 
-    if (ws.bufferedAmount > _bufferThreshold) {
-      Logger.warn('[WS] Buffer full, queuing message. Buffered:', ws.bufferedAmount);
-      if (_sendQueue.length < _maxQueueSize) {
-        _sendQueue.push(jsonStr);
+    if (ws.bufferedAmount > this._bufferThreshold) {
+      Logger.warn('[WS:' + this.connectionId + '] Buffer full, queuing message. Buffered:', ws.bufferedAmount);
+      if (this._sendQueue.length < this._maxQueueSize) {
+        this._sendQueue.push(jsonStr);
       } else {
-        Logger.error('[WS] Queue full, dropping message');
+        Logger.error('[WS:' + this.connectionId + '] Queue full, dropping message');
       }
       return false;
     }
 
     try {
       ws.send(jsonStr);
-      Logger.info('[WS] SEND: ' + jsonStr.substring(0, 200));
+      Logger.info('[WS:' + this.connectionId + '] SEND: ' + jsonStr.substring(0, 200));
       return true;
     } catch (e) {
-      Logger.error('[WS] Send error:', e);
+      Logger.error('[WS:' + this.connectionId + '] Send error:', e);
       return false;
     }
-  }
+  };
 
-  function processQueue() {
-    var ws = State.getWs();
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      return;
-    }
+  WebSocketConnection.prototype._processQueue = function() {
+    var ws = this.state.getWs();
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-    while (_sendQueue.length > 0 && ws.bufferedAmount < _bufferThreshold) {
-      var data = _sendQueue.shift();
+    while (this._sendQueue.length > 0 && ws.bufferedAmount < this._bufferThreshold) {
+      var data = this._sendQueue.shift();
       try {
         ws.send(data);
       } catch (e) {
-        Logger.error('[WS] Queue send error:', e);
+        Logger.error('[WS:' + this.connectionId + '] Queue send error:', e);
         break;
       }
     }
 
-    if (_sendQueue.length > 0) {
-      setTimeout(processQueue, 100);
+    if (this._sendQueue.length > 0) {
+      setTimeout(this._processQueue.bind(this), 100);
     }
-  }
+  };
 
-  function scheduleReconnect() {
-    State.clearReconnectTimer();
+  WebSocketConnection.prototype._scheduleReconnect = function() {
+    this.state.clearReconnectTimer();
+    var self = this;
     var timer = setTimeout(function() {
-      Logger.info('[WS] Attempting to reconnect...');
-      connect();
+      Logger.info('[WS:' + self.connectionId + '] Attempting to reconnect...');
+      self.connect();
     }, Config.RECONNECT_DELAY);
-    State.setReconnectTimer(timer);
-  }
+    self.state.setReconnectTimer(timer);
+  };
 
-  function handleRawMessage(data) {
+  WebSocketConnection.prototype._handleRawMessage = function(data) {
+    var self = this;
     try {
       if (data instanceof Blob) {
         data.text().then(function(text) {
           try {
-            handleMessage(JSON.parse(text));
+            self._handleMessage(JSON.parse(text));
           } catch (e) {
-            Logger.error('[WS] Failed to parse Blob message:', e);
+            Logger.error('[WS:' + self.connectionId + '] Failed to parse Blob message:', e);
           }
         }).catch(function(e) {
-          Logger.error('[WS] Failed to read Blob:', e);
+          Logger.error('[WS:' + self.connectionId + '] Failed to read Blob:', e);
         });
       } else {
         try {
-          handleMessage(JSON.parse(data));
+          self._handleMessage(JSON.parse(data));
         } catch (e) {
-          Logger.error('[WS] Failed to parse message:', e);
+          Logger.error('[WS:' + self.connectionId + '] Failed to parse message:', e);
         }
       }
     } catch (e) {
-      Logger.error('[WS] handleRawMessage error:', e);
+      Logger.error('[WS:' + self.connectionId + '] handleRawMessage error:', e);
     }
-  }
+  };
 
-  function handleMessage(message) {
+  WebSocketConnection.prototype._handleMessage = function(message) {
+    var self = this;
     var type = message.type;
     var method = message.method;
     var params = message.params;
@@ -167,81 +172,81 @@ var WebSocketManager = (function() {
     switch (type) {
       case 'connected':
         if (message.fresh) {
-          Logger.info('[WS] Received fresh connection from server');
-          handleServerRestart();
+          Logger.info('[WS:' + self.connectionId + '] Received fresh connection from server');
+          self._handleServerRestart();
         }
         break;
 
       case 'ping':
-        send({ type: 'pong' });
+        self.send({ type: 'pong' });
         break;
 
       case 'attach':
-        var attachTabId = tabId || State.getCurrentTabId();
-        DebuggerManager.attach(attachTabId).then(function(success) {
-          send({ type: 'attach_result', tabId: attachTabId, success: success });
+        var attachTabId = tabId || self.state.getCurrentTabId();
+        DebuggerManager.attach(attachTabId, self.state).then(function(success) {
+          self.send({ type: 'attach_result', tabId: attachTabId, success: success });
         });
         break;
 
       case 'detach':
-        var detachTabId = tabId || State.getCurrentTabId();
-        DebuggerManager.detach(detachTabId).then(function() {
-          send({ type: 'detach_result', tabId: detachTabId, success: true });
+        var detachTabId = tabId || self.state.getCurrentTabId();
+        DebuggerManager.detach(detachTabId, self.state).then(function() {
+          self.send({ type: 'detach_result', tabId: detachTabId, success: true });
         });
         break;
 
       case 'browser-close':
-        handleBrowserClose(message.sessions, message.clientId);
+        self._handleBrowserClose(message.sessions, message.clientId);
         break;
 
       case 'client-connected':
-        Logger.info('[WS] Client connected, resuming event forwarding');
-        State.setHasConnectedClient(true);
-        State.addCDPClient(message.clientId, message.clientId);
-        createGroupForClient(message.clientId);
-        broadcastStateUpdate();
+        Logger.info('[WS:' + self.connectionId + '] Client connected, resuming event forwarding');
+        self.state.setHasConnectedClient(true);
+        self.state.addCDPClient(message.clientId, message.clientId);
+        self._createGroupForClient(message.clientId);
+        self._broadcastStateUpdate();
         break;
 
       case 'client-disconnected':
-        Logger.info('[WS] Client disconnected:', message.clientId);
+        Logger.info('[WS:' + self.connectionId + '] Client disconnected:', message.clientId);
         var discClientId = message.clientId;
-        _groupCreationPending.delete(discClientId);
-        closeTabGroupByClientId(discClientId).then(function() {
+        self._groupCreationPending.delete(discClientId);
+        self._closeTabGroupByClientId(discClientId).then(function() {
           return new Promise(function(resolve) {
-            closeTabsByClientId(discClientId, resolve);
+            self._closeTabsByClientId(discClientId, resolve);
           });
         }).then(function() {
-          var preExistingTabs = State.getPreExistingTabs();
-          var clientPreExisting = preExistingTabs.filter(function(tabId) {
-            return State.getClientIdByTabId(tabId) === discClientId;
+          var preExistingTabs = self.state.getPreExistingTabs();
+          var clientPreExisting = preExistingTabs.filter(function(tid) {
+            return self.state.getClientIdByTabId(tid) === discClientId;
           });
-          clientPreExisting.forEach(function(tabId) {
-            chrome.debugger.detach({ tabId: tabId }).catch(function() {});
-            State.removeAttachedTab(tabId);
+          clientPreExisting.forEach(function(tid) {
+            chrome.debugger.detach({ tabId: tid }).catch(function() {});
+            self.state.removeAttachedTab(tid);
           });
-          State.clearPreExistingTabsForClient(discClientId);
-          State.removeCDPClient(discClientId);
-          if (State.getCDPClients().length === 0) {
-            State.setHasConnectedClient(false);
+          self.state.clearPreExistingTabsForClient(discClientId);
+          self.state.removeCDPClient(discClientId);
+          if (self.state.getCDPClients().length === 0) {
+            self.state.setHasConnectedClient(false);
           }
-          broadcastStateUpdate();
+          self._broadcastStateUpdate();
         });
         break;
-        
+
       case 'client-list':
-        Logger.info('[WS] Received client list:', message.clients);
-        State.setCDPClients(message.clients || []);
-        State.setHasConnectedClient((message.clients || []).length > 0);
-        broadcastStateUpdate();
+        Logger.info('[WS:' + self.connectionId + '] Received client list:', message.clients);
+        self.state.setCDPClients(message.clients || []);
+        self.state.setHasConnectedClient((message.clients || []).length > 0);
+        self._broadcastStateUpdate();
         break;
 
       case 'plugin-disconnected':
-        Logger.info('[WS] Plugin disconnected from server');
+        Logger.info('[WS:' + self.connectionId + '] Plugin disconnected from server');
         break;
 
       case 'server-restart':
-        Logger.info('[WS] Server restart detected, cleaning up...');
-        handleServerRestart();
+        Logger.info('[WS:' + self.connectionId + '] Server restart detected, cleaning up...');
+        self._handleServerRestart();
         break;
 
       case 'cdp':
@@ -252,8 +257,9 @@ var WebSocketManager = (function() {
             params: params,
             tabId: tabId,
             sessionId: sessionId,
-            clientId: message.__clientId
-          });
+            clientId: message.__clientId,
+            connectionId: self.connectionId
+          }, self.state, self);
         }
         break;
 
@@ -265,111 +271,115 @@ var WebSocketManager = (function() {
             params: params,
             tabId: tabId,
             sessionId: sessionId,
-            clientId: message.__clientId
-          });
+            clientId: message.__clientId,
+            connectionId: self.connectionId
+          }, self.state, self);
         }
     }
-  }
+  };
 
-  function closeTabGroupByClientId(clientId) {
+  WebSocketConnection.prototype._closeTabGroupByClientId = function(clientId) {
+    var self = this;
     if (!clientId) return Promise.resolve();
-    
-    Logger.info('[WS] Closing tab group for client:', clientId);
-    
+
+    Logger.info('[WS:' + self.connectionId + '] Closing tab group for client:', clientId);
+
     return new Promise(function(resolve) {
       var timeoutId = setTimeout(function() {
-        Logger.warn('[WS] closeTabGroupByClientId timeout for client:', clientId, '— forcing cleanup');
-        cleanupStaleState(clientId);
+        Logger.warn('[WS:' + self.connectionId + '] closeTabGroupByClientId timeout for client:', clientId, '— forcing cleanup');
+        self._cleanupStaleState(clientId);
         resolve();
       }, 5000);
-        
-      var groupId = State.getGroupIdForClient(clientId);
-      
+
+      var groupId = self.state.getGroupIdForClient(clientId);
+
       if (groupId) {
-        closeGroupById(groupId, clientId, function() {
+        self._closeGroupById(groupId, clientId, function() {
           clearTimeout(timeoutId);
-          cleanupStaleState(clientId);
+          self._cleanupStaleState(clientId);
           resolve();
         });
       } else {
-        var baseName = CDPUtils.getGroupBaseName(clientId);
+        var baseName = CDPUtils.getGroupBaseName(clientId, self.config ? self.config.tag : null);
         chrome.tabGroups.query({}, function(allGroups) {
           var match = CDPUtils.findGroupByName(allGroups, baseName);
           if (match) {
-            closeGroupById(match.id, clientId, function() {
+            self._closeGroupById(match.id, clientId, function() {
               clearTimeout(timeoutId);
-              cleanupStaleState(clientId);
+              self._cleanupStaleState(clientId);
               resolve();
             });
           } else {
-            Logger.info('[WS] No tab group found, closing tabs by clientId:', clientId);
-            closeTabsByClientId(clientId, function() {
+            Logger.info('[WS:' + self.connectionId + '] No tab group found, closing tabs by clientId:', clientId);
+            self._closeTabsByClientId(clientId, function() {
               clearTimeout(timeoutId);
-              cleanupStaleState(clientId);
+              self._cleanupStaleState(clientId);
               resolve();
             });
           }
         });
       }
     });
-  }
+  };
 
-  function cleanupStaleState(clientId) {
+  WebSocketConnection.prototype._cleanupStaleState = function(clientId) {
     if (!clientId) return;
-    var attachedTabs = State.getAttachedTabIds();
+    var self = this;
+    var attachedTabs = self.state.getAttachedTabIds();
     attachedTabs.forEach(function(tabId) {
-      if (State.getClientIdByTabId(tabId) === clientId) {
-        State.removeTabIdToClientId(tabId);
+      if (self.state.getClientIdByTabId(tabId) === clientId) {
+        self.state.removeTabIdToClientId(tabId);
       }
     });
-  }
+  };
 
-  function closeGroupById(groupId, clientId, resolve) {
-    Logger.info('[WS] closeGroupById: groupId=' + groupId + ' clientId=' + clientId);
+  WebSocketConnection.prototype._closeGroupById = function(groupId, clientId, resolve) {
+    var self = this;
+    Logger.info('[WS:' + self.connectionId + '] closeGroupById: groupId=' + groupId + ' clientId=' + clientId);
     chrome.tabs.query({ groupId: groupId }, function(tabs) {
-        if (!tabs || tabs.length === 0) {
-            Logger.info('[WS] No tabs in group:', groupId);
-            State.removeGroupForClient(clientId);
-            removeEmptyGroup(groupId);
-            resolve();
-            return;
-        }
-        
-        var ownTabs = tabs.filter(function(tab) {
-          return State.getClientIdByTabId(tab.id) === clientId;
-        });
-        var otherTabs = tabs.filter(function(tab) {
-          return State.getClientIdByTabId(tab.id) !== clientId;
-        });
-        var tabIds = ownTabs.map(function(tab) { return tab.id; });
-        Logger.info('[WS] Closing ' + tabIds.length + ' tabs in group (skipping ' + otherTabs.length + ' from other clients):', groupId);
-        
-        if (tabIds.length === 0) {
-          Logger.info('[WS] No own tabs to close in group:', groupId);
-          State.removeGroupForClient(clientId);
-          resolve();
-          return;
+      if (!tabs || tabs.length === 0) {
+        Logger.info('[WS:' + self.connectionId + '] No tabs in group:', groupId);
+        self.state.removeGroupForClient(clientId);
+        self._removeEmptyGroup(groupId);
+        resolve();
+        return;
+      }
+
+      var ownTabs = tabs.filter(function(tab) {
+        return self.state.getClientIdByTabId(tab.id) === clientId;
+      });
+      var otherTabs = tabs.filter(function(tab) {
+        return self.state.getClientIdByTabId(tab.id) !== clientId;
+      });
+      var tabIds = ownTabs.map(function(tab) { return tab.id; });
+      Logger.info('[WS:' + self.connectionId + '] Closing ' + tabIds.length + ' tabs in group (skipping ' + otherTabs.length + ' from other clients):', groupId);
+
+      if (tabIds.length === 0) {
+        Logger.info('[WS:' + self.connectionId + '] No own tabs to close in group:', groupId);
+        self.state.removeGroupForClient(clientId);
+        resolve();
+        return;
+      }
+
+      chrome.tabs.remove(tabIds, function() {
+        if (chrome.runtime.lastError) {
+          Logger.error('[WS:' + self.connectionId + '] Failed to close tabs:', chrome.runtime.lastError.message);
+        } else {
+          Logger.info('[WS:' + self.connectionId + '] Successfully closed ' + tabIds.length + ' tabs');
         }
 
-        chrome.tabs.remove(tabIds, function() {
-            if (chrome.runtime.lastError) {
-                Logger.error('[WS] Failed to close tabs:', chrome.runtime.lastError.message);
-            } else {
-                Logger.info('[WS] Successfully closed ' + tabIds.length + ' tabs');
-            }
-            
-            tabIds.forEach(function(tabId) {
-                chrome.debugger.detach({ tabId: tabId }).catch(function() {});
-            });
-            
-            State.removeGroupForClient(clientId);
-            removeEmptyGroup(groupId);
-            resolve();
+        tabIds.forEach(function(tabId) {
+          chrome.debugger.detach({ tabId: tabId }).catch(function() {});
         });
+
+        self.state.removeGroupForClient(clientId);
+        self._removeEmptyGroup(groupId);
+        resolve();
+      });
     });
-  }
+  };
 
-  function removeEmptyGroup(groupId) {
+  WebSocketConnection.prototype._removeEmptyGroup = function(groupId) {
     if (!groupId || !chrome.tabGroups) return;
     setTimeout(function() {
       chrome.tabGroups.query({ groupId: groupId }, function(groups) {
@@ -388,176 +398,173 @@ var WebSocketManager = (function() {
         }
       });
     }, 500);
-  }
+  };
 
-  function closeTabsByClientId(clientId, resolve) {
-    var attachedTabs = State.getAttachedTabIds();
-    var cdpCreatedTabs = State.getCDPCreatedTabIds();
+  WebSocketConnection.prototype._closeTabsByClientId = function(clientId, resolve) {
+    var self = this;
+    var attachedTabs = self.state.getAttachedTabIds();
+    var cdpCreatedTabs = self.state.getCDPCreatedTabIds();
     var tabsToClose = [];
     var tabsToCloseSet = new Set();
-    
-    Logger.info('[WS] closeTabsByClientId: clientId=' + clientId + ' attachedTabs=' + JSON.stringify(attachedTabs) + ' cdpCreatedTabs=' + JSON.stringify(cdpCreatedTabs));
-    
+
+    Logger.info('[WS:' + self.connectionId + '] closeTabsByClientId: clientId=' + clientId + ' attachedTabs=' + JSON.stringify(attachedTabs) + ' cdpCreatedTabs=' + JSON.stringify(cdpCreatedTabs));
+
     attachedTabs.forEach(function(tabId) {
-      var tabClientId = State.getClientIdByTabId(tabId);
-      var isPre = State.isPreExistingTab(tabId);
-      var isCDP = State.isCDPCreatedTab(tabId);
-      Logger.info('[WS]   [attached] tabId=' + tabId + ' clientId=' + tabClientId + ' isPre=' + isPre + ' isCDP=' + isCDP);
+      var tabClientId = self.state.getClientIdByTabId(tabId);
+      var isPre = self.state.isPreExistingTab(tabId);
+      var isCDP = self.state.isCDPCreatedTab(tabId);
+      Logger.info('[WS:' + self.connectionId + ']   [attached] tabId=' + tabId + ' clientId=' + tabClientId + ' isPre=' + isPre + ' isCDP=' + isCDP);
       if (tabClientId === clientId && !isPre) {
         tabsToCloseSet.add(tabId);
       }
     });
-    
+
     cdpCreatedTabs.forEach(function(tabId) {
       if (tabsToCloseSet.has(tabId)) return;
-      
-      var tabClientId = State.getClientIdByTabId(tabId);
-      var isPre = State.isPreExistingTab(tabId);
-      Logger.info('[WS]   [cdpCreated] tabId=' + tabId + ' clientId=' + tabClientId + ' isPre=' + isPre + ' isAttached=' + attachedTabs.includes(tabId));
+
+      var tabClientId = self.state.getClientIdByTabId(tabId);
+      var isPre = self.state.isPreExistingTab(tabId);
+      Logger.info('[WS:' + self.connectionId + ']   [cdpCreated] tabId=' + tabId + ' clientId=' + tabClientId + ' isPre=' + isPre + ' isAttached=' + attachedTabs.includes(tabId));
       if (tabClientId === clientId && !isPre && !attachedTabs.includes(tabId)) {
         tabsToCloseSet.add(tabId);
-        Logger.info('[WS]     -> Added to close list (not yet attached)');
+        Logger.info('[WS:' + self.connectionId + ']     -> Added to close list (not yet attached)');
       }
     });
-    
+
     tabsToClose = Array.from(tabsToCloseSet);
-    
-    Logger.info('[WS] closeTabsByClientId: will close ' + tabsToClose.length + ' tabs');
-    
+    Logger.info('[WS:' + self.connectionId + '] closeTabsByClientId: will close ' + tabsToClose.length + ' tabs');
+
     if (tabsToClose.length === 0) {
-      Logger.info('[WS] No tabs found for clientId:', clientId);
+      Logger.info('[WS:' + self.connectionId + '] No tabs found for clientId:', clientId);
       resolve();
       return;
     }
 
-    doCloseTabs(tabsToClose, clientId, resolve);
-  }
+    self._doCloseTabs(tabsToClose, clientId, resolve);
+  };
 
-  function doCloseTabs(tabIds, clientId, resolve) {
+  WebSocketConnection.prototype._doCloseTabs = function(tabIds, clientId, resolve) {
+    var self = this;
     if (tabIds.length === 0) {
       resolve();
       return;
     }
-    Logger.info('[WS] Closing ' + tabIds.length + ' attached tabs for clientId:', clientId);
+    Logger.info('[WS:' + self.connectionId + '] Closing ' + tabIds.length + ' attached tabs for clientId:', clientId);
     var pending = tabIds.length;
     tabIds.forEach(function(tabId) {
       chrome.tabs.remove(tabId, function() {
         if (chrome.runtime.lastError) {
-          Logger.info('[WS] Tab already closed:', tabId);
+          Logger.info('[WS:' + self.connectionId + '] Tab already closed:', tabId);
         }
         chrome.debugger.detach({ tabId: tabId }).catch(function() {});
-        State.removeAttachedTab(tabId);
+        self.state.removeAttachedTab(tabId);
         pending--;
-        if (pending === 0) {
-          resolve();
-        }
+        if (pending === 0) resolve();
       });
     });
-  }
+  };
 
-  function createGroupForClient(clientId) {
+  WebSocketConnection.prototype._createGroupForClient = function(clientId) {
+    var self = this;
     if (!clientId || !chrome.tabGroups) return;
 
-    if (_groupCreationPending.has(clientId)) {
-      Logger.info('[WS] Group creation already pending for client:', clientId);
+    if (self._groupCreationPending.has(clientId)) {
+      Logger.info('[WS:' + self.connectionId + '] Group creation already pending for client:', clientId);
       return;
     }
 
-    var existingGroupId = State.getGroupIdForClient(clientId);
+    var existingGroupId = self.state.getGroupIdForClient(clientId);
     if (existingGroupId) {
-      Logger.info('[WS] Group already cached for client:', clientId, 'groupId:', existingGroupId);
+      Logger.info('[WS:' + self.connectionId + '] Group already cached for client:', clientId, 'groupId:', existingGroupId);
       return;
     }
 
-    _groupCreationPending.add(clientId);
+    self._groupCreationPending.add(clientId);
 
-    var baseName = CDPUtils.getGroupBaseName(clientId);
+    var baseName = CDPUtils.getGroupBaseName(clientId, self.config ? self.config.tag : null);
     chrome.tabs.query({ currentWindow: true }, function(tabs) {
       if (!tabs || tabs.length === 0) {
-        Logger.warn('[WS] No tabs found for group creation');
-        _groupCreationPending.delete(clientId);
+        Logger.warn('[WS:' + self.connectionId + '] No tabs found for group creation');
+        self._groupCreationPending.delete(clientId);
         return;
       }
       var windowId = tabs[0].windowId;
       chrome.tabs.group({ createProperties: { windowId: windowId } }, function(groupId) {
         if (chrome.runtime.lastError) {
-          Logger.warn('[WS] Failed to create group on connect:', chrome.runtime.lastError.message);
-          _groupCreationPending.delete(clientId);
+          Logger.warn('[WS:' + self.connectionId + '] Failed to create group on connect:', chrome.runtime.lastError.message);
+          self._groupCreationPending.delete(clientId);
           return;
         }
-        _groupCreationPending.delete(clientId);
+        self._groupCreationPending.delete(clientId);
         chrome.tabGroups.update(groupId, {
           title: baseName,
           color: CDPUtils.getGroupColorForClient(clientId),
           collapsed: true
         }, function() {
           if (chrome.runtime.lastError) {
-            Logger.warn('[WS] Failed to set group title:', chrome.runtime.lastError.message);
+            Logger.warn('[WS:' + self.connectionId + '] Failed to set group title:', chrome.runtime.lastError.message);
           }
         });
-        State.setGroupIdForClient(clientId, groupId);
-        Logger.info('[WS] Created group for client:', clientId, 'groupId:', groupId, 'title:', baseName);
+        self.state.setGroupIdForClient(clientId, groupId);
+        Logger.info('[WS:' + self.connectionId + '] Created group for client:', clientId, 'groupId:', groupId, 'title:', baseName);
       });
     });
-  }
+  };
 
-  function handleServerRestart() {
-    Logger.info('[WS] Server restarted, cleaning up all state...');
+  WebSocketConnection.prototype._handleServerRestart = function() {
+    var self = this;
+    Logger.info('[WS:' + self.connectionId + '] Server restarted, cleaning up all state...');
 
-    var attachedTabIds = State.getAttachedTabIds();
+    var attachedTabIds = self.state.getAttachedTabIds();
     var promises = attachedTabIds.map(function(tabId) {
       return chrome.debugger.detach({ tabId: tabId }).catch(function(e) {
-        Logger.info('[WS] Detach failed for tab', tabId, ':', e.message);
+        Logger.info('[WS:' + self.connectionId + '] Detach failed for tab', tabId, ':', e.message);
       });
     });
 
     Promise.all(promises).then(function() {
-      State.clearAllState();
-      State.persist(null, false);
-      Logger.info('[WS] State cleaned up after server restart');
+      self.state.clearAllState();
+      self.state.persist(null, false);
+      Logger.info('[WS:' + self.connectionId + '] State cleaned up after server restart');
     });
-  }
+  };
 
-  function handleBrowserClose(sessions, clientId) {
-    Logger.info('[WS] Browser.close received, cleaning up... clientId:', clientId);
-    
-    closeTabGroupByClientId(clientId).then(function() {
+  WebSocketConnection.prototype._handleBrowserClose = function(sessions, clientId) {
+    var self = this;
+    Logger.info('[WS:' + self.connectionId + '] Browser.close received, cleaning up... clientId:', clientId);
+
+    self._closeTabGroupByClientId(clientId).then(function() {
       return new Promise(function(resolve) {
-        closeTabsByClientId(clientId, resolve);
+        self._closeTabsByClientId(clientId, resolve);
       });
     }).then(function() {
-      var preExistingTabs = State.getPreExistingTabs();
+      var preExistingTabs = self.state.getPreExistingTabs();
       var clientPreExisting = preExistingTabs.filter(function(tabId) {
-        return State.getClientIdByTabId(tabId) === clientId;
+        return self.state.getClientIdByTabId(tabId) === clientId;
       });
       clientPreExisting.forEach(function(tabId) {
         chrome.debugger.detach({ tabId: tabId }).catch(function() {});
-        State.removeAttachedTab(tabId);
+        self.state.removeAttachedTab(tabId);
       });
-      State.clearPreExistingTabsForClient(clientId);
+      self.state.clearPreExistingTabsForClient(clientId);
 
-      State.removeCDPClient(clientId);
-      if (State.getCDPClients().length === 0) {
-        State.clearAllState();
-        State.persist(null, false);
+      self.state.removeCDPClient(clientId);
+      if (self.state.getCDPClients().length === 0) {
+        self.state.clearAllState();
+        self.state.persist(null, false);
       }
-      broadcastStateUpdate();
-      Logger.info('[WS] Browser.close cleanup complete for client:', clientId);
+      self._broadcastStateUpdate();
+      Logger.info('[WS:' + self.connectionId + '] Browser.close cleanup complete for client:', clientId);
     });
-  }
+  };
 
-  function setBadgeStatus(status) {
-    var colors = Config.BADGE_COLORS;
-    chrome.action.setBadgeText({ text: status });
-    chrome.action.setBadgeBackgroundColor({ color: colors[status] || colors.OFF });
-  }
-
-  function broadcastStateUpdate() {
-    var ws = State.getWs();
+  WebSocketConnection.prototype._broadcastStateUpdate = function() {
+    var self = this;
+    var ws = self.state.getWs();
     var isConnected = ws && ws.readyState === WebSocket.OPEN;
-    var cdpClients = State.getCDPClients() || [];
-    var attachedTabIds = State.getAttachedTabIds();
-    
+    var cdpClients = self.state.getCDPClients() || [];
+    var attachedTabIds = self.state.getAttachedTabIds();
+
     if (attachedTabIds.length === 0) {
       chrome.runtime.sendMessage({
         type: 'stateUpdate',
@@ -590,14 +597,61 @@ var WebSocketManager = (function() {
         }
       });
     });
+  };
+
+  WebSocketConnection.prototype.getQueueStats = function() {
+    return {
+      queueLength: this._sendQueue.length,
+      maxQueueSize: this._maxQueueSize,
+      bufferThreshold: this._bufferThreshold
+    };
+  };
+
+  return WebSocketConnection;
+})();
+
+function setBadgeStatus(status) {
+  var colors = Config.BADGE_COLORS;
+  chrome.action.setBadgeText({ text: status });
+  chrome.action.setBadgeBackgroundColor({ color: colors[status] || colors.OFF });
+}
+
+var WebSocketManager = (function() {
+  function connect() {
+    ConnectionManager.connectAll();
+  }
+
+  function send(message) {
+    var sent = false;
+    ConnectionManager.forEachConnection(function(entry) {
+      if (entry.wsManager.send(message)) {
+        sent = true;
+      }
+    });
+    return sent;
+  }
+
+  function scheduleReconnect() {
+    ConnectionManager.forEachConnection(function(entry) {
+      entry.wsManager._scheduleReconnect();
+    });
   }
 
   function getQueueStats() {
-    return {
-      queueLength: _sendQueue.length,
-      maxQueueSize: _maxQueueSize,
-      bufferThreshold: _bufferThreshold
-    };
+    var stats = [];
+    ConnectionManager.forEachConnection(function(entry) {
+      stats.push({
+        connectionId: entry.id,
+        stats: entry.wsManager.getQueueStats()
+      });
+    });
+    return stats;
+  }
+
+  function processQueue() {
+    ConnectionManager.forEachConnection(function(entry) {
+      entry.wsManager._processQueue();
+    });
   }
 
   return {

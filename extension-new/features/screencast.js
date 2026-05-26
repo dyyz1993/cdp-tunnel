@@ -71,8 +71,19 @@ var Screencast = (function() {
     };
   })();
 
-  function startPolling(tabId, params, sessionId) {
-    stopPolling(tabId);
+  function _getStateForTab(tabId) {
+    var entry = ConnectionManager.getConnectionByTabId(tabId);
+    return entry ? entry.state : null;
+  }
+
+  function _getWSManagerForTab(tabId) {
+    var entry = ConnectionManager.getConnectionByTabId(tabId);
+    return entry ? entry.wsManager : null;
+  }
+
+  function startPolling(tabId, params, sessionId, state) {
+    var connState = state || _getStateForTab(tabId);
+    stopPolling(tabId, connState);
 
     var session = {
       tabId: tabId,
@@ -89,27 +100,33 @@ var Screencast = (function() {
       frameId: 0
     };
 
-    State.setScreencastSession(tabId, session);
+    if (connState) connState.setScreencastSession(tabId, session);
 
     return injectChangeDetector(tabId).then(function() {
-      captureAndSendFrame(session);
+      captureAndSendFrame(session, connState);
     });
   }
 
-  function stopPolling(tabId) {
-    var session = State.getScreencastSession(tabId);
-    if (session) {
-      session.stopped = true;
-      State.deleteScreencastSession(tabId);
-      disableChangeNotify(tabId);
+  function stopPolling(tabId, state) {
+    var connState = state || _getStateForTab(tabId);
+    if (connState) {
+      var session = connState.getScreencastSession(tabId);
+      if (session) {
+        session.stopped = true;
+        connState.deleteScreencastSession(tabId);
+        disableChangeNotify(tabId);
+      }
     }
   }
 
-  function ackFrame(tabId, ackSessionId) {
-    var session = State.getScreencastSession(tabId);
-    if (session) {
-      session.pendingAck = false;
-      captureAndSendFrame(session);
+  function ackFrame(tabId, ackSessionId, state) {
+    var connState = state || _getStateForTab(tabId);
+    if (connState) {
+      var session = connState.getScreencastSession(tabId);
+      if (session) {
+        session.pendingAck = false;
+        captureAndSendFrame(session, connState);
+      }
     }
   }
 
@@ -154,11 +171,13 @@ var Screencast = (function() {
     ).catch(function() {});
   }
 
-  function captureAndSendFrame(session) {
+  function captureAndSendFrame(session, connState) {
     if (session.stopped) return;
 
     session.frameCount++;
     if (session.frameCount % session.everyNthFrame !== 0) return;
+
+    var wsManager = _getWSManagerForTab(session.tabId);
 
     chrome.debugger.sendCommand(
       { tabId: session.tabId },
@@ -195,7 +214,7 @@ var Screencast = (function() {
           scrollOffsetY: 0,
           timestamp: Date.now()
         }
-      }, session.sessionId);
+      }, session.sessionId, wsManager);
 
       session.pendingAck = true;
     }).catch(function(error) {
@@ -206,9 +225,12 @@ var Screencast = (function() {
   }
 
   function onNotify(tabId) {
-    var session = State.getScreencastSession(tabId);
-    if (session && !session.pendingAck && !session.stopped) {
-      captureAndSendFrame(session);
+    var connState = _getStateForTab(tabId);
+    if (connState) {
+      var session = connState.getScreencastSession(tabId);
+      if (session && !session.pendingAck && !session.stopped) {
+        captureAndSendFrame(session, connState);
+      }
     }
   }
 

@@ -4,15 +4,16 @@ var ForwardHandler = (function() {
     var method = context.method;
     var params = context.params;
     var sessionId = context.sessionId;
+    var state = context._state;
 
-    var tabId = resolveTabId(sessionId);
+    var tabId = resolveTabId(sessionId, state);
 
     if (!tabId) {
       Logger.warn('[Forward] No tabId for command:', method);
       return Promise.reject({ code: -32000, message: 'No target found for command: ' + method });
     }
 
-    if (!State.isTabAttached(tabId)) {
+    if (!state.isTabAttached(tabId)) {
       Logger.warn('[Forward] Tab not attached, skipping command:', method, 'tabId:', tabId);
       return Promise.reject({ code: -32000, message: 'Target is not attached' });
     }
@@ -23,15 +24,16 @@ var ForwardHandler = (function() {
     });
   }
 
-  function resolveTabId(sessionId) {
+  function resolveTabId(sessionId, state) {
+    if (!state) return null;
     if (sessionId) {
-      return State.getTabIdBySession(sessionId);
+      return state.getTabIdBySession(sessionId);
     }
-    var currentTabId = State.getCurrentTabId();
-    if (currentTabId != null && State.isTabAttached(currentTabId)) {
+    var currentTabId = state.getCurrentTabId();
+    if (currentTabId != null && state.isTabAttached(currentTabId)) {
       return currentTabId;
     }
-    var attachedTabs = State.getAttachedTabIds();
+    var attachedTabs = state.getAttachedTabIds();
     if (attachedTabs.length > 0) {
       return attachedTabs[0];
     }

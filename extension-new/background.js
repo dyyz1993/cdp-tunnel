@@ -3,6 +3,8 @@ importScripts('utils/logger.js');
 importScripts('utils/helpers.js');
 importScripts('utils/diagnostics.js');
 importScripts('core/state.js');
+importScripts('core/connection-state.js');
+importScripts('core/connection-manager.js');
 importScripts('core/websocket.js');
 importScripts('core/debugger.js');
 importScripts('cdp/response.js');
@@ -23,12 +25,14 @@ importScripts('features/automation-badge.js');
     if (keepAliveInterval) {
       clearInterval(keepAliveInterval);
     }
-    
+
     keepAliveInterval = setInterval(function() {
-      var ws = State.getWs();
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        WebSocketManager.send({ type: 'keepalive', timestamp: Date.now() });
-      }
+      ConnectionManager.forEachConnection(function(entry) {
+        var ws = entry.state.getWs();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          entry.wsManager.send({ type: 'keepalive', timestamp: Date.now() });
+        }
+      });
     }, 20000);
 
     chrome.alarms.clear('sw-keepalive', function() {
@@ -52,7 +56,6 @@ importScripts('features/automation-badge.js');
     _initialized = true;
     Logger.info('[Init] CDP Bridge starting...');
 
-    // 点击扩展图标时打开配置页面
     chrome.action.onClicked.addListener(function(tab) {
       Logger.info('[Action] Extension icon clicked, opening config page');
       chrome.tabs.create({
@@ -67,12 +70,22 @@ importScripts('features/automation-badge.js');
         validatePersistedState(result.currentTabId, result.isAttached);
       }
 
-      WebSocketManager.connect();
-      startKeepAlive();
-      
-      setTimeout(function() {
-        Diagnostics.start();
-      }, 2000);
+      Config.getConnections(function(connections) {
+        ConnectionManager.init(connections);
+
+        var primary = ConnectionManager.getPrimaryConnection();
+        if (primary && result.currentTabId != null) {
+          primary.state.currentTabId = result.currentTabId;
+          primary.state.isAttached = result.isAttached;
+        }
+
+        ConnectionManager.connectAll();
+        startKeepAlive();
+
+        setTimeout(function() {
+          Diagnostics.start();
+        }, 2000);
+      });
     });
   }
 
@@ -117,29 +130,37 @@ importScripts('features/automation-badge.js');
   chrome.tabs.onRemoved.addListener(function(tabId) {
     Logger.info('[Tabs] Tab removed:', tabId);
 
-    State.removeAttachedTab(tabId);
-    var removedClientId = State.getClientIdByTabId(tabId);
-    Screencast.stopPolling(tabId);
+    var entry = ConnectionManager.getConnectionByTabId(tabId);
+    var state = entry ? entry.state : null;
+    var wsManager = entry ? entry.wsManager : null;
+
+    if (state) {
+      state.removeAttachedTab(tabId);
+    }
+    var removedClientId = state ? state.getClientIdByTabId(tabId) : null;
+    Screencast.stopPolling(tabId, state);
     AutomationBadge.remove(tabId);
 
-    var sessionId = State.findSessionByTabId(tabId);
-    if (sessionId) {
-      var targetId = State.getTargetIdBySession(sessionId);
-      EventBuilder.send('Target.detachedFromTarget', {
-        sessionId: sessionId,
-        targetId: targetId
-      });
-      EventBuilder.send('Target.targetDestroyed', { targetId: targetId });
-      State.unmapSession(sessionId);
-      if (removedClientId) {
-        SpecialHandler.updateTabGroupName(removedClientId);
+    if (state) {
+      var sessionId = state.findSessionByTabId(tabId);
+      if (sessionId) {
+        var targetId = state.getTargetIdBySession(sessionId);
+        EventBuilder.send('Target.detachedFromTarget', {
+          sessionId: sessionId,
+          targetId: targetId
+        }, null, wsManager);
+        EventBuilder.send('Target.targetDestroyed', { targetId: targetId }, null, wsManager);
+        state.unmapSession(sessionId);
+        if (removedClientId) {
+          SpecialHandler.updateTabGroupName(removedClientId, state, wsManager);
+        }
       }
-    }
 
-    if (State.getCurrentTabId() === tabId) {
-      State.persist(null, false);
+      if (state.getCurrentTabId() === tabId) {
+        state.persist(null, false);
+      }
+      state.removeTabIdToClientId(tabId);
     }
-    State.removeTabIdToClientId(tabId);
   });
 
   if (chrome.tabGroups) {
@@ -148,47 +169,59 @@ importScripts('features/automation-badge.js');
       var removedGroupId = group.id;
       Logger.info('[TabGroups] Group removed:', removedGroupId);
 
-      var clients = State.getCDPClients() || [];
-      for (var i = 0; i < clients.length; i++) {
-        var clientId = clients[i].id;
-        if (State.getGroupIdForClient(clientId) === removedGroupId) {
-          Logger.info('[TabGroups] Clearing cached groupId for client:', clientId);
-          State.setGroupIdForClient(clientId, null);
+      ConnectionManager.forEachConnection(function(entry) {
+        var state = entry.state;
+        var wsManager = entry.wsManager;
+        var clients = state.getCDPClients() || [];
+        for (var i = 0; i < clients.length; i++) {
+          var clientId = clients[i].id;
+          if (state.getGroupIdForClient(clientId) === removedGroupId) {
+            Logger.info('[TabGroups] Clearing cached groupId for client:', clientId);
+            state.setGroupIdForClient(clientId, null);
 
-          var attached = State.getAttachedTabIds();
-          attached.forEach(function(tid) {
-            if (State.getClientIdByTabId(tid) === clientId && !State.isPreExistingTab(tid)) {
-              Logger.info('[TabGroups] Re-grouping tab', tid, 'for client:', clientId);
-              SpecialHandler.addTabToAutomationGroup(tid, clientId);
-            }
-          });
-          break;
+            var attached = state.getAttachedTabIds();
+            attached.forEach(function(tid) {
+              if (state.getClientIdByTabId(tid) === clientId && !state.isPreExistingTab(tid)) {
+                Logger.info('[TabGroups] Re-grouping tab', tid, 'for client:', clientId);
+                var ctx = { _state: state, _wsManager: wsManager, clientId: clientId };
+                SpecialHandler.addTabToAutomationGroup(tid, clientId, null, ctx);
+              }
+            });
+            break;
+          }
         }
-      }
+      });
     });
   }
 
   chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
-    if (changeInfo.status === 'complete' && State.isTabAttached(tabId)) {
-      // 不再注入自动化标识，改为通过标签分组区分
+    if (changeInfo.status === 'complete') {
+      var entry = ConnectionManager.getConnectionByTabId(tabId);
+      if (entry && entry.state.isTabAttached(tabId)) {
+      }
     }
 
     if (changeInfo.groupId !== undefined && changeInfo.groupId === -1) {
-      if (State.isTabAttached(tabId) && !State.isPreExistingTab(tabId)) {
-        var clientId = State.getClientIdByTabId(tabId);
+      var entry = ConnectionManager.getConnectionByTabId(tabId);
+      if (entry && entry.state.isTabAttached(tabId) && !entry.state.isPreExistingTab(tabId)) {
+        var state = entry.state;
+        var wsManager = entry.wsManager;
+        var clientId = state.getClientIdByTabId(tabId);
         if (clientId) {
-          var cachedGroupId = State.getGroupIdForClient(clientId);
+          var cachedGroupId = state.getGroupIdForClient(clientId);
           if (cachedGroupId) {
             Logger.info('[Tabs] Tab', tabId, 'left group, re-adding to cached group:', cachedGroupId);
             chrome.tabs.group({ tabIds: tabId, groupId: cachedGroupId }, function() {
               if (chrome.runtime.lastError) {
                 Logger.warn('[Tabs] Failed to re-add tab to group:', chrome.runtime.lastError.message);
-                SpecialHandler.addTabToAutomationGroup(tabId, clientId);
+                var ctx = { _state: state, _wsManager: wsManager, clientId: clientId };
+                SpecialHandler.addTabToAutomationGroup(tabId, clientId, null, ctx);
               }
             });
           } else {
             Logger.info('[Tabs] Tab', tabId, 'left group, no cached groupId — delegating to addTabToAutomationGroup');
-            SpecialHandler.addTabToAutomationGroup(tabId, clientId);
+            var ctx = { _state: state, _wsManager: wsManager, clientId: clientId };
+            SpecialHandler.addTabToAutomationGroup(tabId, clientId, null, ctx);
           }
         }
       }
@@ -197,75 +230,83 @@ importScripts('features/automation-badge.js');
 
   chrome.tabs.onCreated.addListener(function(tab) {
     Logger.info('[Tabs] Tab created:', tab.id, tab.url, 'openerTabId:', tab.openerTabId);
-    
-    if (!State.hasConnectedClient()) {
+
+    var entry = ConnectionManager.getPrimaryConnection();
+    if (!entry) return;
+    var state = entry.state;
+    var wsManager = entry.wsManager;
+
+    if (!state.hasConnectedClient()) {
       Logger.info('[Tabs] No connected client, skipping');
       return;
     }
-    
+
     var tabId = tab.id;
-    
+
     var tabUrl = tab.url || tab.pendingUrl || 'about:blank';
-    if (State.hasPendingCreatedTabUrl(tabUrl)) {
+    if (state.hasPendingCreatedTabUrl(tabUrl)) {
       Logger.info('[Tabs] Tab created by Target.createTarget, will be handled by createTarget:', tabUrl);
-      State.removePendingCreatedTabUrl(tabUrl);
+      state.removePendingCreatedTabUrl(tabUrl);
       return;
     }
-    
+
     var openerTabId = tab.openerTabId;
-    var isOpenerControlled = openerTabId && State.isTabAttached(openerTabId) && !State.isPreExistingTab(openerTabId);
-    
-    // 只有当 opener 是 CDP 主动管理的 tab 时才跟踪新页面
-    // pre-existing tab 虽然也 attach 了 debugger，但属于用户 tab，不应继承 CDP 控制
+    var openerEntry = openerTabId ? ConnectionManager.getConnectionByTabId(openerTabId) : null;
+    if (openerEntry) {
+      state = openerEntry.state;
+      wsManager = openerEntry.wsManager;
+    }
+    var isOpenerControlled = openerTabId && state.isTabAttached(openerTabId) && !state.isPreExistingTab(openerTabId);
+
     if (!openerTabId) {
       Logger.info('[Tabs] Tab has no opener, skipping. tabId:', tabId);
       return;
     }
-    
+
     if (!isOpenerControlled) {
       Logger.info('[Tabs] Opener not controlled by CDP, skipping. tabId:', tabId, 'openerTabId:', openerTabId);
       return;
     }
-    
+
     Logger.info('[Tabs] Tab has controlled opener, will attach. tabId:', tabId, 'openerTabId:', openerTabId);
-    
+
     LocalHandler.getTargetInfoById(String(tabId)).then(function(targetInfo) {
       Logger.info('[Tabs] getTargetInfoById result:', targetInfo ? targetInfo.targetId : 'null');
       if (!targetInfo) {
         Logger.error('[Tabs] getTargetInfoById returned null for tabId:', tabId);
         return;
       }
-      
+
       var targetId = targetInfo.targetId;
       Logger.info('[Tabs] targetId:', targetId);
-      
-      if (State.hasEmittedTarget(targetId)) {
+
+      if (state.hasEmittedTarget(targetId)) {
         Logger.info('[Tabs] Target already emitted, skipping:', targetId);
         return;
       }
-      
-      State.addEmittedTarget(targetId);
+
+      state.addEmittedTarget(targetId);
       Logger.info('[Tabs] Sending Target.targetCreated event');
-      
-      EventBuilder.send('Target.targetCreated', { targetInfo: targetInfo });
+
+      EventBuilder.send('Target.targetCreated', { targetInfo: targetInfo }, null, wsManager);
       Logger.info('[Tabs] Target.targetCreated sent, now attaching to tab:', tabId);
-      
-      return DebuggerManager.attach(tabId).then(function(attached) {
+
+      return DebuggerManager.attach(tabId, state).then(function(attached) {
         Logger.info('[Tabs] DebuggerManager.attach result:', attached);
         if (!attached) {
           Logger.error('[Tabs] Failed to attach to tab:', tabId);
           return;
         }
-        
-        var sessionId = CDPUtils.generateSessionId();
-        State.mapSession(sessionId, tabId, targetId);
 
-        var openerClientId = openerTabId ? State.getClientIdByTabId(openerTabId) : null;
+        var sessionId = CDPUtils.generateSessionId();
+        state.mapSession(sessionId, tabId, targetId);
+
+        var openerClientId = openerTabId ? state.getClientIdByTabId(openerTabId) : null;
         if (openerClientId) {
-          State.setTabIdToClientId(tabId, openerClientId);
+          state.setTabIdToClientId(tabId, openerClientId);
           Logger.info('[Tabs] Mapped child tab', tabId, '-> clientId:', openerClientId);
         }
-        
+
         Config.getAutoMute(function(enabled) {
           if (enabled) {
             chrome.tabs.update(tabId, { muted: true }, function() {
@@ -277,16 +318,17 @@ importScripts('features/automation-badge.js');
             });
           }
         });
-        
-        SpecialHandler.addTabToAutomationGroup(tabId, openerClientId);
-        
+
+        var ctx = { _state: state, _wsManager: wsManager, clientId: openerClientId };
+        SpecialHandler.addTabToAutomationGroup(tabId, openerClientId, null, ctx);
+
         Logger.info('[Tabs] Sending Target.attachedToTarget event');
-        
+
         EventBuilder.send('Target.attachedToTarget', {
           sessionId: sessionId,
           targetInfo: targetInfo,
           waitingForDebugger: false
-        });
+        }, null, wsManager);
         Logger.info('[Tabs] Target.attachedToTarget sent');
       }).catch(function(err) {
         Logger.error('[Tabs] DebuggerManager.attach error:', err);
@@ -299,7 +341,7 @@ importScripts('features/automation-badge.js');
   chrome.runtime.onInstalled.addListener(function(details) {
     Logger.info('[Runtime] Extension installed/updated:', details.reason);
     State.persist(null, false);
-    WebSocketManager.setBadgeStatus('ON');
+    setBadgeStatus('ON');
     init();
   });
 
@@ -308,58 +350,67 @@ importScripts('features/automation-badge.js');
     init();
   });
 
+  function broadcastConnectionsUpdated() {
+    chrome.runtime.sendMessage({ type: 'connections-updated' }).catch(function() {});
+  }
+
+  function _getAggregatedState() {
+    var isConnected = false;
+    var cdpClients = [];
+    var attachedTabIds = [];
+    ConnectionManager.forEachConnection(function(entry) {
+      var ws = entry.state.getWs();
+      if (ws && ws.readyState === WebSocket.OPEN) isConnected = true;
+      cdpClients = cdpClients.concat(entry.state.getCDPClients() || []);
+      attachedTabIds = attachedTabIds.concat(entry.state.getAttachedTabIds());
+    });
+    return { isConnected: isConnected, cdpClients: cdpClients, attachedTabIds: attachedTabIds };
+  }
+
   chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
     if (message.type === 'popup-query') {
-      var ws = State.getWs();
-      var isConnected = ws && ws.readyState === WebSocket.OPEN;
+      var agg = _getAggregatedState();
       chrome.storage.local.get(['wsAddress', 'pluginId'], function(result) {
         sendResponse({
-          connected: isConnected,
+          connected: agg.isConnected,
           pluginId: result.pluginId || null,
-          cdpClients: State.getCDPClients() || [],
-          attachedPages: State.getAttachedTabIds().map(function(tid) { return { tabId: tid }; })
+          cdpClients: agg.cdpClients,
+          attachedPages: agg.attachedTabIds.map(function(tid) { return { tabId: tid }; })
         });
       });
       return true;
     } else if (message.type === 'ws-reconnect') {
       Logger.info('[Runtime] WS address changed, reconnecting');
-      var ws = State.getWs();
-      if (ws) ws.close();
-      WebSocketManager.connect();
+      ConnectionManager.disconnectAll();
+      ConnectionManager.connectAll();
       sendResponse({ success: true });
     } else if (message.type === 'reconnect') {
       Logger.info('[Runtime] Received reconnect request from popup');
-      var ws = State.getWs();
-      if (ws) {
-        ws.close();
-      }
-      WebSocketManager.connect();
+      ConnectionManager.disconnectAll();
+      ConnectionManager.connectAll();
       sendResponse({ success: true });
     } else if (message.type === 'getState') {
-      var ws = State.getWs();
-      var isConnected = ws && ws.readyState === WebSocket.OPEN;
-      
+      var agg = _getAggregatedState();
       chrome.storage.local.get(['wsAddress'], function(result) {
-        var attachedTabs = State.getAttachedTabIds();
-        var cdpClients = State.getCDPClients() || [];
-        
+        var attachedTabs = agg.attachedTabIds;
+
         if (attachedTabs.length === 0) {
           sendResponse({
-            connected: isConnected,
+            connected: agg.isConnected,
             serverAddress: result.wsAddress || Config.WS_URL,
-            cdpClients: cdpClients,
+            cdpClients: agg.cdpClients,
             attachedPages: []
           });
           return;
         }
-        
+
         var attachedPages = [];
         var pendingTabs = attachedTabs.length;
-        
+
         attachedTabs.forEach(function(tabId) {
           chrome.tabs.get(tabId, function(tab) {
             pendingTabs--;
-            
+
             if (chrome.runtime.lastError) {
               Logger.info('[Runtime] Tab not found:', tabId);
             } else if (tab) {
@@ -369,30 +420,27 @@ importScripts('features/automation-badge.js');
                 url: tab.url || ''
               });
             }
-            
+
             if (pendingTabs === 0) {
               sendResponse({
-                connected: isConnected,
+                connected: agg.isConnected,
                 serverAddress: result.wsAddress || Config.WS_URL,
-                cdpClients: cdpClients,
+                cdpClients: agg.cdpClients,
                 attachedPages: attachedPages
               });
             }
           });
         });
       });
-      
+
       return true;
     } else if (message.type === 'connect') {
       var address = message.serverAddress;
       if (address) {
         Logger.info('[Runtime] Saving and connecting to:', address);
         chrome.storage.local.set({ wsAddress: address }, function() {
-          var ws = State.getWs();
-          if (ws) {
-            ws.close();
-          }
-          WebSocketManager.connect();
+          ConnectionManager.disconnectAll();
+          ConnectionManager.connectAll();
           sendResponse({ success: true });
         });
       } else {
@@ -401,23 +449,79 @@ importScripts('features/automation-badge.js');
       return true;
     } else if (message.type === 'disconnect') {
       Logger.info('[Runtime] Disconnecting...');
-      var ws = State.getWs();
-      if (ws) {
-        ws.close();
-      }
+      ConnectionManager.disconnectAll();
       sendResponse({ success: true });
+    } else if (message.type === 'get-connection-statuses') {
+      Config.getConnections(function(connections) {
+        var statuses = {};
+        (connections || []).forEach(function(conn) {
+          if (!conn.enabled) {
+            statuses[conn.id] = 'disabled';
+          } else {
+            var entry = ConnectionManager.getConnection(conn.id);
+            if (entry) {
+              var ws = entry.state.getWs();
+              statuses[conn.id] = (ws && ws.readyState === WebSocket.OPEN) ? 'connected' : 'error';
+            } else {
+              statuses[conn.id] = 'error';
+            }
+          }
+        });
+        sendResponse({ statuses: statuses });
+      });
+      return true;
+    } else if (message.type === 'add-connection') {
+      Logger.info('[Runtime] Adding connection:', message.tag, message.url);
+      Config.addConnection({ tag: message.tag, url: message.url }, function(conn) {
+        if (conn && conn.enabled) {
+          ConnectionManager.addConnection(conn);
+          var entry = ConnectionManager.getConnection(conn.id);
+          if (entry) entry.wsManager.connect();
+        }
+        broadcastConnectionsUpdated();
+        sendResponse({ success: true });
+      });
+      return true;
+    } else if (message.type === 'remove-connection') {
+      Logger.info('[Runtime] Removing connection:', message.connectionId);
+      ConnectionManager.removeConnection(message.connectionId);
+      Config.removeConnection(message.connectionId, function() {
+        broadcastConnectionsUpdated();
+        sendResponse({ success: true });
+      });
+      return true;
+    } else if (message.type === 'toggle-connection') {
+      Logger.info('[Runtime] Toggling connection:', message.connectionId, message.enabled);
+      Config.toggleConnection(message.connectionId, message.enabled, function() {
+        if (message.enabled) {
+          Config.getConnections(function(connections) {
+            var conn = (connections || []).find(function(c) { return c.id === message.connectionId; });
+            if (conn) {
+              var wsMgr = ConnectionManager.addConnection(conn);
+              if (wsMgr) wsMgr.connect();
+            }
+          });
+        } else {
+          ConnectionManager.removeConnection(message.connectionId);
+        }
+        broadcastConnectionsUpdated();
+        sendResponse({ success: true });
+      });
+      return true;
     }
     return true;
   });
 
   chrome.alarms.onAlarm.addListener(function(alarm) {
     if (alarm.name === 'sw-keepalive') {
-      var ws = State.getWs();
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        WebSocketManager.send({ type: 'keepalive', timestamp: Date.now() });
-      } else {
-        WebSocketManager.connect();
-      }
+      ConnectionManager.forEachConnection(function(entry) {
+        var ws = entry.state.getWs();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          entry.wsManager.send({ type: 'keepalive', timestamp: Date.now() });
+        } else {
+          entry.wsManager.connect();
+        }
+      });
     }
   });
 

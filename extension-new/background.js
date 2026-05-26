@@ -453,21 +453,22 @@ importScripts('features/automation-badge.js');
       sendResponse({ success: true });
     } else if (message.type === 'get-connection-statuses') {
       Config.getConnections(function(connections) {
-        var statuses = {};
-        (connections || []).forEach(function(conn) {
-          if (!conn.enabled) {
-            statuses[conn.id] = 'disabled';
-          } else {
+        var list = (connections || []).map(function(conn) {
+          var status = 'disabled';
+          var attachedCount = 0;
+          if (conn.enabled) {
             var entry = ConnectionManager.getConnection(conn.id);
             if (entry) {
               var ws = entry.state.getWs();
-              statuses[conn.id] = (ws && ws.readyState === WebSocket.OPEN) ? 'connected' : 'error';
+              status = (ws && ws.readyState === WebSocket.OPEN) ? 'connected' : 'error';
+              attachedCount = entry.state.getAttachedTabIds().length;
             } else {
-              statuses[conn.id] = 'error';
+              status = 'error';
             }
           }
+          return { id: conn.id, tag: conn.tag, url: conn.url, status: status, attachedCount: attachedCount };
         });
-        sendResponse({ statuses: statuses });
+        sendResponse({ connections: list });
       });
       return true;
     } else if (message.type === 'add-connection') {

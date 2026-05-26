@@ -95,13 +95,15 @@
     connections.forEach(function(conn) {
       var statusClass = getStatusClass(conn.id, conn.enabled);
       var isActive = conn.enabled && statusClass === 'connected';
+      var cdpAddr = getCdpAddress(conn.url, conn.mode);
       html +=
         '<div class="conn-config-item' + (isActive ? ' active' : '') + '" data-id="' + conn.id + '">' +
           '<input type="checkbox" class="conn-toggle" data-id="' + conn.id + '"' + (conn.enabled ? ' checked' : '') + ' title="启用/禁用">' +
           '<span class="status-dot ' + statusClass + '" title="' + statusClass + '"></span>' +
           '<div class="conn-config-info">' +
             '<div class="conn-config-tag">' + (conn.mode === 'takeover' ? '🔗 ' : '🆕 ') + escapeHtml(conn.tag) + '</div>' +
-            '<div class="conn-config-url" title="' + escapeAttr(conn.url) + '">' + escapeHtml(conn.url) + '</div>' +
+            '<div class="conn-config-url" title="' + escapeAttr(conn.url) + '">WS:  ' + escapeHtml(conn.url) + '</div>' +
+            (cdpAddr ? '<div class="conn-config-cdp">CDP: <span class="cdp-addr" data-cdp="' + escapeAttr(cdpAddr) + '">' + escapeHtml(cdpAddr) + '</span> <button class="btn-copy-cdp" data-cdp="' + escapeAttr(cdpAddr) + '" title="复制 CDP 地址">📋</button></div>' : '') +
           '</div>' +
           '<button class="btn-delete" data-id="' + conn.id + '" title="删除">删除</button>' +
         '</div>';
@@ -297,6 +299,15 @@
     return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  function getCdpAddress(wsUrl, mode) {
+    var match = (wsUrl || '').match(/:\/\/([^\/]+):(\d+)/);
+    if (!match) return '';
+    var host = match[1];
+    var port = parseInt(match[2], 10);
+    if (mode === 'takeover') port += 1;
+    return 'http://' + host + ':' + port;
+  }
+
   function init() {
     if (typeof chrome !== 'undefined' && chrome.storage) {
       chrome.storage.local.get(['autoMute'], function(result) {
@@ -365,6 +376,17 @@
   });
 
   elements.connConfigList.addEventListener('click', function(e) {
+    var copyBtn = e.target.closest('.btn-copy-cdp');
+    if (copyBtn) {
+      var addr = copyBtn.dataset.cdp;
+      if (addr) {
+        navigator.clipboard.writeText(addr).then(function() {
+          showToast('已复制: ' + addr);
+        });
+      }
+      return;
+    }
+
     var toggleEl = e.target.closest('.conn-toggle');
     if (toggleEl) {
       var connId = toggleEl.dataset.id;

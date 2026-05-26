@@ -338,6 +338,15 @@ importScripts('features/automation-badge.js');
     });
   });
 
+  function getCdpAddress(wsUrl, mode) {
+    var match = (wsUrl || '').match(/:\/\/([^\/]+):(\d+)/);
+    if (!match) return '';
+    var host = match[1];
+    var port = parseInt(match[2], 10);
+    if (mode === 'takeover') port += 1;
+    return 'http://' + host + ':' + port;
+  }
+
   chrome.runtime.onInstalled.addListener(function(details) {
     Logger.info('[Runtime] Extension installed/updated:', details.reason);
     State.persist(null, false);
@@ -466,7 +475,8 @@ importScripts('features/automation-badge.js');
               status = 'error';
             }
           }
-          return { id: conn.id, tag: conn.tag, url: conn.url, mode: conn.mode || 'create', status: status, attachedCount: attachedCount };
+          var cdpAddress = getCdpAddress(conn.url, conn.mode || 'create');
+          return { id: conn.id, tag: conn.tag, url: conn.url, mode: conn.mode || 'create', status: status, attachedCount: attachedCount, cdpAddress: cdpAddress };
         });
         sendResponse({ connections: list });
       });

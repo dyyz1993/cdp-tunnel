@@ -14,6 +14,15 @@
     });
   }
 
+  function getCdpAddress(wsUrl, mode) {
+    var match = (wsUrl || '').match(/:\/\/([^\/]+):(\d+)/);
+    if (!match) return '';
+    var host = match[1];
+    var port = parseInt(match[2], 10);
+    if (mode === 'takeover') port += 1;
+    return 'http://' + host + ':' + port;
+  }
+
   function renderConnectionList(connections) {
     connectionList.innerHTML = '';
 
@@ -43,10 +52,42 @@
 
       var url = document.createElement('div');
       url.className = 'conn-url';
-      url.textContent = conn.url;
+      url.textContent = 'WS:  ' + conn.url;
 
       item.appendChild(header);
       item.appendChild(url);
+
+      var cdpAddr = conn.cdpAddress || getCdpAddress(conn.url, conn.mode);
+      if (cdpAddr) {
+        var cdpRow = document.createElement('div');
+        cdpRow.className = 'conn-cdp';
+
+        var cdpLabel = document.createElement('span');
+        cdpLabel.className = 'conn-cdp-label';
+        cdpLabel.textContent = 'CDP: ';
+
+        var cdpValue = document.createElement('span');
+        cdpValue.className = 'conn-cdp-value';
+        cdpValue.textContent = cdpAddr;
+
+        var copyBtn = document.createElement('button');
+        copyBtn.className = 'conn-cdp-copy';
+        copyBtn.textContent = '📋';
+        copyBtn.title = '复制';
+        copyBtn.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          navigator.clipboard.writeText(cdpAddr).then(function() {
+            copyBtn.textContent = '✓';
+            setTimeout(function() { copyBtn.textContent = '📋'; }, 1200);
+          });
+        });
+
+        cdpRow.appendChild(cdpLabel);
+        cdpRow.appendChild(cdpValue);
+        cdpRow.appendChild(copyBtn);
+        item.appendChild(cdpRow);
+      }
+
       connectionList.appendChild(item);
     });
   }

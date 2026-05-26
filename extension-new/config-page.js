@@ -271,6 +271,14 @@
   function loadAndRenderConnections() {
     if (typeof Config !== 'undefined' && Config.getConnections) {
       Config.getConnections(function(connections) {
+        if ((!connections || connections.length === 0) && Config.addConnection) {
+          Config.addConnection({ tag: 'local', url: 'ws://localhost:9221/plugin' }, function() {
+            Config.getConnections(function(updated) {
+              renderConnections(updated);
+            });
+          });
+          return;
+        }
         renderConnections(connections);
       });
     }

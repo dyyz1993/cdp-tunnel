@@ -1,3 +1,27 @@
+function updateBadgeFromAllConnections() {
+  var hasConnected = false;
+  var hasEnabled = false;
+  ConnectionManager.forEachConnection(function(entry) {
+    var ws = entry.state.getWs();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      hasConnected = true;
+    }
+    if (entry.config && entry.config.enabled !== false) {
+      hasEnabled = true;
+    }
+  });
+  var status;
+  if (hasConnected) {
+    status = 'ON';
+  } else if (hasEnabled) {
+    status = 'ERR';
+  } else {
+    status = 'OFF';
+  }
+  setBadgeStatus(status);
+  chrome.runtime.sendMessage({ type: 'connection-status-changed' }).catch(function() {});
+}
+
 var WebSocketConnection = (function() {
   function WebSocketConnection(connectionId, state, config) {
     this.connectionId = connectionId;
@@ -24,7 +48,7 @@ var WebSocketConnection = (function() {
         wsUrl += sep + 'pluginId=' + encodeURIComponent(pluginId);
       }
       Logger.info('[WS:' + self.connectionId + '] Connecting to', wsUrl);
-      setBadgeStatus('ON');
+      updateBadgeFromAllConnections();
 
       try {
         ws = new WebSocket(wsUrl);
@@ -32,7 +56,7 @@ var WebSocketConnection = (function() {
 
         ws.onopen = function() {
           Logger.info('[WS:' + self.connectionId + '] Connected');
-          setBadgeStatus('ON');
+          updateBadgeFromAllConnections();
           self.state.clearReconnectTimer();
           self._processQueue();
           self._broadcastStateUpdate();
@@ -43,14 +67,14 @@ var WebSocketConnection = (function() {
 
         ws.onclose = function(event) {
           Logger.info('[WS:' + self.connectionId + '] Closed:', event.code, event.reason);
-          setBadgeStatus('OFF');
+          updateBadgeFromAllConnections();
           self._scheduleReconnect();
           self._broadcastStateUpdate();
         };
 
         ws.onerror = function(error) {
           Logger.error('[WS:' + self.connectionId + '] Error:', error);
-          setBadgeStatus('ERR');
+          updateBadgeFromAllConnections();
           self._broadcastStateUpdate();
         };
 
@@ -58,9 +82,9 @@ var WebSocketConnection = (function() {
           self._handleRawMessage(event.data);
         };
       } catch (error) {
-        Logger.error('[WS:' + self.connectionId + '] Failed to create:', error);
-        setBadgeStatus('ERR');
-        self._scheduleReconnect();
+      Logger.error('[WS:' + self.connectionId + '] Failed to create:', error);
+      updateBadgeFromAllConnections();
+      self._scheduleReconnect();
       }
     });
   };

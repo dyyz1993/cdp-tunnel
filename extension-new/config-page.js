@@ -258,8 +258,12 @@
   function loadConnectionStatuses() {
     if (typeof chrome !== 'undefined' && chrome.runtime) {
       chrome.runtime.sendMessage({ type: 'get-connection-statuses' }, function(response) {
-        if (response && response.statuses) {
-          state.connectionStatuses = response.statuses;
+        if (response && response.connections) {
+          var statuses = {};
+          response.connections.forEach(function(conn) {
+            statuses[conn.id] = conn.status;
+          });
+          state.connectionStatuses = statuses;
         }
         loadAndRenderConnections();
       });
@@ -431,6 +435,8 @@
         addLog(message.logType, message.message);
       } else if (message.type === 'connections-updated') {
         loadAndRenderConnections();
+      } else if (message.type === 'connection-status-changed') {
+        loadConnectionStatuses();
       }
     });
   }

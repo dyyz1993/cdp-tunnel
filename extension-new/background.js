@@ -341,7 +341,7 @@ importScripts('features/automation-badge.js');
   chrome.runtime.onInstalled.addListener(function(details) {
     Logger.info('[Runtime] Extension installed/updated:', details.reason);
     State.persist(null, false);
-    setBadgeStatus('ON');
+    setBadgeStatus('OFF');
     init();
   });
 

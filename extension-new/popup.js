@@ -76,4 +76,10 @@
   versionLink.textContent = 'v' + manifest.version;
 
   loadState();
+
+  chrome.runtime.onMessage.addListener(function(message) {
+    if (message.type === 'connection-status-changed' || message.type === 'stateUpdate') {
+      loadState();
+    }
+  });
 })();

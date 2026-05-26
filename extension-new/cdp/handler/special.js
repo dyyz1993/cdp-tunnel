@@ -84,8 +84,7 @@ var SpecialHandler = (function() {
           addTabToAutomationGroup(tabId, clientId, null, context);
         } else if (context.mode === 'takeover') {
           state.addPreExistingTab(tabId);
-          addTabToAutomationGroup(tabId, clientId, null, context);
-          Logger.info('[CDP TAKEOVER] Target.attachToTarget: added to TAKE group. tabId:', tabId);
+          Logger.info('[CDP TAKEOVER] Target.attachToTarget: attached without grouping. tabId:', tabId);
         } else {
           state.addPreExistingTab(tabId);
           Logger.info('[CDP] Target.attachToTarget: user tab not CDP-created, treating as pre-existing. tabId:', tabId);

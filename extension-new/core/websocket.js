@@ -269,7 +269,6 @@ var WebSocketConnection = (function() {
           var sessions = self.state.findSessionsByTabId(tid);
           sessions.forEach(function(sid) { self.state.unmapSession(sid); });
         });
-        self.state.removeGroupForClient(takeClientId);
         self.state.removeCDPClient(takeClientId);
         if (self.state.getCDPClients().length === 0) {
           self.state.setHasConnectedClient(false);
@@ -541,6 +540,10 @@ var WebSocketConnection = (function() {
   WebSocketConnection.prototype._createGroupForClient = function(clientId, mode) {
     var self = this;
     if (!clientId || !chrome.tabGroups) return;
+    if (mode === 'takeover') {
+      Logger.info('[WS:' + self.connectionId + '] Skipping group creation for takeover mode, clientId:', clientId);
+      return;
+    }
 
     if (self._groupCreationPending.has(clientId)) {
       Logger.info('[WS:' + self.connectionId + '] Group creation already pending for client:', clientId);

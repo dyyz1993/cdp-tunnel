@@ -1,6 +1,6 @@
 {
   "name": "cdp-tunnel",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "description": "Bridge Chrome's debugger API to WebSocket — control your existing browser with Playwright/Puppeteer via CDP",
   "main": "server/proxy-server.js",
   "bin": "./cli/index.js",

@@ -110,6 +110,13 @@
     });
   });
 
+  var openConfigBtn = $('openConfigBtn');
+  if (openConfigBtn) {
+    openConfigBtn.addEventListener('click', function() {
+      chrome.tabs.create({ url: chrome.runtime.getURL('config-page-preview.html') });
+    });
+  }
+
   var versionLink = $('versionLink');
   if (versionLink) {
     var manifest = chrome.runtime.getManifest();

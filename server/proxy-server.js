@@ -1165,6 +1165,16 @@ function forwardToPlugin(clientWs, data, clientId) {
  * 处理 CDP 客户端连接 (Playwright/Puppeteer)
  */
 function handleClientConnection(ws, clientInfo, customClientId = null, targetPluginId = null, mode = 'create') {
+    if (mode === 'takeover') {
+        for (const client of clientConnections) {
+            if (client.mode === 'takeover' && client.readyState === WebSocket.OPEN) {
+                console.log('[TAKEOVER] Rejected: takeover mode already has a connected client');
+                ws.close(1008, 'Takeover mode already in use. Only one client allowed.');
+                return;
+            }
+        }
+    }
+
     clientConnections.add(ws);
     const id = customClientId || generateId('client');
     ws.mode = mode;

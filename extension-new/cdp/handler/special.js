@@ -212,6 +212,13 @@ var SpecialHandler = (function() {
   function _addTabToAutomationGroupInner(tabId, clientId, callback, context) {
     var state = context ? _getState(context) : null;
     var wsManager = context ? _getWSManager(context) : null;
+    var mode = context ? (context.mode || (state ? state.mode : null)) : null;
+
+    if (mode === 'takeover') {
+      Logger.info('[TabGroup] Skipping group for takeover tab:', tabId);
+      if (callback) callback(false);
+      return;
+    }
 
     Logger.info('[TabGroup] Starting addTabToAutomationGroup for tabId:', tabId, 'clientId:', clientId);
 

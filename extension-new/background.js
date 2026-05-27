@@ -183,7 +183,7 @@ importScripts('features/automation-badge.js');
             attached.forEach(function(tid) {
               if (state.getClientIdByTabId(tid) === clientId && !state.isPreExistingTab(tid)) {
                 Logger.info('[TabGroups] Re-grouping tab', tid, 'for client:', clientId);
-                var ctx = { _state: state, _wsManager: wsManager, clientId: clientId };
+                var ctx = { _state: state, _wsManager: wsManager, clientId: clientId, mode: state.mode };
                 SpecialHandler.addTabToAutomationGroup(tid, clientId, null, ctx);
               }
             });
@@ -210,17 +210,17 @@ importScripts('features/automation-badge.js');
         if (clientId) {
           var cachedGroupId = state.getGroupIdForClient(clientId);
           if (cachedGroupId) {
-            Logger.info('[Tabs] Tab', tabId, 'left group, re-adding to cached group:', cachedGroupId);
-            chrome.tabs.group({ tabIds: tabId, groupId: cachedGroupId }, function() {
-              if (chrome.runtime.lastError) {
-                Logger.warn('[Tabs] Failed to re-add tab to group:', chrome.runtime.lastError.message);
-                var ctx = { _state: state, _wsManager: wsManager, clientId: clientId };
-                SpecialHandler.addTabToAutomationGroup(tabId, clientId, null, ctx);
+                Logger.info('[Tabs] Tab', tabId, 'left group, re-adding to cached group:', cachedGroupId);
+                chrome.tabs.group({ tabIds: tabId, groupId: cachedGroupId }, function() {
+                  if (chrome.runtime.lastError) {
+                    Logger.warn('[Tabs] Failed to re-add tab to group:', chrome.runtime.lastError.message);
+                    var ctx = { _state: state, _wsManager: wsManager, clientId: clientId, mode: state.mode };
+                    SpecialHandler.addTabToAutomationGroup(tabId, clientId, null, ctx);
               }
             });
           } else {
             Logger.info('[Tabs] Tab', tabId, 'left group, no cached groupId — delegating to addTabToAutomationGroup');
-            var ctx = { _state: state, _wsManager: wsManager, clientId: clientId };
+            var ctx = { _state: state, _wsManager: wsManager, clientId: clientId, mode: state.mode };
             SpecialHandler.addTabToAutomationGroup(tabId, clientId, null, ctx);
           }
         }
@@ -319,7 +319,7 @@ importScripts('features/automation-badge.js');
           }
         });
 
-        var ctx = { _state: state, _wsManager: wsManager, clientId: openerClientId };
+        var ctx = { _state: state, _wsManager: wsManager, clientId: openerClientId, mode: state.mode };
         SpecialHandler.addTabToAutomationGroup(tabId, openerClientId, null, ctx);
 
         Logger.info('[Tabs] Sending Target.attachedToTarget event');

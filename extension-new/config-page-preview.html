@@ -254,6 +254,27 @@
     .status-dot.error { background: #f44336; box-shadow: 0 0 0 2px rgba(244, 67, 54, 0.2); }
     .status-dot.disabled { background: #9e9e9e; }
 
+    .status-connected { color: #4caf50; font-size: 11px; font-weight: 600; }
+    .status-error { color: #f44336; font-size: 11px; font-weight: 600; }
+    .status-error-hint {
+      display: block;
+      font-size: 11px;
+      margin-top: 4px;
+      color: #999;
+    }
+    .status-error-hint code {
+      background: rgba(244, 67, 54, 0.1);
+      color: #f44336;
+      padding: 2px 4px;
+      border-radius: 3px;
+      font-family: monospace;
+    }
+    .status-disabled { color: #9e9e9e; font-size: 11px; }
+    .conn-config-status {
+      margin-top: 4px;
+      font-size: 11px;
+    }
+
     .conn-config-item input[type="checkbox"] {
       width: 16px;
       height: 16px;
@@ -849,6 +870,9 @@
                 <option value="create">创建模式</option>
                 <option value="takeover">接管模式</option>
               </select>
+              <div id="modeHint" style="display:none; font-size:11px; color:#999; margin-top:4px; grid-column:1/-1;">
+                🔗 接管模式将使用端口 <span id="takeoverPortHint"></span> 作为 CDP 端点
+              </div>
               <button class="btn btn-primary btn-sm" id="addConnBtn">添加连接</button>
             </div>
           </div>

@@ -102,7 +102,7 @@ The server will start on `localhost:9221`.
 
 #### 3. Connect the Extension
 
-Click the extension icon, enter the server address in the configuration page, and click "Save and Connect".
+Click the extension icon, then click **打开完整配置** to open the configuration page. Add a connection: fill in Name (e.g., "local"), WebSocket URL (default `ws://localhost:9221/plugin`), and Mode (create/takeover). The CDP address will be displayed (e.g., `http://localhost:9221` for create mode, `http://localhost:9222` for takeover mode). Copy it and use it in Playwright: `chromium.connectOverCDP('http://localhost:9221')`.
 
 ### 3. Client Connection
 

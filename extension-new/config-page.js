@@ -80,6 +80,12 @@
     return 'disabled';
   }
 
+  function getStatusHtml(status) {
+    if (status === 'connected') return '<span class="status-connected">已连接</span>';
+    if (status === 'error') return '<span class="status-error">连接失败</span><br><span class="status-error-hint">💡 运行 <code>cdp-tunnel diagnose</code> 排查</span>';
+    return '<span class="status-disabled">未连接</span>';
+  }
+
   function renderConnections(connections) {
     if (!connections || connections.length === 0) {
       elements.connConfigList.innerHTML =
@@ -96,6 +102,7 @@
       var statusClass = getStatusClass(conn.id, conn.enabled);
       var isActive = conn.enabled && statusClass === 'connected';
       var cdpAddr = getCdpAddress(conn.url, conn.mode);
+      var statusHtml = getStatusHtml(statusClass);
       html +=
         '<div class="conn-config-item' + (isActive ? ' active' : '') + '" data-id="' + conn.id + '">' +
           '<input type="checkbox" class="conn-toggle" data-id="' + conn.id + '"' + (conn.enabled ? ' checked' : '') + ' title="启用/禁用">' +
@@ -104,6 +111,7 @@
             '<div class="conn-config-tag">' + (conn.mode === 'takeover' ? '🔗 ' : '🆕 ') + escapeHtml(conn.tag) + '</div>' +
             '<div class="conn-config-url" title="' + escapeAttr(conn.url) + '">WS:  ' + escapeHtml(conn.url) + '</div>' +
             (cdpAddr ? '<div class="conn-config-cdp">CDP: <span class="cdp-addr" data-cdp="' + escapeAttr(cdpAddr) + '">' + escapeHtml(cdpAddr) + '</span> <button class="btn-copy-cdp" data-cdp="' + escapeAttr(cdpAddr) + '" title="复制 CDP 地址">📋</button></div>' : '') +
+            '<div class="conn-config-status">' + statusHtml + '</div>' +
           '</div>' +
           '<button class="btn-delete" data-id="' + conn.id + '" title="删除">删除</button>' +
         '</div>';
@@ -324,6 +332,23 @@
         Config.setAutoMute(e.target.checked);
       }
       addLog('action', e.target.checked ? '自动静音已开启' : '自动静音已关闭');
+    });
+
+    elements.inputMode.addEventListener('change', function(e) {
+      var modeHint = document.getElementById('modeHint');
+      var takeoverPortHint = document.getElementById('takeoverPortHint');
+      var url = elements.newConnUrl.value;
+      
+      if (e.target.value === 'takeover') {
+        var match = url.match(/:(\d+)/);
+        if (match) {
+          var port = parseInt(match[1]) + 1;
+          takeoverPortHint.textContent = port;
+          modeHint.style.display = 'block';
+        }
+      } else {
+        modeHint.style.display = 'none';
+      }
     });
 
     var versionBadge = document.getElementById('versionBadge');

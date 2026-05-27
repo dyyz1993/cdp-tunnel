@@ -27,7 +27,16 @@
     connectionList.innerHTML = '';
 
     if (!connections || connections.length === 0) {
-      connectionList.innerHTML = '<div class="empty-hint">尚未配置连接</div>';
+      var guideHtml = `
+        <div class="first-time-guide">
+          <div class="guide-icon">👋</div>
+          <div class="guide-text">
+            <strong>首次使用？</strong><br>
+            请先启动 cdp-tunnel server，然后点击下方按钮配置连接
+          </div>
+        </div>
+      `;
+      connectionList.innerHTML = guideHtml;
       return;
     }
 

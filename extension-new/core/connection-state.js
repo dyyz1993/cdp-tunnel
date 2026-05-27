@@ -27,6 +27,7 @@ function ConnectionState(connectionId, mode) {
   this.browserContextIds = new Set(['default']);
   this.screencastPollingSessions = new Map();
   this.automatedTabs = new Set();
+  this._groupCreationPromises = new Map();
 }
 
 ConnectionState.prototype.mapSession = function(sessionId, tabId, targetId) {
@@ -260,6 +261,18 @@ ConnectionState.prototype.removeGroupForClient = function(clientId) {
   this.clientIdToGroupId.delete(clientId);
 };
 
+ConnectionState.prototype.setGroupCreationPromise = function(clientId, promise) {
+  if (promise) {
+    this._groupCreationPromises.set(clientId, promise);
+  } else {
+    this._groupCreationPromises.delete(clientId);
+  }
+};
+
+ConnectionState.prototype.getGroupCreationPromise = function(clientId) {
+  return this._groupCreationPromises.get(clientId) || null;
+};
+
 ConnectionState.prototype.addPreExistingTab = function(tabId) {
   this.preExistingTabIds.add(tabId);
 };
@@ -335,6 +348,7 @@ ConnectionState.prototype.clearAllState = function() {
   this.pendingCreatedTabUrls.clear();
   this.cdpCreatedTabIds.clear();
   this.cdpClients = [];
+  this._groupCreationPromises.clear();
 };
 
 ConnectionState.prototype.persist = function(tabId, attached) {

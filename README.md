@@ -55,43 +55,39 @@
 
 ## Quick Start
 
-### Option 1: Install via npm (Recommended)
+### Option 1: Install Extension Only (No npm needed)
+
+Download and install the Chrome extension directly:
+
+1. Download [`cdp-tunnel-extension.zip`](https://github.com/dyyz1993/cdp-tunnel/releases/latest/download/cdp-tunnel-extension.zip) from the latest release
+2. Unzip it
+3. Open `chrome://extensions/` in Chrome
+4. Enable **Developer mode** (top right)
+5. Click **Load unpacked** → select the unzipped folder
+6. Start the proxy server separately (see Option 2 or 3 below)
+
+### Option 2: Install via npm (Recommended)
 
 ```bash
-# Install globally
+# One command to set up everything
+npx cdp-tunnel setup
+
+# Or install globally
 npm install -g cdp-tunnel
-
-# Start server
-cdp-tunnel start
-
-# Check status
-cdp-tunnel status
-
-# Install Chrome extension (opens interactive guide)
-cdp-tunnel extension
+cdp-tunnel setup        # Start server + auto-load extension into Chrome
+cdp-tunnel status       # Check status
+cdp-tunnel diagnose     # Diagnose connection issues
 ```
-
-### Option 2: Download from GitHub Releases
-
-1. Go to [GitHub Releases](https://github.com/dyyz1993/cdp-tunnel/releases)
-2. Download `cdp-tunnel-extension.zip` from the latest release
-3. Unzip the file
-4. Open `chrome://extensions/` in Chrome
-5. Enable "Developer mode"
-6. Click "Load unpacked"
-7. Select the unzipped extension directory
 
 ### Option 3: Manual Installation
 
 #### 1. Start the Proxy Server
 
 ```bash
-cd server
-npm install
-node proxy-server.js
+npx cdp-tunnel start
+# or manually:
+npx cdp-tunnel start -p 9221
 ```
-
-The server will start on `localhost:9221`.
 
 #### 2. Install Chrome Extension
 

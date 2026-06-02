@@ -68,7 +68,7 @@ function runTest(test, index, total) {
       cwd: __dirname,
       env: {
         ...process.env,
-        CHROME_PATH: '/Applications/Chromium.app/Contents/MacOS/Chromium',
+        CHROME_PATH: process.env.CHROME_PATH || '/Applications/Chromium.app/Contents/MacOS/Chromium',
         CHROMIUM_FLAGS: '--headless=new',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -197,7 +197,7 @@ async function main() {
   console.log('  CDP TUNNEL — FULL REGRESSION TEST RUNNER');
   console.log('═'.repeat(72));
   console.log(`  Tests:    ${tests.length}`);
-  console.log(`  Browser:  /Applications/Chromium.app/Contents/MacOS/Chromium`);
+  console.log(`  Browser:  ${process.env.CHROME_PATH || '/Applications/Chromium.app/Contents/MacOS/Chromium'}`);
   console.log(`  Mode:     --headless=new`);
   console.log(`  Tiers:    ${SKIP_EXTENDED ? 'core + new (extended skipped)' : 'core + new + extended'}`);
   console.log(`  Started:  ${new Date().toISOString()}`);

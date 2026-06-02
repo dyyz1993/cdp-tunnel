@@ -278,6 +278,45 @@ var SpecialHandler = (function() {
       });
       return;
     }
+    var groupPromise = state ? state.getGroupCreationPromise(clientId) : null;
+    if (groupPromise) {
+      Logger.info('[TabGroup] No cached groupId, waiting for _createGroupForClient promise for client:', clientId);
+      var waited = false;
+      var waitTimer = setTimeout(function() {
+        if (waited) return;
+        waited = true;
+        Logger.warn('[TabGroup] _createGroupForClient wait timed out (3s) for client:', clientId);
+        doGroupQuery(tabId, clientId, baseName, retries, callback, context);
+      }, 3000);
+      groupPromise.then(function(resolvedId) {
+        if (waited) return;
+        clearTimeout(waitTimer);
+        waited = true;
+        if (resolvedId) {
+          Logger.info('[TabGroup] _createGroupForClient resolved with groupId:', resolvedId);
+          chrome.tabs.group({ tabIds: tabId, groupId: resolvedId }, function() {
+            if (chrome.runtime.lastError) {
+              Logger.warn('[TabGroup] Failed to add tab to resolved group:', chrome.runtime.lastError.message);
+              doGroupQuery(tabId, clientId, baseName, retries, callback, context);
+            } else {
+              updateTabGroupName(clientId, state, wsManager, context ? context.mode : null);
+              Logger.info('[TabGroup] Tab', tabId, 'added to pre-created group:', resolvedId);
+              if (callback) callback(true);
+            }
+          });
+        } else {
+          Logger.warn('[TabGroup] _createGroupForClient resolved with null');
+          doGroupQuery(tabId, clientId, baseName, retries, callback, context);
+        }
+      }).catch(function(err) {
+        if (waited) return;
+        clearTimeout(waitTimer);
+        waited = true;
+        Logger.error('[TabGroup] _createGroupForClient promise rejected:', err);
+        doGroupQuery(tabId, clientId, baseName, retries, callback, context);
+      });
+      return;
+    }
     doGroupQuery(tabId, clientId, baseName, retries, callback, context);
   }
 
@@ -334,6 +373,7 @@ var SpecialHandler = (function() {
           Logger.info('[TabGroup] chrome.tabs.group returned groupId:', groupId);
           EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'groupCreated', tabId: tabId, groupId: groupId }, null, wsManager);
           if (groupId) {
+            if (state) state.setGroupIdForClient(clientId, groupId);
             if (chrome.tabGroups) {
               chrome.tabGroups.update(groupId, {
                 title: baseName,
@@ -344,14 +384,12 @@ var SpecialHandler = (function() {
                   Logger.error('[TabGroup] Failed to update group:', chrome.runtime.lastError.message);
                   EventBuilder.send('CDPTunnel.debug', { source: 'doGroup', phase: 'updateGroup', error: chrome.runtime.lastError.message, groupId: groupId }, null, wsManager);
                 } else {
-                  if (state) state.setGroupIdForClient(clientId, groupId);
                   updateTabGroupName(clientId, state, wsManager, context ? context.mode : null);
                   Logger.info('[TabGroup] Group updated:', groupId, baseName);
                 }
                 if (callback) callback(true);
               });
             } else {
-              if (state) state.setGroupIdForClient(clientId, groupId);
               Logger.info('[TabGroup] Group created but tabGroups.update unavailable (headless):', groupId);
               if (callback) callback(true);
             }
@@ -378,11 +416,14 @@ var SpecialHandler = (function() {
       var baseName = CDPUtils.getGroupBaseName(clientId, connectionTag, mode);
       var newName = baseName + ' (' + tabs.length + ')';
 
+      if (chrome.runtime.lastError || tabs.length === 0) return;
       chrome.tabGroups.update(groupId, {
         title: newName
       }, function() {
         if (chrome.runtime.lastError) {
-          Logger.error('[TabGroup] Failed to update group name:', chrome.runtime.lastError.message);
+          if (!chrome.runtime.lastError.message.includes('No group with id')) {
+            Logger.error('[TabGroup] Failed to update group name:', chrome.runtime.lastError.message);
+          }
         } else {
           Logger.info('[TabGroup] Updated group name:', newName);
         }

@@ -178,6 +178,7 @@ importScripts('features/automation-badge.js');
           if (state.getGroupIdForClient(clientId) === removedGroupId) {
             Logger.info('[TabGroups] Clearing cached groupId for client:', clientId);
             state.setGroupIdForClient(clientId, null);
+            state.setGroupCreationPromise(clientId, null);
 
             var attached = state.getAttachedTabIds();
             attached.forEach(function(tid) {
@@ -209,19 +210,20 @@ importScripts('features/automation-badge.js');
         var clientId = state.getClientIdByTabId(tabId);
         if (clientId) {
           var cachedGroupId = state.getGroupIdForClient(clientId);
+          var groupPromise = state.getGroupCreationPromise(clientId);
           if (cachedGroupId) {
-                Logger.info('[Tabs] Tab', tabId, 'left group, re-adding to cached group:', cachedGroupId);
-                chrome.tabs.group({ tabIds: tabId, groupId: cachedGroupId }, function() {
-                  if (chrome.runtime.lastError) {
-                    Logger.warn('[Tabs] Failed to re-add tab to group:', chrome.runtime.lastError.message);
-                    var ctx = { _state: state, _wsManager: wsManager, clientId: clientId, mode: state.mode };
-                    SpecialHandler.addTabToAutomationGroup(tabId, clientId, null, ctx);
+            Logger.info('[Tabs] Tab', tabId, 'left group, re-adding to cached group:', cachedGroupId);
+            chrome.tabs.group({ tabIds: tabId, groupId: cachedGroupId }, function() {
+              if (chrome.runtime.lastError) {
+                Logger.warn('[Tabs] Failed to re-add tab to group:', chrome.runtime.lastError.message);
+                var ctx = { _state: state, _wsManager: wsManager, clientId: clientId, mode: state.mode };
+                SpecialHandler.addTabToAutomationGroup(tabId, clientId, null, ctx);
               }
             });
+          } else if (!groupPromise) {
+            Logger.info('[Tabs] Tab', tabId, 'left group, no cache and no pending creation — skipping (onRemoved handles re-group)');
           } else {
-            Logger.info('[Tabs] Tab', tabId, 'left group, no cached groupId — delegating to addTabToAutomationGroup');
-            var ctx = { _state: state, _wsManager: wsManager, clientId: clientId, mode: state.mode };
-            SpecialHandler.addTabToAutomationGroup(tabId, clientId, null, ctx);
+            Logger.info('[Tabs] Tab', tabId, 'left group, group creation pending — skipping');
           }
         }
       }

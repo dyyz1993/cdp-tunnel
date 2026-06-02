@@ -295,6 +295,7 @@ var WebSocketConnection = (function() {
         Logger.info('[WS:' + self.connectionId + '] Client disconnected:', message.clientId);
         var discClientId = message.clientId;
         self._groupCreationPending.delete(discClientId);
+        self.state.setGroupCreationPromise(discClientId, null);
         self._closeTabGroupByClientId(discClientId).then(function() {
           return new Promise(function(resolve) {
             self._closeTabsByClientId(discClientId, resolve);
@@ -313,6 +314,7 @@ var WebSocketConnection = (function() {
           if (self.state.getCDPClients().length === 0) {
             self.state.setHasConnectedClient(false);
           }
+          self._cleanupStaleState(discClientId);
           self._broadcastStateUpdate();
         });
         break;
@@ -373,7 +375,6 @@ var WebSocketConnection = (function() {
     return new Promise(function(resolve) {
       var timeoutId = setTimeout(function() {
         Logger.warn('[WS:' + self.connectionId + '] closeTabGroupByClientId timeout for client:', clientId, '— forcing cleanup');
-        self._cleanupStaleState(clientId);
         resolve();
       }, 5000);
 
@@ -572,11 +573,17 @@ var WebSocketConnection = (function() {
 
     self._groupCreationPending.add(clientId);
 
+    var resolveGroupReady;
+    var readyPromise = new Promise(function(resolve) { resolveGroupReady = resolve; });
+    self.state.setGroupCreationPromise(clientId, readyPromise);
+
     var baseName = CDPUtils.getGroupBaseName(clientId, self.config ? self.config.tag : null, mode);
     chrome.tabs.query({ currentWindow: true }, function(tabs) {
       if (!tabs || tabs.length === 0) {
         Logger.warn('[WS:' + self.connectionId + '] No tabs found for group creation');
         self._groupCreationPending.delete(clientId);
+        self.state.setGroupCreationPromise(clientId, null);
+        resolveGroupReady(null);
         return;
       }
       var windowId = tabs[0].windowId;
@@ -584,9 +591,14 @@ var WebSocketConnection = (function() {
         if (chrome.runtime.lastError) {
           Logger.warn('[WS:' + self.connectionId + '] Failed to create group on connect:', chrome.runtime.lastError.message);
           self._groupCreationPending.delete(clientId);
+          self.state.setGroupCreationPromise(clientId, null);
+          resolveGroupReady(null);
           return;
         }
         self._groupCreationPending.delete(clientId);
+        if (!self.state.getGroupIdForClient(clientId)) {
+          self.state.setGroupIdForClient(clientId, groupId);
+        }
         chrome.tabGroups.update(groupId, {
           title: baseName,
           color: CDPUtils.getGroupColorForClient(clientId),
@@ -595,9 +607,10 @@ var WebSocketConnection = (function() {
           if (chrome.runtime.lastError) {
             Logger.warn('[WS:' + self.connectionId + '] Failed to set group title:', chrome.runtime.lastError.message);
           }
+          self.state.setGroupCreationPromise(clientId, null);
+          resolveGroupReady(groupId);
+          Logger.info('[WS:' + self.connectionId + '] Created group for client:', clientId, 'groupId:', groupId, 'title:', baseName);
         });
-        self.state.setGroupIdForClient(clientId, groupId);
-        Logger.info('[WS:' + self.connectionId + '] Created group for client:', clientId, 'groupId:', groupId, 'title:', baseName);
       });
     });
   };

@@ -906,15 +906,105 @@ program.addHelpText('after', `
   $ cdp-tunnel start              启动服务（自动启动 Chrome）
   $ cdp-tunnel start --auto-restart   Chrome 断连时自动重启
   $ cdp-tunnel start --watchdog       服务崩溃时自动重启
+  $ cdp-tunnel setup              一键安装：启动服务 + 加载扩展
   $ cdp-tunnel status             查看状态
   $ cdp-tunnel update             检查并更新
   $ cdp-tunnel diagnose          诊断连接问题
   $ cdp-tunnel extension          安装 Chrome 扩展
 
 快速开始:
-  $ npm install -g cdp-tunnel
-  $ cdp-tunnel start              # 一行命令搞定！
+  $ npx cdp-tunnel setup          # 无需全局安装，一键搞定！
 `);
+
+program
+  .command('setup')
+  .description('一键安装：启动服务器 + 自动加载 Chrome 扩展')
+  .option('-p, --port <port>', '指定端口', parseInt)
+  .action(async (options) => {
+    const globalConfig = getConfig();
+    const port = options.port || globalConfig.port || 9221;
+    const instanceConfig = getConfig(port);
+    instanceConfig.port = port;
+    saveConfig(instanceConfig, port);
+
+    console.log('');
+    log('bold', 'CDP Tunnel 一键安装');
+    console.log('');
+
+    if (isServerRunning(port)) {
+      log('green', `  Proxy: 已运行 (端口 ${port})`);
+    } else {
+      ensureInstanceDir(port);
+      startServer(port, false, false);
+      log('green', `  Proxy: 已启动 (端口 ${port})`);
+    }
+
+    await new Promise(r => setTimeout(r, 1000));
+
+    const extStatus = checkChromeExtension(port);
+    if (extStatus.connected) {
+      log('green', '  扩展: 已连接');
+      console.log('');
+      log('green', '  Ready!');
+      log('cyan', `  CDP: http://localhost:${port}`);
+      process.exit(0);
+      return;
+    }
+
+    const { isChromeRunning, launchChromeWithExtension } = require('./chrome-manager');
+    const chromeRunning = isChromeRunning();
+
+    if (!chromeRunning) {
+      log('cyan', '  Chrome: 启动中 (带扩展)...');
+      const launched = launchChromeWithExtension();
+      if (launched) {
+        const connected = await waitForPluginConnection(port, 15000);
+        if (connected) {
+          log('green', '  扩展: 已连接');
+        } else {
+          log('yellow', '  扩展: 请点击 Chrome 工具栏上的 CDP Bridge 图标');
+        }
+      } else {
+        log('yellow', '  Chrome: 无法自动启动');
+        log('cyan', '  请手动安装扩展:');
+        console.log('');
+        log('gray', '    1. 打开 chrome://extensions/');
+        log('gray', '    2. 开启开发者模式');
+        log('gray', `    3. 加载: ${getExtensionPath()}`);
+        const connected = await waitForPluginConnection(port, 120000);
+        if (connected) {
+          log('green', '  扩展: 已连接');
+        } else {
+          log('yellow', '  超时，请稍后运行: cdp-tunnel start');
+          process.exit(1);
+        }
+      }
+    } else {
+      log('yellow', '  Chrome: 已运行，需要加载扩展');
+      log('cyan', '  正在打开引导...');
+
+      const guidePath = generateGuideHtml();
+      const platform = os.platform();
+      try {
+        if (platform === 'darwin') execSync('open "' + guidePath + '"');
+        else if (platform === 'win32') execSync('start "" "' + guidePath + '"');
+        else execSync('xdg-open "' + guidePath + '"');
+      } catch {}
+
+      const connected = await waitForPluginConnection(port, 120000);
+      if (connected) {
+        log('green', '  扩展: 已连接');
+      } else {
+        log('yellow', '  超时，请稍后运行: cdp-tunnel start');
+        process.exit(1);
+      }
+    }
+
+    console.log('');
+    log('green', '  Ready!');
+    log('cyan', `  CDP: http://localhost:${port}`);
+    process.exit(0);
+  });
 
 ensureConfigDir();
 migrateFromLegacy();

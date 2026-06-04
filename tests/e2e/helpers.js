@@ -3,16 +3,20 @@ const WebSocket = require('ws');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 const CHROME_PATH = process.env.CHROME_PATH || '/Users/xuyingzhou/Project/temporary/pi-agent-chat/chrome/mac_arm-149.0.7827.54/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
 const EXTENSION_SRC = path.join(__dirname, '..', '..', 'extension-new');
 const PROXY_SERVER = path.join(__dirname, '..', '..', 'server', 'proxy-server.js');
 const CONFIG_FILE = path.join(EXTENSION_SRC, 'utils', 'config.js');
 
+const INSTANCES_DIR = path.join(os.homedir(), '.cdp-tunnel', 'instances');
+
 let _proxyProcess = null;
 let _chromeProcess = null;
 let _requestId = 0;
 let _originalConfig = null;
+let _testPort = null;
 
 function log(tag, msg) {
   console.log(`[${new Date().toISOString().substring(11, 19)}] [${tag}] ${msg}`);
@@ -76,6 +80,7 @@ function collectCDPEvents(ws, methodFilter, duration = 5000) {
 }
 
 async function startProxy(port) {
+  _testPort = port;
   _proxyProcess = spawn('node', [PROXY_SERVER], {
     env: { ...process.env, PORT: String(port), LOG_LEVEL: 'warn' },
     stdio: 'pipe'
@@ -159,6 +164,11 @@ async function cleanup() {
   if (_originalConfig) {
     try { fs.writeFileSync(CONFIG_FILE, _originalConfig); } catch {}
     _originalConfig = null;
+  }
+  if (_testPort) {
+    const instanceDir = path.join(INSTANCES_DIR, String(_testPort));
+    try { fs.rmSync(instanceDir, { recursive: true, force: true }); } catch {}
+    _testPort = null;
   }
   await sleep(1000);
 }

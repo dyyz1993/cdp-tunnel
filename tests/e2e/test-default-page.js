@@ -26,6 +26,7 @@ const CHROME_PATH = process.env.CHROME_PATH || '/Applications/Chromium.app/Conte
 const EXTENSION_PATH = path.resolve(__dirname, '../../extension-new');
 const PROXY_PATH = path.resolve(__dirname, '../../server/proxy-server.js');
 const CONFIG_PATH = path.join(EXTENSION_PATH, 'utils', 'config.js');
+const INSTANCES_DIR = path.join(require('os').homedir(), '.cdp-tunnel', 'instances');
 
 function log(tag, msg) {
   console.log(`[${new Date().toISOString().slice(11, 19)}] [${tag}] ${msg}`);
@@ -261,6 +262,9 @@ function killProxy(proc) {
   killChrome(chromeProc);
   killProxy(proxyProc);
   fs.writeFileSync(CONFIG_PATH, configOriginal);
+
+  const instanceDir = path.join(INSTANCES_DIR, String(PORT));
+  try { fs.rmSync(instanceDir, { recursive: true, force: true }); } catch {}
 
   console.log(`\n=== RESULTS: ${passed} passed, ${failed} failed ===`);
   process.exit(failed > 0 ? 1 : 0);

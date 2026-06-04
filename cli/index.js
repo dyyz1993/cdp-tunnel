@@ -12,6 +12,7 @@ const PID_FILE = path.join(CONFIG_DIR, 'server.pid');
 const LOG_FILE = path.join(CONFIG_DIR, 'server.log');
 const EXTENSION_STATE_FILE = path.join(CONFIG_DIR, 'extension-state.json');
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
+const INSTANCE_LIFETIME = 2 * 60 * 60 * 1000; // 2小时
 
 const INSTANCES_DIR = path.join(CONFIG_DIR, 'instances');
 
@@ -52,6 +53,29 @@ function syncExtensionVersion() {
 }
 
 syncExtensionVersion();
+
+function cleanupStaleInstances() {
+  if (!fs.existsSync(INSTANCES_DIR)) return;
+  try {
+    const ports = fs.readdirSync(INSTANCES_DIR);
+    const now = Date.now();
+    let cleaned = 0;
+    ports.forEach(port => {
+      const instanceDir = path.join(INSTANCES_DIR, port);
+      try {
+        const stats = fs.statSync(instanceDir);
+        if (now - stats.mtimeMs > INSTANCE_LIFETIME) {
+          fs.rmSync(instanceDir, { recursive: true, force: true });
+          cleaned++;
+        }
+      } catch {}
+    });
+    if (cleaned > 0) {
+      console.log('');
+      log('gray', `已清理 ${cleaned} 个过期的测试实例`);
+    }
+  } catch {}
+}
 
 function log(color, ...args) {
   const colors = {
@@ -571,6 +595,7 @@ program
   .description('查看服务器状态')
   .option('-p, --port <port>', '指定端口', parseInt)
   .action((options) => {
+    cleanupStaleInstances();
     console.log('');
     console.log('CDP Tunnel 状态');
     console.log('─'.repeat(30));

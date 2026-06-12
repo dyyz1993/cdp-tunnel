@@ -220,10 +220,12 @@ importScripts('features/automation-badge.js');
                 SpecialHandler.addTabToAutomationGroup(tabId, clientId, null, ctx);
               }
             });
-          } else if (!groupPromise) {
-            Logger.info('[Tabs] Tab', tabId, 'left group, no cache and no pending creation — skipping (onRemoved handles re-group)');
-          } else {
+          } else if (groupPromise) {
             Logger.info('[Tabs] Tab', tabId, 'left group, group creation pending — skipping');
+          } else {
+            Logger.info('[Tabs] Tab', tabId, 'left group, no cached groupId — force re-group');
+            var ctx = { _state: state, _wsManager: wsManager, clientId: clientId, mode: state.mode };
+            SpecialHandler.addTabToAutomationGroup(tabId, clientId, null, ctx);
           }
         }
       }

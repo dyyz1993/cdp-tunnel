@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const CHROME_PATH = process.env.CHROME_PATH || '/Users/xuyingzhou/Project/temporary/pi-agent-chat/chrome/mac_arm-149.0.7827.54/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
+const CHROME_PATH = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const EXTENSION_SRC = path.join(__dirname, '..', '..', 'extension-new');
 const PROXY_SERVER = path.join(__dirname, '..', '..', 'server', 'proxy-server.js');
 const CONFIG_FILE = path.join(EXTENSION_SRC, 'utils', 'config.js');

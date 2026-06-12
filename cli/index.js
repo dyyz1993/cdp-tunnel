@@ -58,21 +58,18 @@ function cleanupStaleInstances() {
   if (!fs.existsSync(INSTANCES_DIR)) return;
   try {
     const ports = fs.readdirSync(INSTANCES_DIR);
-    const now = Date.now();
     let cleaned = 0;
     ports.forEach(port => {
-      const instanceDir = path.join(INSTANCES_DIR, port);
-      try {
-        const stats = fs.statSync(instanceDir);
-        if (now - stats.mtimeMs > INSTANCE_LIFETIME) {
-          fs.rmSync(instanceDir, { recursive: true, force: true });
-          cleaned++;
-        }
-      } catch {}
+      const p = parseInt(port);
+      if (isNaN(p)) return;
+      if (!isServerRunning(p)) {
+        fs.rmSync(path.join(INSTANCES_DIR, port), { recursive: true, force: true });
+        cleaned++;
+      }
     });
     if (cleaned > 0) {
       console.log('');
-      log('gray', `已清理 ${cleaned} 个过期的测试实例`);
+      log('gray', `已清理 ${cleaned} 个已停止的实例`);
     }
   } catch {}
 }

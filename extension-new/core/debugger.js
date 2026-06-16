@@ -72,6 +72,10 @@ var DebuggerManager = (function() {
 })();
 `;
 
+  // 跟踪每个 tab 最后一次非 about:blank 的导航 url
+  // 用于过滤 attach 时 Chrome 重放的 about:blank frameNavigated 事件
+  var tabLastRealUrl = {};
+
   function attach(tabId, connState) {
     var state = connState || _getAnyStateForTab(tabId);
     if (tabId == null) {
@@ -289,6 +293,23 @@ var DebuggerManager = (function() {
       }
     }
 
+    // 过滤 attach 时 Chrome 重放的 about:blank frameNavigated 事件
+    // 原生 Chrome CDP 中，navigate 成功后不会回退到 about:blank
+    if (method === 'Page.frameNavigated' && params && params.frame) {
+      var navUrl = params.frame.url || '';
+      var tabIdKey = String(source.tabId);
+
+      if (navUrl && navUrl !== 'about:blank') {
+        // 记录真实导航 url
+        tabLastRealUrl[tabIdKey] = navUrl;
+      } else if (navUrl === 'about:blank' && tabLastRealUrl[tabIdKey]) {
+        // tab 已经导航到真实 url，但收到 about:blank 的 frameNavigated
+        // 这是 attach 时 Chrome 重放的旧事件，过滤掉
+        Logger.info('[Event] Filtering stale about:blank frameNavigated for tab', source.tabId, '(real url:', tabLastRealUrl[tabIdKey] + ')');
+        return;
+      }
+    }
+
     for (var i = 0; i < sessionIds.length; i++) {
       EventBuilder.send(method, params, sessionIds[i], wsManager);
     }
@@ -296,6 +317,8 @@ var DebuggerManager = (function() {
 
   function handleDetach(source, reason) {
     Logger.info('[Debugger] Detached from tab', source.tabId, ', reason:', reason);
+
+    delete tabLastRealUrl[String(source.tabId)];
 
     var entry = ConnectionManager.getConnectionByTabId(source.tabId);
     var state = entry ? entry.state : null;

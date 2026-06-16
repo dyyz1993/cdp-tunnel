@@ -501,7 +501,8 @@ var LocalHandler = (function() {
       targetId: target.id || String(target.tabId),
       type: target.type || 'page',
       title: target.title || '',
-      url: target.url || '',
+      // 原生 Chrome CDP 中 page 类型 target 的 url 一定存在（至少 "about:blank"）
+      url: target.url || 'about:blank',
       attached: !!target.attached,
       canAccessOpener: false,
       browserContextId: 'default'

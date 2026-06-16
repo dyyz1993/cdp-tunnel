@@ -361,17 +361,9 @@ async function handleHttpRequest(req, res) {
     if (url.pathname === '/json' || url.pathname === '/json/' ||
         url.pathname === '/json/list' || url.pathname === '/json/list/' ||
         url.pathname.match(/^\/json\/list\/[^/]+$/)) {
-        // create 模式（9221）：HTTP /json/list 无 clientId 上下文，无法做归属过滤
-        // 标准客户端（Playwright/Puppeteer）走 WS Target.setAutoAttach，不依赖此接口
-        // takeover 模式（9222）：操作的是用户自己的 tab，返回全部是预期行为
-        if (!req._takeoverMode) {
-            if (shouldLog('info')) {
-                console.log(`[JSON LIST] create mode — returning empty list for isolation`);
-            }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify([]));
-            return;
-        }
+        // 注意：Playwright connectOverCDP 和 Puppeteer connect 都依赖 /json/list 发现 targets
+        // HTTP 端无 clientId 上下文，无法做归属过滤，但 attach 路径（handlePageConnection）有归属校验
+        // 所以即使列表可见，无归属 target 也无法被 attach（close 1008）
         const pluginWs = resolvePluginFromUrl(url);
         const targets = await requestTargetsFromPlugin(pluginWs);
         const browserId = pluginWs ? pluginWs.pluginId : BROWSER_ID;

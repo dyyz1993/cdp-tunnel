@@ -58,6 +58,45 @@ async function runTest() {
         await sleep(300);
         log('TEST', 'Plugin connected and initialized');
 
+        // Step 2b: Connect a client and register targetId ownership
+        // 这样 handlePageConnection 的归属校验才能通过
+        log('TEST', 'Connecting mock client to register target ownership...');
+        const clientWs = new WebSocket(`ws://localhost:${PORT}/client`);
+        await new Promise((resolve, reject) => {
+            clientWs.on('open', resolve);
+            clientWs.on('error', reject);
+        });
+        await sleep(300);
+
+        // 监听 plugin 收到的 createTarget 请求，响应之以注册 targetId 归属
+        let clientConnectedEvent = null;
+        pluginWs.on('message', (data) => {
+            try {
+                const msg = JSON.parse(data.toString());
+                // 捕获 client-connected 事件拿到 clientId
+                if (msg.type === 'client-connected' && msg.clientId) {
+                    clientConnectedEvent = msg;
+                }
+                // 响应 createTarget 请求，返回 mock targetId 以注册归属
+                if (msg.method === 'Target.createTarget' && msg.__clientId) {
+                    pluginWs.send(JSON.stringify({
+                        id: msg.id,
+                        result: { targetId: TARGET_ID }
+                    }));
+                }
+            } catch {}
+        });
+
+        // 发 setAutoAttach 触发 server 自动创建默认页
+        clientWs.send(JSON.stringify({
+            id: 1,
+            method: 'Target.setAutoAttach',
+            params: { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }
+        }));
+        await sleep(1000);
+        log('TEST', `Target ownership registered for ${TARGET_ID}`);
+        // 注意：不关闭 clientWs，否则 cleanupClient 会清除 targetIdToClientId 映射
+
         // Step 3: Test /devtools/page/:targetId path
         console.log('\n--- Test Case 1: /devtools/page/:targetId ---');
         const pageReceivedMessages = [];
@@ -153,10 +192,11 @@ async function runTest() {
         browserWs.close();
 
         // Step 7: Additional test - CDP response (id-based) should also not duplicate
+        // 复用已注册的 TARGET_ID（归属校验要求 targetId 在 targetIdToClientId 中有记录）
         console.log('\n--- Test Case 3: CDP response dedup on /devtools/page/ ---');
         await sleep(200);
 
-        const pageWs2 = new WebSocket(`ws://localhost:${PORT}/devtools/page/${TARGET_ID}-resp`);
+        const pageWs2 = new WebSocket(`ws://localhost:${PORT}/devtools/page/${TARGET_ID}`);
         const responseMessages = [];
         await new Promise((resolve, reject) => {
             pageWs2.on('open', resolve);
@@ -194,6 +234,7 @@ async function runTest() {
         pageWs2.close();
 
         // Cleanup
+        clientWs.close();
         pluginWs.close();
         await sleep(200);
 

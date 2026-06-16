@@ -361,6 +361,17 @@ async function handleHttpRequest(req, res) {
     if (url.pathname === '/json' || url.pathname === '/json/' ||
         url.pathname === '/json/list' || url.pathname === '/json/list/' ||
         url.pathname.match(/^\/json\/list\/[^/]+$/)) {
+        // create 模式（9221）：HTTP /json/list 无 clientId 上下文，无法做归属过滤
+        // 标准客户端（Playwright/Puppeteer）走 WS Target.setAutoAttach，不依赖此接口
+        // takeover 模式（9222）：操作的是用户自己的 tab，返回全部是预期行为
+        if (!req._takeoverMode) {
+            if (shouldLog('info')) {
+                console.log(`[JSON LIST] create mode — returning empty list for isolation`);
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify([]));
+            return;
+        }
         const pluginWs = resolvePluginFromUrl(url);
         const targets = await requestTargetsFromPlugin(pluginWs);
         const browserId = pluginWs ? pluginWs.pluginId : BROWSER_ID;
@@ -444,7 +455,8 @@ wss.on('connection', (ws, req) => {
         handleClientConnection(ws, clientInfo, customClientId, targetPluginId, mode);
     } else if (path.startsWith('/devtools/page/')) {
         const targetId = path.replace('/devtools/page/', '');
-        handlePageConnection(ws, clientInfo, targetId);
+        const mode = req._takeoverMode ? 'takeover' : 'create';
+        handlePageConnection(ws, clientInfo, targetId, mode);
     } else {
         console.log(`[REJECTED] Unknown path: ${path} from ${clientInfo.ip}:${clientInfo.port}`);
         ws.close(1008, 'Invalid path. Use /plugin or /client');
@@ -1457,11 +1469,11 @@ function handleClientConnection(ws, clientInfo, customClientId = null, targetPlu
     });
 }
 
-function handlePageConnection(ws, clientInfo, targetId) {
+function handlePageConnection(ws, clientInfo, targetId, mode = 'create') {
     clientConnections.add(ws);
     const id = generateId('page');
     if (shouldLog('info')) {
-        console.log(`\n[PAGE CONNECTED] ID: ${id}, targetId: ${targetId}`);
+        console.log(`\n[PAGE CONNECTED] ID: ${id}, targetId: ${targetId}, mode: ${mode}`);
         console.log(`  - Remote: ${clientInfo.ip}:${clientInfo.port}`);
         console.log(`  - Total client connections: ${clientConnections.size}`);
     }
@@ -1470,17 +1482,31 @@ function handlePageConnection(ws, clientInfo, targetId) {
     ws.isAlive = true;
     ws.cdpTrace = [];
     ws.targetId = targetId;
+    ws.mode = mode;
     ws.lastActivityTime = Date.now();
     clientById.set(id, ws);
 
+    // 查找 target 归属的 plugin
     let plugin = null;
+    let ownerClientId = null;
     for (const p of pluginConnections) {
         const ns = getNamespace(p);
         if (ns.targetIdToClientId.has(targetId)) {
             plugin = p;
+            ownerClientId = ns.targetIdToClientId.get(targetId);
             break;
         }
     }
+
+    // create 模式：target 必须有明确的 clientId 归属，否则拒绝 attach（防止跨 client 越权）
+    if (mode !== 'takeover' && !ownerClientId) {
+        console.log(`[PAGE REJECTED] targetId=${targetId?.substring(0, 8)} has no owner in create mode — possible cross-client attach attempt from ${clientInfo.ip}`);
+        ws.close(1008, 'Target does not belong to any client');
+        clientConnections.delete(ws);
+        clientById.delete(id);
+        return;
+    }
+    // takeover 模式：允许无归属 target（操作的是用户自己的 tab）
     if (!plugin) {
         plugin = pluginConnections.values().next().value;
     }
@@ -1996,7 +2022,10 @@ server.on('error', (err) => {
 
 server.listen(PORT, '0.0.0.0');
 
-const takeoverServer = http.createServer((req, res) => handleHttpRequest(req, res));
+const takeoverServer = http.createServer((req, res) => {
+    req._takeoverMode = true;
+    handleHttpRequest(req, res);
+});
 takeoverServer.on('upgrade', (req, socket, head) => {
     req._takeoverMode = true;
     const url = new URL(req.url, `http://localhost:${TAKEOVER_PORT}`);

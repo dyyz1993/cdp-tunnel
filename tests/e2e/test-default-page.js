@@ -130,8 +130,9 @@ function killProxy(proc) {
   let extReady = false;
   for (let i = 0; i < 60; i++) {
     try {
-      const list = await httpGet(PORT, '/json/list');
-      if ((list || []).filter(t => t.type === 'page').length > 0) {
+      // 用 /json/version 检查 proxy 是否运行（create 模式 /json/list 返回空，不再用于扩展检查）
+      const ver = await httpGet(PORT, '/json/version');
+      if (ver && ver.webSocketDebuggerUrl) {
         extReady = true;
         break;
       }

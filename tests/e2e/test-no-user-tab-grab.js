@@ -66,14 +66,15 @@ function waitForPort(port, timeout = 15000) {
   let extReady = false;
   for (let i = 0; i < 30; i++) {
     try {
+      // 用 /json/version 检查 proxy 是否运行（create 模式 /json/list 返回空，不再用于扩展检查）
       const res = await new Promise((resolve, reject) => {
-        http.get(`http://127.0.0.1:${PORT}/json/list`, (res) => {
+        http.get(`http://127.0.0.1:${PORT}/json/version`, (res) => {
           let data = '';
           res.on('data', c => data += c);
           res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { resolve(null); } });
         }).on('error', reject);
       });
-      if ((res || []).filter(t => t.type === 'page').length > 0) { extReady = true; break; }
+      if (res && res.webSocketDebuggerUrl) { extReady = true; break; }
     } catch {}
     await sleep(2000);
   }

@@ -29,6 +29,7 @@ const TESTS = [
   { file: 'test-multi-connection.js', name: 'Multi Connection', timeout: 300000, tier: 'new' },
   { file: 'test-takeover-mode.js', name: 'Takeover Mode', timeout: 300000, tier: 'new' },
   { file: 'test-no-escape.js', name: 'No Tab Escape', timeout: 300000, tier: 'core' },
+  { file: 'test-input-delivery.js', name: 'Input Event Delivery (keyboard/mouse)', timeout: 180000, tier: 'core' },
 ];
 
 const SKIP_EXTENDED = process.env.SKIP_EXTENDED === '1' || process.env.CI === 'true';

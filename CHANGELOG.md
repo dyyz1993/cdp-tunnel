@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.13] - 2026-06-17
+### Fixed
+- **Input.dispatchKeyEvent / dispatchMouseEvent 在隔离 tab 上丢失**：隔离 tab 默认 `visibility=hidden`（`active:false` + 折叠分组），Chromium 在此状态下丢弃合成输入事件（keyboard/mouse），导致 Playwright/Puppeteer 的 `keyboard.type()`、`mouse.click()` 等操作静默失效。`forward.js` 现在在发送合成输入命令前自动执行 `Page.bringToFront` + 等待 `visibilitychange` + 恢复元素焦点，确保事件能投递到 DOM。`insertText` 和 `Runtime.evaluate` 不受影响（不走合成事件路由），无需此处理。
+
+### Added
+- E2E 测试 `test-input-delivery.js`：验证 keyboard/mouse/click/Enter 四类合成输入事件在隔离 tab 上能正确投递到 DOM
+
 ## [2.5.8] - 2026-05-12
 ### Fixed
 - 修复 `websocket.js` 中 `startGroupMonitor` 函数末尾代码重复导致的 JS 语法错误（该错误导致扩展完全无法加载）

@@ -13,7 +13,7 @@ const CONFIG = {
   PLUGIN_MAX_MISSED_PINGS: 3,
   TAKEOVER_PORT: process.env.TAKEOVER_PORT ? parseInt(process.env.TAKEOVER_PORT) : (parseInt(process.env.PORT || '9221') + 1),
   POOL_TAKEOVER_PORT: process.env.POOL_TAKEOVER_PORT ? parseInt(process.env.POOL_TAKEOVER_PORT) : 9220,
-  POOL_START: process.env.POOL_START ? parseInt(process.env.POOL_START) : 9222,
+  POOL_START: process.env.POOL_START ? parseInt(process.env.POOL_START) : 9231,
   POOL_SIZE: process.env.POOL_SIZE ? parseInt(process.env.POOL_SIZE) : 9
 };
 

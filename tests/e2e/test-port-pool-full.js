@@ -166,9 +166,9 @@ function record(label, pass, detail) {
         }, sid).catch(() => ({ result: { value: '' } }));
         record('Input.insertText', inputVal?.result?.value === 'hello', `value=${inputVal?.result?.value}`);
 
-        // keyboard（需 ensureVisible）
+        // keyboard（需 ensureVisible）——用 text 参数让 keyDown 直接输入字符
         await client1.cdp('Runtime.evaluate', { expression: 'document.getElementById("x").focus()' }, sid).catch(() => {});
-        await client1.cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65 }, sid).catch(() => {});
+        await client1.cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, text: 'a' }, sid).catch(() => {});
         await client1.cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65 }, sid).catch(() => {});
         await sleep(300);
         const afterKey = await client1.cdp('Runtime.evaluate', {

@@ -181,17 +181,25 @@ class PortPoolManager {
       return;
     }
 
+    // 合成输入命令需要 ensureVisible（和 forward.js 的逻辑一致）
+    const SYNTHETIC_INPUT = ['Input.dispatchKeyEvent', 'Input.dispatchMouseEvent'];
+
     // 消息处理：client → plugin（带 portIndex 标记）
-    ws.on('message', (data) => {
+    ws.on('message', async (data) => {
       let msg;
       try { msg = JSON.parse(data.toString()); } catch { return; }
 
       if (msg.id !== undefined) {
+        // 合成输入命令：先 bringToFront + 等待，再发原命令
+        if (SYNTHETIC_INPUT.indexOf(msg.method) >= 0 && msg.sessionId) {
+          await this._ensureVisible(session, pluginWs, msg.sessionId);
+        }
+
         // 命令：分配新 id，记录映射（含 method 名供响应后处理），转发给 plugin
         const newId = `pool${session.portIndex}_${msg.id}`;
         session.pendingRequests.set(newId, {
           originalId: msg.id,
-          method: msg.method,  // 记录方法名，响应时按需过滤
+          method: msg.method,
           clientWs: ws
         });
 
@@ -223,6 +231,10 @@ class PortPoolManager {
 
     // 1. 响应消息：id 以 pool 开头
     if (msg.id && typeof msg.id === 'string' && msg.id.startsWith('pool')) {
+      // 内部命令（ensureVisible 用的）响应直接丢弃
+      if (msg.id.includes('_internal')) {
+        return true;
+      }
       const match = msg.id.match(/^pool(\d+)_(.+)$/);
       if (!match) return false;
 
@@ -298,6 +310,54 @@ class PortPoolManager {
   _parseOriginalId(idStr) {
     const n = parseInt(idStr);
     return isNaN(n) ? idStr : n;
+  }
+
+  /**
+   * 让 tab 变 visible：Page.bringToFront + 等待 + 恢复焦点。
+   * 内部命令用 _internal_ 前缀，handlePluginMessage 会丢弃它们的响应。
+   */
+  async _ensureVisible(session, pluginWs, sessionId) {
+    const pfx = `pool${session.portIndex}_internal`;
+
+    // 1. 保存焦点
+    pluginWs.send(JSON.stringify({
+      id: `${pfx}_save_${Date.now()}`,
+      method: 'Runtime.evaluate',
+      params: { expression: '(function(){var el=document.activeElement;if(el&&el!==document.body&&el.focus){el.setAttribute("data-cdp-saved-focus","1");return 1}return 0})()', returnByValue: true },
+      sessionId, __portIndex: session.portIndex
+    }));
+
+    // 2. bringToFront
+    pluginWs.send(JSON.stringify({
+      id: `${pfx}_front_${Date.now()}`,
+      method: 'Page.bringToFront',
+      params: {},
+      sessionId, __portIndex: session.portIndex
+    }));
+
+    // 3. 等 visibilitychange + 双 rAF（renderer 完成切换）
+    pluginWs.send(JSON.stringify({
+      id: `${pfx}_vis_${Date.now()}`,
+      method: 'Runtime.evaluate',
+      params: {
+        expression: 'new Promise(function(r){function ok(){requestAnimationFrame(function(){requestAnimationFrame(function(){r(1)})})}if(document.visibilityState==="visible"){ok()}else{var d=function(){if(document.visibilityState==="visible"){document.removeEventListener("visibilitychange",d);ok()}};document.addEventListener("visibilitychange",d);setTimeout(function(){document.removeEventListener("visibilitychange",d);ok()},3000)}})',
+        awaitPromise: true
+      },
+      sessionId, __portIndex: session.portIndex
+    }));
+
+    // 给 bringToFront + visibility 等待时间（不等具体响应，内部命令响应被丢弃）
+    await new Promise(r => setTimeout(r, 300));
+
+    // 4. 恢复焦点
+    pluginWs.send(JSON.stringify({
+      id: `${pfx}_restore_${Date.now()}`,
+      method: 'Runtime.evaluate',
+      params: { expression: '(function(){var el=document.querySelector("[data-cdp-saved-focus]");if(el){el.removeAttribute("data-cdp-saved-focus");el.focus();return 1}return 0})()', returnByValue: true },
+      sessionId, __portIndex: session.portIndex
+    }));
+
+    await new Promise(r => setTimeout(r, 50));
   }
 
   _broadcastToPort(portIndex, msg) {

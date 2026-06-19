@@ -172,6 +172,13 @@ class PortPoolManager {
       return;
     }
 
+    // 通知扩展有 client 连接（扩展需要 hasConnectedClient=true 才转发 debugger 事件）
+    const poolClientId = `pool_${session.portIndex}_${Date.now()}`;
+    pluginWs.send(JSON.stringify({
+      type: 'client-connected',
+      clientId: poolClientId
+    }));
+
     // 合成输入命令需要 ensureVisible（和 forward.js 的逻辑一致）
     const SYNTHETIC_INPUT = ['Input.dispatchKeyEvent', 'Input.dispatchMouseEvent'];
 

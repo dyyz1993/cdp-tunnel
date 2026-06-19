@@ -187,17 +187,13 @@ class PortPoolManager {
       try { msg = JSON.parse(data.toString()); } catch { return; }
 
       if (msg.id !== undefined) {
-        // 命令：分配新 id，记录映射，转发给 plugin
+        // 命令：分配新 id，记录映射（含 method 名供响应后处理），转发给 plugin
         const newId = `pool${session.portIndex}_${msg.id}`;
         session.pendingRequests.set(newId, {
           originalId: msg.id,
+          method: msg.method,  // 记录方法名，响应时按需过滤
           clientWs: ws
         });
-
-        // 特殊处理 createTarget：记录 targetId 归属
-        if (msg.method === 'Target.createTarget') {
-          msg.params = msg.params || {};
-        }
 
         const forwarded = { ...msg, id: newId, __portIndex: session.portIndex };
         pluginWs.send(JSON.stringify(forwarded));
@@ -249,6 +245,12 @@ class PortPoolManager {
       if (msg.result && msg.result.sessionId) {
         this.sessionToPort.set(msg.result.sessionId, portIndex);
         console.log(`[PORT POOL] sessionId=${msg.result.sessionId.slice(0,12)} → port ${session.port}`);
+      }
+
+      // 如果是 getTargets 响应，按 portIndex 过滤 targetInfos
+      if (pending && pending.method === 'Target.getTargets' && msg.result && msg.result.targetInfos) {
+        msg.result.targetInfos = msg.result.targetInfos.filter(t => session.targetIds.has(t.targetId));
+        console.log(`[PORT POOL] getTargets filtered: ${msg.result.targetInfos.length} targets for port ${session.port}`);
       }
 
       // 恢复原始 id，发给发起请求的 client

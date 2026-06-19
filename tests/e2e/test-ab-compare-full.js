@@ -28,12 +28,12 @@ const EXTENSION_PATH = path.resolve(__dirname, '../../extension-new');
 const PROXY_PATH = path.resolve(__dirname, '../../server/proxy-server.js');
 const CONFIG_PATH = path.join(EXTENSION_PATH, 'utils', 'config.js');
 
-const DIRECT_PORT = 29500;
-const PLUGIN_PORT = 29501;
-const POOL_PORT = 29502;
-const TAKEOVER_PORT = 29503;        // 主 takeover
-const POOL_TAKEOVER_PORT = 29500;   // 端口池 takeover（和 DIRECT_PORT 不同）
-const WEB_PORT = 29520;
+const DIRECT_PORT = 29600;
+const PLUGIN_PORT = 29601;
+const POOL_PORT = 29602;
+const TAKEOVER_PORT = 29603;
+const POOL_TAKEOVER_PORT = 29604;
+const WEB_PORT = 29620;
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function httpGet(port, urlPath) {

@@ -65,26 +65,18 @@ class PortPoolManager {
     this.portSessions[portIndex] = session;
 
     const server = http.createServer();
-    const wss = new WebSocket.Server({ noServer: true });
-    this.createWss[portIndex] = wss;
+    this.createServers[portIndex] = server;
 
-    // HTTP 请求（非 upgrade）
+    // 端口池端口复用主 proxy 的 wss——通过 localPort 区分
+    server.on('upgrade', (req, socket, head) => {
+      req._poolPortIndex = portIndex;
+      req._poolPort = port;
+      // 转发给主 proxy 的 wss 处理
+      this.mainProxy.handlePoolUpgrade(req, socket, head, portIndex, port);
+    });
+
     server.on('request', (req, res) => {
       this._handleHttp(req, res, session);
-    });
-
-    // WebSocket upgrade
-    server.on('upgrade', (req, socket, head) => {
-      const url = new URL(req.url, `http://localhost:${port}`);
-      const path = url.pathname;
-      if (path !== '/client' && !path.startsWith('/client/') &&
-          !path.startsWith('/devtools/browser/') && !path.startsWith('/devtools/page/')) {
-        socket.destroy();
-        return;
-      }
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      this._handleClientConnect(ws, req, session);
-    });
     });
 
     server.on('error', (err) => {
@@ -100,7 +92,6 @@ class PortPoolManager {
     });
 
     this.createServers[portIndex] = server;
-    this.createWss[portIndex] = wss;
   }
 
   _startTakeoverPort() {
@@ -193,6 +184,10 @@ class PortPoolManager {
         // 合成输入命令：先 bringToFront + 等待，再发原命令
         if (SYNTHETIC_INPUT.indexOf(msg.method) >= 0 && msg.sessionId) {
           await this._ensureVisible(session, pluginWs, msg.sessionId);
+        }
+
+        if (msg.method === 'Network.enable' || msg.method === 'Page.startScreencast') {
+          // 已转发，继续
         }
 
         // 命令：分配新 id，记录映射（含 method 名供响应后处理），转发给 plugin

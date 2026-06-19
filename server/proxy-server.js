@@ -456,6 +456,15 @@ wss.on('connection', (ws, req) => {
     const path = url.pathname;
     const pathParts = path.split('/').filter(Boolean);
 
+    // v3.0 端口池连接：走 PortPoolManager 的隔离逻辑
+    if (req._poolPortIndex !== undefined && portPool) {
+        const session = portPool.portSessions[req._poolPortIndex];
+        if (session) {
+            portPool._handleClientConnect(ws, req, session);
+            return;
+        }
+    }
+
     const clientInfo = {
         ip: req.socket.remoteAddress,
         port: req.socket.remotePort
@@ -2129,6 +2138,12 @@ portPool = new PortPoolManager({
     getPluginConnection: () => {
         for (const ws of pluginConnections) return ws;
         return null;
+    },
+    handlePoolUpgrade: (req, socket, head, portIndex, port) => {
+        req._poolPortIndex = portIndex;
+        wss.handleUpgrade(req, socket, head, (ws) => {
+            wss.emit('connection', ws, req);
+        });
     },
     getAllTargets: async (portIndex) => {
         const session = portPool.portSessions[portIndex];

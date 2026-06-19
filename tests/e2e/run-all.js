@@ -31,6 +31,8 @@ const TESTS = [
   { file: 'test-no-escape.js', name: 'No Tab Escape', timeout: 300000, tier: 'core' },
   { file: 'test-input-delivery.js', name: 'Input Event Delivery (keyboard/mouse)', timeout: 180000, tier: 'core' },
   { file: 'test-port-isolation.js', name: 'Port Pool Isolation (v3.0)', timeout: 180000, tier: 'new' },
+  { file: 'test-port-pool-full.js', name: 'Port Pool Full CDP Chain', timeout: 180000, tier: 'new' },
+  { file: 'test-ab-compare.js', name: 'A/B Compare: Direct CDP vs Port Pool', timeout: 180000, tier: 'core' },
 ];
 
 const SKIP_EXTENDED = process.env.SKIP_EXTENDED === '1' || process.env.CI === 'true';

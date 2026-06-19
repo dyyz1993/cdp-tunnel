@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.14] - 2026-06-19
+### Fixed
+- **长时间运行后并发 createTarget 偶发 page 停留 about:blank**：`sessionToClientId` 映射表泄漏——当 targetId 归属未定时，L900 将 `targetId` 误存为 session 的 value（应为 clientId），导致 `cleanupClient` 按 clientId 匹配时永远清不掉这些条目。proxy 长时间运行后 `sessionToClientId` 无限增长，新 client 的事件可能命中过期映射导致路由错误。修复：归属未定时暂存到 `pendingSessionToClientId`，归属绑定后补绑；`cleanupClient` 补清理 `pendingAttachedEvents`/`pendingTargetCreatedEvents`/`pendingSessionToClientId`。实测 200 次连/断后所有 Map 稳定为 0（修复前 sessionToClientId 线性增长至 300+）。
+
 ## [2.10.13] - 2026-06-17
 ### Fixed
 - **Input.dispatchKeyEvent / dispatchMouseEvent 在隔离 tab 上丢失**：隔离 tab 默认 `visibility=hidden`（`active:false` + 折叠分组），Chromium 在此状态下丢弃合成输入事件（keyboard/mouse），导致 Playwright/Puppeteer 的 `keyboard.type()`、`mouse.click()` 等操作静默失效。`forward.js` 现在在发送合成输入命令前自动执行 `Page.bringToFront` + 等待 `visibilitychange` + 恢复元素焦点，确保事件能投递到 DOM。`insertText` 和 `Runtime.evaluate` 不受影响（不走合成事件路由），无需此处理。

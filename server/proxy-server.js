@@ -394,7 +394,31 @@ async function handleHttpRequest(req, res) {
         res.end(JSON.stringify(targetList));
         return;
     }
-    
+
+    if (url.pathname === '/debug/maps') {
+        const stats = {};
+        for (const [pluginWs, ns] of pluginNamespaces) {
+            stats.targetIdToClientId = ns.targetIdToClientId.size;
+            stats.sessionToClientId = ns.sessionToClientId.size;
+            stats.browserContextToClientId = ns.browserContextToClientId.size;
+            stats.clientIdToBrowserContext = ns.clientIdToBrowserContext.size;
+            stats.pendingAttachedEvents = ns.pendingAttachedEvents.size;
+            stats.pendingTargetCreatedEvents = ns.pendingTargetCreatedEvents.size;
+            stats.pendingSessionToClientId = (ns.pendingSessionToClientId || new Map()).size;
+            stats.discoveringClientIds = ns.discoveringClientIds.size;
+            stats.cachedTargets = ns.cachedTargets.length;
+        }
+        stats.globalRequestIdMap = globalRequestIdMap.size;
+        stats.connectionPairs = connectionPairs.size;
+        stats.clientById = clientById.size;
+        stats.clientIdToPlugin = clientIdToPlugin.size;
+        stats.clientConnections = clientConnections.size;
+        stats.pluginConnections = pluginConnections.size;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(stats, null, 2));
+        return;
+    }
+
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not Found');
 }
@@ -542,6 +566,33 @@ function cleanupClient(ws, id, reason) {
     if (ns) {
         for (const [tId, cId] of ns.targetIdToClientId.entries()) {
             if (cId === id) ns.targetIdToClientId.delete(tId);
+        }
+        // session 清理：value 可能是 clientId（正常）或 targetId（旧 bug 残留，兼容清理）
+        const clientTargetIds = new Set();
+        for (const [tId, cId] of ns.targetIdToClientId.entries()) {
+            if (cId === id) clientTargetIds.add(tId);
+        }
+        for (const [sId, val] of ns.sessionToClientId.entries()) {
+            if (val === id || clientTargetIds.has(val)) {
+                ns.sessionToClientId.delete(sId);
+            }
+        }
+        // 清理 pending session（归属未定的暂存）
+        if (ns.pendingSessionToClientId) {
+            for (const [pSid, pTid] of ns.pendingSessionToClientId.entries()) {
+                if (clientTargetIds.has(pTid)) ns.pendingSessionToClientId.delete(pSid);
+            }
+        }
+        // 清理 pending 事件（targetCreated/attachedToTarget 缓存，防止泄漏）
+        if (ns.pendingAttachedEvents) {
+            for (const [pTid] of ns.pendingAttachedEvents.entries()) {
+                if (clientTargetIds.has(pTid)) ns.pendingAttachedEvents.delete(pTid);
+            }
+        }
+        if (ns.pendingTargetCreatedEvents) {
+            for (const [pTid] of ns.pendingTargetCreatedEvents.entries()) {
+                if (clientTargetIds.has(pTid)) ns.pendingTargetCreatedEvents.delete(pTid);
+            }
         }
         for (const [bcId, cId] of ns.browserContextToClientId.entries()) {
             if (cId === id) ns.browserContextToClientId.delete(bcId);
@@ -874,8 +925,11 @@ function handlePluginConnection(ws, clientInfo, request) {
                         ns.sessionToClientId.set(sessionId, clientId);
                         console.log(`[SESSION MAPPED] sessionId=${sessionId?.substring(0,8) || 'none'} -> clientId=${clientId?.substring(0,8) || 'none'}`);
                     } else {
-                        ns.sessionToClientId.set(sessionId, targetId);
-                        console.log(`[SESSION MAPPED] sessionId=${sessionId?.substring(0,8) || 'none'} -> targetId=${targetId?.substring(0,8) || 'none'} (no pairedClientId)`);
+                        // 以前这里存 targetId 作为 value，导致 cleanupClient 按 clientId 匹配时清不掉（泄漏）
+                        // 改为：暂存到 pendingSessionToClientId，等 targetId 归属绑定时再补绑
+                        if (!ns.pendingSessionToClientId) ns.pendingSessionToClientId = new Map();
+                        ns.pendingSessionToClientId.set(sessionId, targetId);
+                        console.log(`[SESSION MAPPED] sessionId=${sessionId?.substring(0,8) || 'none'} -> targetId=${targetId?.substring(0,8) || 'none'} (pending, no clientId yet)`);
                     }
                 }
             }
@@ -940,7 +994,19 @@ function handlePluginConnection(ws, clientInfo, request) {
                         const targetId = parsed.result.targetId;
                         ns.targetIdToClientId.set(targetId, mapping.clientId);
                         console.log(`[TARGET MAPPED] targetId=${targetId} -> clientId=${mapping.clientId} mapSize=${ns.targetIdToClientId.size}`);
-                        
+
+                        // 补绑 pending 的 session（之前 targetId 归属未定时暂存的）
+                        if (ns.pendingSessionToClientId && ns.pendingSessionToClientId.size > 0) {
+                            const pendingSessionId = null;
+                            for (const [pSid, pTid] of ns.pendingSessionToClientId.entries()) {
+                                if (pTid === targetId) {
+                                    ns.sessionToClientId.set(pSid, mapping.clientId);
+                                    ns.pendingSessionToClientId.delete(pSid);
+                                    console.log(`[SESSION MAPPED from pending] sessionId=${pSid?.substring(0,8)} -> clientId=${mapping.clientId?.substring(0,8)} (targetId=${targetId?.substring(0,8)})`);
+                                }
+                            }
+                        }
+
                         const cachedCreated = ns.pendingTargetCreatedEvents.get(targetId);
                         if (cachedCreated) {
                             clientWs.send(cachedCreated.cdpData);

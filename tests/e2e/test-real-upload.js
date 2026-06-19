@@ -335,12 +335,11 @@ async function runTest() {
 
     cleanup();
 
-    console.log('\n========================================');
-    console.log('  ALL TESTS PASSED ✅');
-    console.log('========================================\n');
+    console.log('\n=== RESULTS: 1 passed, 0 failed ===');
     process.exit(0);
   } catch (err) {
     console.error('\n❌ TEST FAILED:', err.message);
+    console.log('\n=== RESULTS: 0 passed, 1 failed ===');
     if (err.stack) console.error(err.stack.split('\n').slice(0, 5).join('\n'));
     cleanup();
     process.exit(1);

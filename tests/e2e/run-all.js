@@ -36,6 +36,13 @@ const TESTS = [
   { file: 'test-long-connection.js', name: 'Long Connection Stability', timeout: 300000, tier: 'extended' },
   { file: 'test-user-tab-not-grouped.js', name: 'User Tab Not Grouped', timeout: 120000, tier: 'core' },
   { file: 'test-sw-keepalive.js', name: 'SW Keepalive + Reconnect', timeout: 180000, tier: 'new' },
+  { file: 'test-cli-commands.js', name: 'CLI Commands', timeout: 30000, tier: 'core' },
+  { file: 'test-multi-client-tab-switch.js', name: 'Multi-client Tab Switch', timeout: 120000, tier: 'core' },
+  { file: 'test-page-connection-dedup.js', name: 'Page Connection Dedup', timeout: 120000, tier: 'core' },
+  { file: 'test-residual-tabs-cleanup.js', name: 'Residual Tabs Cleanup', timeout: 120000, tier: 'core' },
+  { file: 'test-tab-group-monitor-regroup.js', name: 'Tab Group Monitor Re-group', timeout: 120000, tier: 'new' },
+  { file: 'test-user-tab-during-session.js', name: 'User Tab During Session', timeout: 120000, tier: 'core' },
+  { file: 'test-real-upload.js', name: 'Real Upload', timeout: 180000, tier: 'extended' },
 ];
 
 const SKIP_EXTENDED = process.env.SKIP_EXTENDED === '1' || process.env.CI === 'true';

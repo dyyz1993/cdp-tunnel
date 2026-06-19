@@ -247,18 +247,8 @@ async function runTest() {
     }
 
     // Summary
-    console.log('\n=== Test Summary ===');
-    console.log(`  Passed: ${passed}`);
-    console.log(`  Failed: ${failed}`);
-    console.log(`  Total:  ${passed + failed}`);
-
-    if (failed > 0) {
-        console.log('\n❌ OVERALL: FAILED');
-        process.exit(1);
-    } else {
-        console.log('\n✅ OVERALL: PASSED');
-        process.exit(0);
-    }
+    console.log(`\n=== RESULTS: ${passed} passed, ${failed} failed ===`);
+    process.exit(failed > 0 ? 1 : 0);
 }
 
 runTest();

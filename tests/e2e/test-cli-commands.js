@@ -59,7 +59,5 @@ test('update command exits without hanging', () => {
   }
 });
 
-console.log('\n=== RESULTS ===');
-console.log(`Passed: ${passed}, Failed: ${failed}`);
-console.log('==============\n');
+console.log(`\n=== RESULTS: ${passed} passed, ${failed} failed ===`);
 process.exit(failed > 0 ? 1 : 0);

@@ -18,7 +18,7 @@ const EXTENSION_PATH = path.resolve(__dirname, '../../extension-new');
 const PROXY_PATH = path.resolve(__dirname, '../../server/proxy-server.js');
 const CONFIG_PATH = path.join(EXTENSION_PATH, 'utils', 'config.js');
 
-const PORT = parseInt(process.env.PORT || '9231', 10);
+const PORT = parseInt(process.env.PORT || '0', 10) || (10000 + Math.floor(Math.random() * 50000));
 const ITERATIONS = parseInt(process.env.ITERATIONS || '500', 10);
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

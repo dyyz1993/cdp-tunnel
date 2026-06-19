@@ -68,13 +68,15 @@ class PortPoolManager {
       this._handleHttp(req, res, session);
     });
 
+    // 每个 create 端口用独立的 wss（不复用主 proxy 的 wss）
     const wss = new WebSocket.Server({ noServer: true });
+    this.createWss[portIndex] = wss;
 
     server.on('upgrade', (req, socket, head) => {
       const url = new URL(req.url, `http://localhost:${port}`);
       const path = url.pathname;
 
-      // 只允许 client 连接（plugin 连的是 9221）
+      // 只允许 client 连接（plugin 连的是主 proxy 的 9221）
       if (path !== '/client' && !path.startsWith('/client/') &&
           !path.startsWith('/devtools/browser/') && !path.startsWith('/devtools/page/')) {
         socket.destroy();
@@ -256,7 +258,6 @@ class PortPoolManager {
       // 如果是 attachToTarget 响应，记录 sessionId → portIndex
       if (msg.result && msg.result.sessionId) {
         this.sessionToPort.set(msg.result.sessionId, portIndex);
-        console.log(`[PORT POOL] sessionId=${msg.result.sessionId.slice(0,12)} → port ${session.port}`);
       }
 
       // 如果是 getTargets 响应，按 portIndex 过滤 targetInfos
@@ -276,9 +277,9 @@ class PortPoolManager {
       return true;
     }
 
-    // 2. 事件消息（无 id）：按 targetId 路由
+    // 2. 事件消息（无 id）：按 targetId 或 sessionId 路由
     if (msg.method && msg.params) {
-      // 从事件参数里提取 targetId
+      // 诊断：打印所有未匹配到的事件
       let targetId = null;
       if (msg.params.targetId) targetId = msg.params.targetId;
       else if (msg.params.targetInfo && msg.params.targetInfo.targetId) targetId = msg.params.targetInfo.targetId;
@@ -294,7 +295,7 @@ class PortPoolManager {
         }
       }
 
-      // sessionId 路由（attachedToTarget 后的 session 事件）
+      // sessionId 路由（Network/Screencast/Input 等 session 事件）
       if (msg.sessionId) {
         const portIndex = this.sessionToPort.get(msg.sessionId);
         if (portIndex !== undefined) {

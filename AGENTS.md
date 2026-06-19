@@ -160,12 +160,44 @@ cdp-tunnel 用 `chrome.debugger.attach` 连接隔离 tab。**被 chrome.debugger
 
 ## 端口与模式对应关系
 
+### 基本端口（v2.x）
+
 | 端口 | 模式 | 分组行为 | 用途 |
 |------|------|----------|------|
 | 9221 | create | 强制分组（Chrome Tab Group） | Playwright/Puppeteer/CDP 创建新页面 |
 | 9222 | takeover | 不分组 | 接管用户已打开的页面 |
 
-- 模式由端口决定：`proxy-server.js` 在 takeover 端口的 upgrade 请求中设置 `req._takeoverMode = true`
+### 端口池（v3.0+）
+
+| 端口 | 模式 | 用途 |
+|------|------|------|
+| 9220 | takeover（端口池） | 接管用户浏览器（独立于 9222） |
+| 9231-9239 | create（端口池） | 每个端口 = 一个独立的隔离环境 |
+
+端口池行为对齐原生 Chrome `--remote-debugging-port`：
+- **多客户端共享**：同一个端口可以有多个客户端同时连接，共享 tab
+- **断开不清理**：客户端断开后 tab 仍存活（客户端自己用 `Target.closeTarget` 关闭）
+- **端口隔离**：不同端口的 client 互不可见对方的 tab（`/json/list` 天然过滤）
+
+配置（环境变量）：
+- `POOL_SIZE=0` 禁用端口池（默认 9 个 create 端口）
+- `POOL_START=9231` 端口池起始端口
+- `POOL_TAKEOVER_PORT=9220` 端口池的 takeover 端口
+
+### 端口池架构（v3.0）
+
+端口池通过 `server/modules/port-pool.js`（PortPoolManager）实现。核心设计：
+
+- 端口池端口（9231-9239）的 WebSocket upgrade 转发给主 proxy 的 `wss`，通过 `req._poolPortIndex` 标记区分
+- `wss.on('connection')` 检查 `_poolPortIndex`：有值走 PortPoolManager 隔离逻辑，无值走现有 `handleClientConnection`
+- 端口池的命令通过主 proxy 的 plugin 连接转发给扩展（带 `pool{portIndex}_{id}` 前缀）
+- 扩展返回的事件按 `targetId → portIndex` 和 `sessionId → portIndex` 映射路由回正确端口
+- 端口池 client 连接时发 `client-connected` 给扩展（让 `hasConnectedClient=true`，否则扩展丢弃 debugger 事件）
+
+### 模式由端口决定
+
+- 基本端口：`proxy-server.js` 在 takeover 端口的 upgrade 请求中设置 `req._takeoverMode = true`
+- 端口池：`PortPoolManager._startCreatePort` 在 upgrade 时设置 `req._poolPortIndex`
 - 客户端连接时 mode 通过 `__mode` 字段传递给扩展
 - 扩展的 `ConnectionState.mode` 来自扩展配置页面的连接设置
 
@@ -227,7 +259,8 @@ PORT=9231 npm run test:e2e
 
 ```
 server/proxy-server.js     - Node.js WebSocket 代理服务器
-server/modules/config.js   - 端口配置（PORT=9221, TAKEOVER_PORT=PORT+1）
+server/modules/config.js   - 端口配置（PORT=9221, TAKEOVER_PORT=PORT+1, 端口池配置）
+server/modules/port-pool.js - 端口池管理器（v3.0，PortPoolManager）
 extension-new/             - Chrome 扩展（Manifest V3）
   background.js            - Service Worker，标签事件监听中枢
   core/websocket.js        - WebSocket 连接管理，分组创建

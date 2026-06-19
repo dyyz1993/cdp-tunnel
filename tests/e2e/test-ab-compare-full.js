@@ -29,10 +29,11 @@ const PROXY_PATH = path.resolve(__dirname, '../../server/proxy-server.js');
 const CONFIG_PATH = path.join(EXTENSION_PATH, 'utils', 'config.js');
 
 const DIRECT_PORT = 29500;
-const PLUGIN_PORT = DIRECT_PORT + 1;
-const POOL_PORT = DIRECT_PORT + 2;
-const TAKEOVER_PORT = DIRECT_PORT + 10;
-const WEB_PORT = DIRECT_PORT + 20;
+const PLUGIN_PORT = 29501;
+const POOL_PORT = 29502;
+const TAKEOVER_PORT = 29503;        // 主 takeover
+const POOL_TAKEOVER_PORT = 29500;   // 端口池 takeover（和 DIRECT_PORT 不同）
+const WEB_PORT = 29520;
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function httpGet(port, urlPath) {
@@ -251,7 +252,7 @@ async function runFullSequence(cdp, createTarget) {
 
     proxyProc = spawn(process.execPath, [PROXY_PATH], {
       env: { ...process.env, PORT: String(PLUGIN_PORT), TAKEOVER_PORT: String(TAKEOVER_PORT),
-        POOL_START: String(POOL_PORT), POOL_SIZE: '1', POOL_TAKEOVER_PORT: String(TAKEOVER_PORT), LOG_LEVEL: 'warn' },
+        POOL_START: String(POOL_PORT), POOL_SIZE: '1', POOL_TAKEOVER_PORT: String(POOL_TAKEOVER_PORT), LOG_LEVEL: 'warn' },
       stdio: ['pipe', 'pipe', 'pipe']
     });
     for (let i = 0; i < 20; i++) { try { await httpGet(PLUGIN_PORT, '/json/version'); break; } catch { await sleep(500); } }

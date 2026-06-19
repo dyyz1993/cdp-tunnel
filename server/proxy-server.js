@@ -812,7 +812,7 @@ function handlePluginConnection(ws, clientInfo, request) {
 
         // v3.0 端口池 hook：先让 PortPoolManager 处理端口池的消息
         if (parsed && portPool && portPool.handlePluginMessage(parsed, ws)) {
-            return;  // 已被端口池处理
+            return;
         }
 
         // 处理 keepalive 消息

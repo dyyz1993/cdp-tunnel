@@ -64,28 +64,27 @@ class PortPoolManager {
     const session = new PortPoolManager.PortSession(portIndex, port);
     this.portSessions[portIndex] = session;
 
-    const server = http.createServer((req, res) => {
-      this._handleHttp(req, res, session);
-    });
-
-    // 每个 create 端口用独立的 wss（不复用主 proxy 的 wss）
+    const server = http.createServer();
     const wss = new WebSocket.Server({ noServer: true });
     this.createWss[portIndex] = wss;
 
+    // HTTP 请求（非 upgrade）
+    server.on('request', (req, res) => {
+      this._handleHttp(req, res, session);
+    });
+
+    // WebSocket upgrade
     server.on('upgrade', (req, socket, head) => {
       const url = new URL(req.url, `http://localhost:${port}`);
       const path = url.pathname;
-
-      // 只允许 client 连接（plugin 连的是主 proxy 的 9221）
       if (path !== '/client' && !path.startsWith('/client/') &&
           !path.startsWith('/devtools/browser/') && !path.startsWith('/devtools/page/')) {
         socket.destroy();
         return;
       }
-
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        this._handleClientConnect(ws, req, session);
-      });
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      this._handleClientConnect(ws, req, session);
+    });
     });
 
     server.on('error', (err) => {
@@ -174,7 +173,6 @@ class PortPoolManager {
    */
   _handleClientConnect(ws, req, session) {
     session.clients.add(ws);
-    console.log(`[PORT ${session.port}] Client connected (total: ${session.clients.size})`);
 
     // 找到 plugin 连接（从主 proxy 获取）
     const pluginWs = this.mainProxy.getPluginConnection();

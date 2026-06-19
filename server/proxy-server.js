@@ -16,7 +16,11 @@ const path = require('path');
 const os = require('os');
 const { execSync, spawn: spawnProcess } = require('child_process');
 const { CONFIG, BROWSER_ID, shouldLog } = require('./modules/config');
+const { PortPoolManager } = require('./modules/port-pool');
 const TAKEOVER_PORT = CONFIG.TAKEOVER_PORT;
+
+// v3.0 端口池（提前声明，后面初始化）
+let portPool = null;
 const { logCDP, logEvent, clearLog, logStatus, logConnectionEvent, flushAllLogs, logDisconnect } = require('./modules/logger');
 
 try {
@@ -790,7 +794,7 @@ function handlePluginConnection(ws, clientInfo, request) {
     // 消息转发: Plugin -> Client
     ws.on('message', (data) => {
         console.log(`[PLUGIN MESSAGE] size=${data.length}`);
-        
+
         const messageSize = data.length;
         let messagePreview;
         let parsed;
@@ -805,7 +809,12 @@ function handlePluginConnection(ws, clientInfo, request) {
         if (shouldLog('debug')) {
             console.log(`[PLUGIN -> CLIENT] ${id}: ${messagePreview}`);
         }
-        
+
+        // v3.0 端口池 hook：先让 PortPoolManager 处理端口池的消息
+        if (parsed && portPool && portPool.handlePluginMessage(parsed, ws)) {
+            return;  // 已被端口池处理
+        }
+
         // 处理 keepalive 消息
         if (parsed && parsed.type === 'keepalive') {
             ws.isAlive = true;
@@ -2114,3 +2123,29 @@ takeoverServer.on('error', (err) => {
 takeoverServer.listen(TAKEOVER_PORT, '0.0.0.0', () => {
     console.log(`[TAKEOVER] Listening on port ${TAKEOVER_PORT}`);
 });
+
+// v3.0 端口池启动
+portPool = new PortPoolManager({
+    getPluginConnection: () => {
+        for (const ws of pluginConnections) return ws;
+        return null;
+    },
+    getAllTargets: async (portIndex) => {
+        const session = portPool.portSessions[portIndex];
+        if (!session) return [];
+        // 从主 proxy 的 namespace 拿所有 target，过滤出这个端口的
+        const targets = [];
+        for (const [, ns] of pluginNamespaces) {
+            if (ns.cachedTargets) {
+                for (const t of ns.cachedTargets) {
+                    if (session.targetIds.has(t.targetId)) {
+                        targets.push(t);
+                    }
+                }
+            }
+        }
+        return targets;
+    }
+});
+portPool.start();
+

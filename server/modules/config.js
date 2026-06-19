@@ -11,7 +11,10 @@ const CONFIG = {
   AUTO_RESTART: process.env.AUTO_RESTART === 'true',
   CHROME_RESTART_COOLDOWN: 30000,
   PLUGIN_MAX_MISSED_PINGS: 3,
-  TAKEOVER_PORT: process.env.TAKEOVER_PORT ? parseInt(process.env.TAKEOVER_PORT) : (parseInt(process.env.PORT || '9221') + 1)
+  TAKEOVER_PORT: process.env.TAKEOVER_PORT ? parseInt(process.env.TAKEOVER_PORT) : (parseInt(process.env.PORT || '9221') + 1),
+  POOL_TAKEOVER_PORT: process.env.POOL_TAKEOVER_PORT ? parseInt(process.env.POOL_TAKEOVER_PORT) : 9220,
+  POOL_START: process.env.POOL_START ? parseInt(process.env.POOL_START) : 9222,
+  POOL_SIZE: process.env.POOL_SIZE ? parseInt(process.env.POOL_SIZE) : 9
 };
 
 const LOG_LEVELS = {

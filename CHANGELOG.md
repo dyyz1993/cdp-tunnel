@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.0] - 2026-06-19
+### Added
+- **端口池架构**：proxy 现在支持多端口隔离。每个 create 端口（默认 9222-9230）= 一个独立的隔离环境，不同端口的 client 互不可见对方的 tab。对齐原生 Chrome `--remote-debugging-port` 行为：多客户端可连同一端口、断开不清理 tab。
+- 新增 `server/modules/port-pool.js`：端口池管理器，按 portIndex 隔离 target/session 事件路由
+- 新增 `test-port-isolation.js`：验证不同端口的 client 互不可见（6 项检查）
+- `run-all.js` 测试时自动禁用端口池（`POOL_SIZE=0`）避免端口冲突
+
+### Changed
+- `config.js` 新增 `POOL_TAKEOVER_PORT`（9220）、`POOL_START`（9222）、`POOL_SIZE`（9）配置
+- 现有 9221/9222 行为完全不变（端口池是额外新增的端口）
+
+### 配置
+- `POOL_SIZE=0` 禁用端口池（默认 9 个 create 端口）
+- `POOL_START=9222` 端口池起始端口
+- `POOL_TAKEOVER_PORT=9220` 端口池的 takeover 端口
+
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 

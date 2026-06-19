@@ -30,6 +30,7 @@ const TESTS = [
   { file: 'test-takeover-mode.js', name: 'Takeover Mode', timeout: 300000, tier: 'new' },
   { file: 'test-no-escape.js', name: 'No Tab Escape', timeout: 300000, tier: 'core' },
   { file: 'test-input-delivery.js', name: 'Input Event Delivery (keyboard/mouse)', timeout: 180000, tier: 'core' },
+  { file: 'test-port-isolation.js', name: 'Port Pool Isolation (v3.0)', timeout: 180000, tier: 'new' },
 ];
 
 const SKIP_EXTENDED = process.env.SKIP_EXTENDED === '1' || process.env.CI === 'true';
@@ -69,6 +70,7 @@ function runTest(test, index, total) {
       cwd: __dirname,
       env: {
         ...process.env,
+        POOL_SIZE: '0',  // 测试时禁用端口池，避免端口冲突
         CHROME_PATH: process.env.CHROME_PATH || '/Applications/Chromium.app/Contents/MacOS/Chromium',
         CHROMIUM_FLAGS: '--headless=new',
       },

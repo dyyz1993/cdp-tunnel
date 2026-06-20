@@ -261,16 +261,85 @@ cdp-tunnel 用 `chrome.debugger.attach` 连接隔离 tab。**被 chrome.debugger
 
 ## 开发流程规范
 
+### 自测验证流程（必须执行，不可跳过）
+
+**任何改动都必须通过以下自测流程后才能提交。不允许让用户手动验证本应自动化测试的内容。**
+
+#### 第 1 步：A/B 对照测试（直连 Chrome CDP vs cdp-tunnel 端口池）
+
+**核心原则：cdp-tunnel 的行为必须和直连 Chrome 一模一样。任何差异都是 bug。**
+
+```bash
+# 用同一台 Chromium，同时开直连 RDP + 加载扩展
+# A: 直连 Chrome CDP（--remote-debugging-port）
+# B: cdp-tunnel 端口池（通过扩展 + chrome.debugger）
+# 同一套 CDP 操作序列，断言两边结果一致
+
+node tests/e2e/test-ab-gate.js
+```
+
+测试覆盖：createTarget / attach / navigate / evaluate / input / mouse / screenshot / cookie / localStorage / Network / getTargets。退出码 0 才算通过。
+
+#### 第 2 步：并发测试（两阶段，对照直连）
+
+**端口池的核心场景是多 client 并发。必须同时测直连和端口池的并发，对比失败率。**
+
+```bash
+# 模拟 xbrowser 的完整初始化序列（两阶段）：
+# 阶段 1: getTargets + attach已有page + enable domains + setAutoAttach
+# 阶段 2: createTarget + attach新target + navigate
+# 5 并发 × 4 批 = 20 次
+
+# 端口池测试
+node tests/e2e/_2phase-auto.cjs
+
+# 直连对照（同样的脚本，连 --remote-debugging-port）
+# 失败率应和端口池一致（都接近 0%）
+```
+
+**判定标准**：端口池失败率 ≤ 直连失败率 + 5%。如果端口池明显更高，说明有 bug。
+
+#### 第 3 步：全自动环境（不依赖用户操作）
+
+所有测试必须自己起 Chromium + proxy + 扩展，不依赖用户的手动操作：
+
+```
+1. 起 proxy（独立端口，如 29901）
+2. 起 Chromium（--load-extension 加载项目目录的 extension-new）
+3. 改 config.js 的 WS_URL 指向测试端口
+4. 等扩展连接（轮询 /json/version）
+5. 跑测试
+6. 清理（杀进程 + 删 profile + 恢复 config.js）
+```
+
+**禁止**：让用户手动 reload 扩展、让用户手动观察 Chrome 分组、让用户手动检查结果。
+
+#### 第 4 步：扩展代码同步
+
+改了扩展代码后，必须同步到 npm 包路径（用户安装的扩展从 npm 包加载）：
+
+```bash
+for f in core/connection-state.js core/websocket.js cdp/handler/special.js cdp/handler/forward.js; do
+  cp extension-new/$f /Users/xuyingzhou/.nvm/versions/node/v25.2.1/lib/node_modules/cdp-tunnel/extension-new/$f
+done
+```
+
 ### 提交前检查
 
-1. 标签分组是否正常工作（9221 端口连接后标签必须在分组内）
-2. takeover 模式是否正确跳过分组（9222 端口）
-3. 用户标签是否被保护（不受 CDP 操作影响）
-4. `config.js` 的 `WS_URL` 是否已恢复为用户端口
+1. A/B Gate 测试通过（`test-ab-gate.js` 退出码 0）
+2. 并发测试失败率 ≤ 直连 + 5%
+3. 端口分组名正确（`CDP-{端口号}-xxx`，不是 `local`）
+4. `config.js` 的 `WS_URL` 已恢复
 
 ### 测试命令
 
 ```bash
+# A/B Gate（提交必须通过）
+node tests/e2e/test-ab-gate.js
+
+# 并发测试（两阶段）
+node tests/e2e/_2phase-auto.cjs
+
 # 核心冒烟测试（使用独立端口）
 PORT=9231 npm run test:smoke
 

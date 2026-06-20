@@ -263,7 +263,6 @@ class PortPoolManager {
       // 如果是 getTargets 响应，按 portIndex 过滤 targetInfos
       if (pending && pending.method === 'Target.getTargets' && msg.result && msg.result.targetInfos) {
         msg.result.targetInfos = msg.result.targetInfos.filter(t => session.targetIds.has(t.targetId));
-        console.log(`[PORT POOL] getTargets filtered: ${msg.result.targetInfos.length} targets for port ${session.port}`);
       }
 
       // 恢复原始 id，发给发起请求的 client

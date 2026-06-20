@@ -204,57 +204,38 @@ class PortPoolManager {
     const SYNTHETIC_INPUT = ['Input.dispatchKeyEvent', 'Input.dispatchMouseEvent'];
 
     // 消息处理：client → plugin（带 portIndex 标记）
-    // session 级别的命令队列：保证跨 client 的命令串行处理
-    const handleMessage = async (data) => {
+    ws.on('message', async (data) => {
       let msg;
       try { msg = JSON.parse(data.toString()); } catch { return; }
 
       if (msg.id !== undefined) {
-        // createTarget：等前一个 createTarget 的响应回来
-        if (msg.method === 'Target.createTarget' && session.createTargetChain) {
-          await session.createTargetChain;
+        // createTarget 串行化（避免并发 chrome.tabs.create 回调串）
+        if (msg.method === 'Target.createTarget') {
+          while (session.createTargetLock) { await session.createTargetLock; }
+          session.createTargetLock = new Promise(r => { session._releaseCreateTarget = r; });
         }
 
-        // attachToTarget：已 attach 的 target 返回虚拟 session
-        if (msg.method === 'Target.attachToTarget' && msg.params && msg.params.targetId) {
-          const targetId = msg.params.targetId;
-          if (session.attachedTargets && session.attachedTargets.has(targetId)) {
-            const vsid = `vs_${session.portIndex}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-            session.virtualSessions.set(vsid, targetId);
-            this.sessionToPort.set(vsid, session.portIndex);
-            ws.send(JSON.stringify({ id: msg.id, result: { sessionId: vsid } }));
-            return;
-          }
-          if (!session.attachedTargets) session.attachedTargets = new Set();
-          session.attachedTargets.add(targetId);
-        }
-
+        // 合成输入命令：先 bringToFront + 等待，再发原命令
         if (SYNTHETIC_INPUT.indexOf(msg.method) >= 0 && msg.sessionId) {
           await this._ensureVisible(session, pluginWs, msg.sessionId);
         }
 
-        // createTarget：设置串行链
-        if (msg.method === 'Target.createTarget') {
-          let release;
-          session.createTargetChain = new Promise(r => { release = r; });
-          session._releaseCT = release;
-        }
-
+        // 命令：分配新 id，记录映射（含 method 名供响应后处理），转发给 plugin
         const newId = `pool${session.portIndex}_${msg.id}`;
         session.pendingRequests.set(newId, {
-          originalId: msg.id, method: msg.method, clientWs: ws,
-          params: msg.params, sessionId: msg.sessionId
+          originalId: msg.id,
+          method: msg.method,
+          clientWs: ws,
+          params: msg.params,
+          sessionId: msg.sessionId
         });
+
         const forwarded = { ...msg, id: newId, __portIndex: session.portIndex, __clientId: `pool_${session.port}` };
         pluginWs.send(JSON.stringify(forwarded));
       } else {
+        // 无 id 的消息（事件），直接转发
         pluginWs.send(JSON.stringify({ ...msg, __portIndex: session.portIndex }));
       }
-    };
-
-    ws.on('message', (data) => {
-      if (!session.cmdQueue) session.cmdQueue = Promise.resolve();
-      session.cmdQueue = session.cmdQueue.then(() => handleMessage(data)).catch(() => {});
     });
 
     ws.on('close', () => {
@@ -292,18 +273,18 @@ class PortPoolManager {
       const pending = session.pendingRequests.get(msg.id);
       session.pendingRequests.delete(msg.id);
 
-      // 如果是 createTarget 响应，记录 targetId + 释放串行链
+      // 如果是 createTarget 响应，记录 targetId → portIndex 归属 + 初始 url + 释放锁
       if (msg.result && msg.result.targetId) {
         const tid = msg.result.targetId;
         session.targetIds.add(tid);
         session.targetUrls.set(tid, pending?.params?.url || 'about:blank');
         this.targetToPort.set(tid, portIndex);
-      }
-      // 释放 createTarget 串行链
-      if (pending && pending.method === 'Target.createTarget' && session._releaseCT) {
-        session._releaseCT();
-        session._releaseCT = null;
-        session.createTargetChain = null;
+        // 释放 createTarget 锁
+        if (session._releaseCreateTarget) {
+          session._releaseCreateTarget();
+          session._releaseCreateTarget = null;
+          session.createTargetLock = null;
+        }
       }
 
       // 如果是 Page.navigate 响应，更新 targetId 的 url

@@ -161,11 +161,24 @@ var SpecialHandler = (function() {
     var needsNavigate = url !== 'about:blank' && url !== '';
 
     return new Promise(function(resolve, reject) {
-      chrome.tabs.create({ url: 'about:blank', active: false }, function(tab) {
-        if (!tab || !tab.id) {
-          reject(new Error('Failed to create tab'));
-          return;
-        }
+      var retryCount = 0;
+      var maxRetries = 3;
+
+      function doCreate() {
+        chrome.tabs.create({ url: 'about:blank', active: false }, function(tab) {
+          if (!tab || !tab.id) {
+            retryCount++;
+            if (retryCount <= maxRetries) {
+              Logger.warn('[CreateTarget] Empty tab (tab=' + (!!tab) + '), retry ' + retryCount);
+              setTimeout(doCreate, 100 * retryCount);
+              return;
+            }
+            Logger.error('[CreateTarget] Failed after ' + maxRetries + ' retries');
+            reject(new Error('Failed to create tab after ' + maxRetries + ' retries'));
+            return;
+          }
+
+          Logger.info('[CreateTarget] tab created: ' + tab.id);
 
         if (clientId) {
           state.setTabIdToClientId(tab.id, clientId);
@@ -189,7 +202,10 @@ var SpecialHandler = (function() {
           Logger.error('[CreateTarget] Error:', err.message || err);
           reject(err);
         });
-      });
+        }); // chrome.tabs.create callback end
+      } // doCreate end
+
+      doCreate();
     });
   }
 

@@ -20,7 +20,8 @@ const { CONFIG } = require('./config');
 
 class PortPoolManager {
   constructor(mainProxy) {
-    this.mainProxy = mainProxy;  // 现有 proxy 的引用（拿 plugin 连接）
+    this.mainProxy = mainProxy;
+    this.idCounter = 0; // 全局唯一 id 计数器  // 现有 proxy 的引用（拿 plugin 连接）
     this.createServers = [];      // [http.Server] 每个 create 端口一个
     this.createWss = [];          // [WebSocket.Server] 每个 create 端口一个
     this.portSessions = [];       // [PortSession] 每个 create 端口一个
@@ -220,8 +221,12 @@ class PortPoolManager {
           await this._ensureVisible(session, pluginWs, msg.sessionId);
         }
 
-        // 命令：分配新 id，记录映射（含 method 名供响应后处理），转发给 plugin
-        const newId = `pool${session.portIndex}_${msg.id}`;
+        // 命令：分配全局唯一 id（避免不同 client 的 msg.id 冲突）
+        const uniqueId = ++this.idCounter;
+        const newId = `pool${session.portIndex}_${uniqueId}`;
+        // 记录 originalId（用于响应时恢复）
+        if (!ws._origIds) ws._origIds = new Map();
+        ws._origIds.set(uniqueId, msg.id);
         session.pendingRequests.set(newId, {
           originalId: msg.id,
           method: msg.method,
@@ -273,7 +278,10 @@ class PortPoolManager {
       const pending = session.pendingRequests.get(msg.id);
       session.pendingRequests.delete(msg.id);
 
-      // 如果是 createTarget 响应，记录 targetId → portIndex 归属 + 初始 url + 释放锁
+      // 如果是 createTarget 响应
+      if (pending && pending.method === 'Target.createTarget') {
+        console.log('[PORT POOL] createTarget resp: ' + JSON.stringify(msg.result).slice(0, 80) + ' pending=' + !!pending);
+      }
       if (msg.result && msg.result.targetId) {
         const tid = msg.result.targetId;
         session.targetIds.add(tid);
@@ -311,7 +319,7 @@ class PortPoolManager {
       }
 
       // 恢复原始 id，发给发起请求的 client
-      const response = { ...msg, id: this._parseOriginalId(originalId) };
+      const response = { ...msg, id: pending ? pending.originalId : this._parseOriginalId(originalId) };
       delete response.__portIndex;
       delete response.__clientId;
       delete response.type;

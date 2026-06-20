@@ -213,6 +213,7 @@ class PortPoolManager {
         if (msg.method === 'Target.createTarget') {
           while (session.createTargetLock) { await session.createTargetLock; }
           session.createTargetLock = new Promise(r => { session._releaseCreateTarget = r; });
+          console.log(`[PORT POOL] createTarget lock acquired, forwarding`);
         }
 
         // 合成输入命令：先 bringToFront + 等待，再发原命令
@@ -256,8 +257,8 @@ class PortPoolManager {
   handlePluginMessage(msg, pluginWs) {
     if (!msg) return false;
 
-    // 1. 响应消息：id 以 pool 开头
-    if (msg.id && typeof msg.id === 'string' && msg.id.startsWith('pool')) {
+    // 1. 响应消息：id 以 pool 开头（排除事件——事件有 method 字段）
+    if (msg.id && typeof msg.id === 'string' && msg.id.startsWith('pool') && !msg.method) {
       // 内部命令（ensureVisible 用的）响应直接丢弃
       if (msg.id.includes('_internal')) {
         return true;
@@ -274,6 +275,9 @@ class PortPoolManager {
       session.pendingRequests.delete(msg.id);
 
       // 如果是 createTarget 响应，记录 targetId → portIndex 归属 + 初始 url + 释放锁
+      if (pending && pending.method === 'Target.createTarget') {
+        console.log(`[PORT POOL] createTarget response: result=${JSON.stringify(msg.result).slice(0,80)}`);
+      }
       if (msg.result && msg.result.targetId) {
         const tid = msg.result.targetId;
         session.targetIds.add(tid);
@@ -281,6 +285,7 @@ class PortPoolManager {
         this.targetToPort.set(tid, portIndex);
         // 释放 createTarget 锁
         if (session._releaseCreateTarget) {
+          console.log(`[PORT POOL] createTarget lock released`);
           session._releaseCreateTarget();
           session._releaseCreateTarget = null;
           session.createTargetLock = null;

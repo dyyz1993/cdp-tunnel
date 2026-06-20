@@ -33,6 +33,7 @@ const TESTS = [
   { file: 'test-port-isolation.js', name: 'Port Pool Isolation (v3.0)', timeout: 180000, tier: 'new' },
   { file: 'test-port-pool-full.js', name: 'Port Pool Full CDP Chain', timeout: 180000, tier: 'new' },
   { file: 'test-ab-compare.js', name: 'A/B Compare: Direct CDP vs Port Pool', timeout: 180000, tier: 'core' },
+  { file: 'test-ab-gate.js', name: 'A/B Gate (提交必须通过)', timeout: 180000, tier: 'core' },
   { file: 'test-long-connection.js', name: 'Long Connection Stability', timeout: 300000, tier: 'extended' },
   { file: 'test-user-tab-not-grouped.js', name: 'User Tab Not Grouped', timeout: 120000, tier: 'core' },
   { file: 'test-sw-keepalive.js', name: 'SW Keepalive + Reconnect', timeout: 180000, tier: 'new' },

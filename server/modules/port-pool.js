@@ -287,6 +287,9 @@ class PortPoolManager {
 
       // 恢复原始 id，发给发起请求的 client
       const response = { ...msg, id: this._parseOriginalId(originalId) };
+      delete response.__portIndex;
+      delete response.__clientId;
+      delete response.type;
       if (pending && pending.clientWs && pending.clientWs.readyState === WebSocket.OPEN) {
         pending.clientWs.send(JSON.stringify(response));
       } else {

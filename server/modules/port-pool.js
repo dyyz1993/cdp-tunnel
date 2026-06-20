@@ -209,13 +209,15 @@ class PortPoolManager {
       try { msg = JSON.parse(data.toString()); } catch { return; }
 
       if (msg.id !== undefined) {
+        // createTarget 串行化（避免并发 chrome.tabs.create 回调串）
+        if (msg.method === 'Target.createTarget') {
+          while (session.createTargetLock) { await session.createTargetLock; }
+          session.createTargetLock = new Promise(r => { session._releaseCreateTarget = r; });
+        }
+
         // 合成输入命令：先 bringToFront + 等待，再发原命令
         if (SYNTHETIC_INPUT.indexOf(msg.method) >= 0 && msg.sessionId) {
           await this._ensureVisible(session, pluginWs, msg.sessionId);
-        }
-
-        if (msg.method === 'Network.enable' || msg.method === 'Page.startScreencast') {
-          // 已转发，继续
         }
 
         // 命令：分配新 id，记录映射（含 method 名供响应后处理），转发给 plugin
@@ -271,12 +273,18 @@ class PortPoolManager {
       const pending = session.pendingRequests.get(msg.id);
       session.pendingRequests.delete(msg.id);
 
-      // 如果是 createTarget 响应，记录 targetId → portIndex 归属 + 初始 url
+      // 如果是 createTarget 响应，记录 targetId → portIndex 归属 + 初始 url + 释放锁
       if (msg.result && msg.result.targetId) {
         const tid = msg.result.targetId;
         session.targetIds.add(tid);
         session.targetUrls.set(tid, pending?.params?.url || 'about:blank');
         this.targetToPort.set(tid, portIndex);
+        // 释放 createTarget 锁
+        if (session._releaseCreateTarget) {
+          session._releaseCreateTarget();
+          session._releaseCreateTarget = null;
+          session.createTargetLock = null;
+        }
       }
 
       // 如果是 Page.navigate 响应，更新 targetId 的 url

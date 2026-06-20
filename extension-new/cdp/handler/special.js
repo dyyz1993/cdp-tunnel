@@ -65,8 +65,30 @@ var SpecialHandler = (function() {
       }
 
       var isAlreadyAttached = state.isTabAttached(tabId);
+      var isAttaching = state.attachingTabs && state.attachingTabs.has(tabId);
 
-      if (isAlreadyAttached) {
+      if (isAlreadyAttached || isAttaching) {
+        // 已 attach 或正在 attach——等待正在进行的 attach 完成后返回新 session
+        if (isAttaching && state.attachingTabs) {
+          // 等待 attach 完成
+          var waitAttach = function(cb, retries) {
+            if (state.isTabAttached(tabId)) {
+              var sid = CDPUtils.generateSessionId();
+              state.mapSession(sid, tabId, targetId);
+              muteTabIfNeeded(tabId);
+              cb({ sessionId: sid });
+            } else if (retries > 0) {
+              setTimeout(function() { waitAttach(cb, retries - 1); }, 100);
+            } else {
+              // 超时——直接生成 session（attach 可能成功了但标记慢了）
+              var sid2 = CDPUtils.generateSessionId();
+              state.mapSession(sid2, tabId, targetId);
+              muteTabIfNeeded(tabId);
+              cb({ sessionId: sid2 });
+            }
+          };
+          return new Promise(function(resolve) { waitAttach(resolve, 30); });
+        }
         var newSessionId = CDPUtils.generateSessionId();
         state.mapSession(newSessionId, tabId, targetId);
         muteTabIfNeeded(tabId);
@@ -74,7 +96,14 @@ var SpecialHandler = (function() {
         return { sessionId: newSessionId };
       }
 
+      // 标记为正在 attach（防止并发 attach 同一个 tab）
+      if (!state.attachingTabs) state.attachingTabs = new Set();
+      state.attachingTabs.add(tabId);
+
       return DebuggerManager.attach(tabId, state).then(function(attached) {
+        // 清除"正在 attach"标记
+        if (state.attachingTabs) state.attachingTabs.delete(tabId);
+
         if (!attached) {
           throw new Error('Failed to attach');
         }

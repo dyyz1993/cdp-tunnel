@@ -38,6 +38,7 @@ class PortPoolManager {
       this.portIndex = portIndex;
       this.port = port;
       this.targetIds = new Set();        // 这个端口创建的所有 targetId
+      this.targetUrls = new Map();       // targetId → url（navigate 时更新）
       this.tabIds = new Set();           // Chrome tabId（扩展端返回的）
       this.clients = new Set();          // 连接到这个端口的 client WebSocket
       this.cdpIdCounter = 1;             // CDP 命令 id 计数器
@@ -157,7 +158,7 @@ class PortPoolManager {
         targets.push({
           id: targetId,
           type: 'page',
-          url: 'about:blank',
+          url: session.targetUrls.get(targetId) || 'about:blank',
           title: '',
           webSocketDebuggerUrl: `ws://localhost:${session.port}/devtools/page/${targetId}`
         });
@@ -222,7 +223,9 @@ class PortPoolManager {
         session.pendingRequests.set(newId, {
           originalId: msg.id,
           method: msg.method,
-          clientWs: ws
+          clientWs: ws,
+          params: msg.params,
+          sessionId: msg.sessionId
         });
 
         const forwarded = { ...msg, id: newId, __portIndex: session.portIndex, __clientId: `pool_${session.port}` };
@@ -268,11 +271,25 @@ class PortPoolManager {
       const pending = session.pendingRequests.get(msg.id);
       session.pendingRequests.delete(msg.id);
 
-      // 如果是 createTarget 响应，记录 targetId → portIndex 归属
+      // 如果是 createTarget 响应，记录 targetId → portIndex 归属 + 初始 url
       if (msg.result && msg.result.targetId) {
-        session.targetIds.add(msg.result.targetId);
-        this.targetToPort.set(msg.result.targetId, portIndex);
-        console.log(`[PORT POOL] targetId=${msg.result.targetId.slice(0,12)} → port ${session.port}`);
+        const tid = msg.result.targetId;
+        session.targetIds.add(tid);
+        session.targetUrls.set(tid, pending?.params?.url || 'about:blank');
+        this.targetToPort.set(tid, portIndex);
+      }
+
+      // 如果是 Page.navigate 响应，更新 targetId 的 url
+      if (pending && pending.method === 'Page.navigate' && pending.sessionId && msg.result) {
+        // 找 sessionId 对应的 targetId
+        for (const [tid, pidx] of this.targetToPort.entries()) {
+          if (pidx === portIndex) {
+            // 用 pending.params.url 更新
+            if (pending.params?.url) {
+              session.targetUrls.set(tid, pending.params.url);
+            }
+          }
+        }
       }
 
       // 如果是 attachToTarget 响应，记录 sessionId → portIndex

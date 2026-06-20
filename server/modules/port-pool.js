@@ -165,18 +165,20 @@ class PortPoolManager {
   _handleClientConnect(ws, req, session) {
     session.clients.add(ws);
 
-    // 找到 plugin 连接（从主 proxy 获取）
     const pluginWs = this.mainProxy.getPluginConnection();
     if (!pluginWs) {
       ws.close(1011, 'No extension connected');
       return;
     }
 
-    // 通知扩展有 client 连接（扩展需要 hasConnectedClient=true 才转发 debugger 事件）
-    const poolClientId = `pool_${session.portIndex}_${Date.now()}`;
+    // 通知扩展有 client 连接（带端口号作为分组标识）
+    // clientId 固定为 pool_{port}，让扩展为每个端口建一个独立分组
+    const poolClientId = `pool_${session.port}`;
     pluginWs.send(JSON.stringify({
       type: 'client-connected',
-      clientId: poolClientId
+      clientId: poolClientId,
+      __mode: 'create',
+      __connectionTag: String(session.port)
     }));
 
     // 合成输入命令需要 ensureVisible（和 forward.js 的逻辑一致）
@@ -205,7 +207,7 @@ class PortPoolManager {
           clientWs: ws
         });
 
-        const forwarded = { ...msg, id: newId, __portIndex: session.portIndex };
+        const forwarded = { ...msg, id: newId, __portIndex: session.portIndex, __clientId: `pool_${session.port}` };
         pluginWs.send(JSON.stringify(forwarded));
       } else {
         // 无 id 的消息（事件），直接转发

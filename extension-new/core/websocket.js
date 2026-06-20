@@ -241,6 +241,9 @@ var WebSocketConnection = (function() {
         Logger.info('[WS:' + self.connectionId + '] Client connected, resuming event forwarding');
         self.state.setHasConnectedClient(true);
         self.state.addCDPClient(message.clientId, message.clientId);
+        if (message.__connectionTag) {
+          self.state.connectionTag = message.__connectionTag;
+        }
         self._createGroupForClient(message.clientId, message.__mode);
         self._broadcastStateUpdate();
         break;
@@ -577,7 +580,8 @@ var WebSocketConnection = (function() {
     var readyPromise = new Promise(function(resolve) { resolveGroupReady = resolve; });
     self.state.setGroupCreationPromise(clientId, readyPromise);
 
-    var baseName = CDPUtils.getGroupBaseName(clientId, self.config ? self.config.tag : null, mode);
+    var tag = self.state.connectionTag || (self.config ? self.config.tag : null);
+    var baseName = CDPUtils.getGroupBaseName(clientId, tag, mode);
     chrome.tabs.query({ currentWindow: true }, function(tabs) {
       if (!tabs || tabs.length === 0) {
         Logger.warn('[WS:' + self.connectionId + '] No tabs found for group creation');

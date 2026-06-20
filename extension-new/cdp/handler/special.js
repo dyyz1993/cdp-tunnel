@@ -12,8 +12,11 @@ var SpecialHandler = (function() {
   function _getConnectionTag(ctx) {
     var wm = ctx._wsManager;
     var state = ctx._state;
-    // 优先从 state.connectionTag 读（端口池设置的端口号）
-    if (state && state.connectionTag) return state.connectionTag;
+    // 端口池：按 clientId 查 connectionTag（端口号）
+    if (state && ctx.clientId && state.getTagForClient) {
+      var tag = state.getTagForClient(ctx.clientId);
+      if (tag) return tag;
+    }
     return (wm && wm.config && wm.config.tag) || null;
   }
 

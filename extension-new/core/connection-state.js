@@ -2,6 +2,7 @@ function ConnectionState(connectionId, mode) {
   this.connectionId = connectionId;
   this.mode = mode || 'create';
   this.connectionTag = null;
+  this.clientIdToTag = new Map();
   this.ws = null;
   this.reconnectTimer = null;
   this._hasConnectedClient = false;
@@ -297,6 +298,14 @@ ConnectionState.prototype.clearPreExistingTabsForClient = function(clientId) {
       self.preExistingTabIds.delete(tabId);
     }
   });
+};
+
+ConnectionState.prototype.setTagForClient = function(clientId, tag) {
+  if (clientId && tag) this.clientIdToTag.set(clientId, tag);
+};
+
+ConnectionState.prototype.getTagForClient = function(clientId) {
+  return this.clientIdToTag.get(clientId) || null;
 };
 
 ConnectionState.prototype.addCDPClient = function(clientId, info) {

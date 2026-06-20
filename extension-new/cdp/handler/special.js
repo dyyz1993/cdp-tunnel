@@ -414,7 +414,8 @@ var SpecialHandler = (function() {
     var groupId = state ? state.getGroupIdForClient(clientId) : null;
     if (!groupId) return;
 
-    var connectionTag = (wsManager && wsManager.config && wsManager.config.tag) || null;
+    var connectionTag = (state && state.getTagForClient) ? state.getTagForClient(clientId) : null;
+    if (!connectionTag) connectionTag = (wsManager && wsManager.config && wsManager.config.tag) || null;
 
     chrome.tabs.query({ groupId: groupId }, function(tabs) {
       if (chrome.runtime.lastError || !tabs) return;

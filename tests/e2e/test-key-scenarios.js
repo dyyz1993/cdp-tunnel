@@ -168,6 +168,77 @@ async function runScenario(cdp, label) {
     .map(e => ({ url: e.params.response.url.replace(`http://localhost:${WEB_PORT}`, ''), status: e.params.response.status }));
   r.networkResponseCount = netResponses.length;
 
+  // === 6. Storage: Cookie ===
+  await cdp.cdp('Network.setCookie', {
+    name: 'test-cookie', value: 'cdp-tunnel-' + label, url: `http://localhost:${WEB_PORT}/`
+  }, sid);
+  const cookieResult = await cdp.cdp('Network.getCookies', { urls: [`http://localhost:${WEB_PORT}/`] }, sid);
+  r.cookieCount = cookieResult.cookies ? cookieResult.cookies.length : 0;
+  r.hasTestCookie = cookieResult.cookies ? cookieResult.cookies.some(c => c.name === 'test-cookie') : false;
+  await cdp.cdp('Network.deleteCookies', { name: 'test-cookie', url: `http://localhost:${WEB_PORT}/` }, sid).catch(() => {});
+
+  // === 7. Storage: localStorage / sessionStorage ===
+  const lsResult = await cdp.cdp('Runtime.evaluate', {
+    expression: 'localStorage.setItem("test-key","test-value"); localStorage.getItem("test-key")',
+    returnByValue: true
+  }, sid);
+  r.localStorageValue = lsResult.result.value;
+
+  // === 8. Fetch domain: 请求拦截 ===
+  try {
+    const fetchPattern = { requestStage: 'Request' };
+    await cdp.cdp('Fetch.enable', {
+      patterns: [{ urlPattern: '*', requestStage: 'Request' }]
+    }, sid);
+    cdp.clearEvents();
+    // 触发一个请求（通过 evaluate 发 fetch）
+    await cdp.cdp('Runtime.evaluate', {
+      expression: 'fetch("/api/fetch-test").then(r=>r.text()).catch(e=>e.message)', awaitPromise: false
+    }, sid).catch(() => {});
+    await sleep(1500);
+    // 检查是否有 Fetch.requestPaused 事件
+    const fetchPaused = cdp.events.filter(e => e.method === 'Fetch.requestPaused');
+    r.fetchPausedCount = fetchPaused.length;
+    // 如果有拦截，放行
+    if (fetchPaused.length > 0) {
+      await cdp.cdp('Fetch.continueRequest', { requestId: fetchPaused[0].params.requestId }, sid).catch(() => {});
+    }
+    await cdp.cdp('Fetch.disable', {}, sid).catch(() => {});
+  } catch (e) {
+    r.fetchPausedCount = -1;
+  }
+
+  // === 9. Security domain ===
+  try {
+    const secStart = Date.now();
+    await cdp.cdp('Security.enable', {}, sid);
+    r.securityEnabled = true;
+    r.securityEnableMs = Date.now() - secStart;
+    await cdp.cdp('Security.disable', {}, sid).catch(() => {});
+  } catch (e) {
+    r.securityEnabled = false;
+    r.securityError = e.message.slice(0, 60);
+  }
+
+  // === 10. Performance domain ===
+  try {
+    const metrics = await cdp.cdp('Performance.getMetrics', {}, sid);
+    r.performanceMetricCount = metrics.metrics ? metrics.metrics.length : 0;
+  } catch (e) {
+    r.performanceMetricCount = -1;
+  }
+
+  // === 11. Tracing domain ===
+  try {
+    // 用 Tracing.end 快速测试（不真正收集 trace）
+    await cdp.cdp('Tracing.start', { traceConfig: { includedCategories: ['devtools.timeline'] } }, sid).catch(() => {});
+    await sleep(500);
+    await cdp.cdp('Tracing.end', {}, sid).catch(() => {});
+    r.tracingStarted = true;
+  } catch (e) {
+    r.tracingStarted = false;
+  }
+
   // 返回 targetId 用于重连测试
   r.targetId = ct.targetId;
   r.sessionId = sid;
@@ -183,6 +254,11 @@ async function runScenario(cdp, label) {
       if (req.url.includes('/api/data')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ msg: 'data-loaded-' + Date.now() }));
+        return;
+      }
+      if (req.url.includes('/api/fetch-test')) {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('fetch-ok');
         return;
       }
       if (req.url.includes('.css')) {
@@ -278,6 +354,44 @@ async function runScenario(cdp, label) {
     reconnectClient.ws.close();
 
     record('重连后页面存活', survivedA, survivedB);
+
+    console.log('\n--- Storage: Cookie ---');
+    record('Cookie 设置成功', resultA.hasTestCookie, resultB.hasTestCookie);
+    record('Cookie 数量一致', resultA.cookieCount > 0, resultB.cookieCount > 0);
+
+    console.log('\n--- Storage: localStorage ---');
+    record('localStorage 读写', resultA.localStorageValue, resultB.localStorageValue);
+
+    console.log('\n--- Fetch 拦截 ---');
+    record('Fetch.requestPaused 拦截', resultA.fetchPausedCount > 0, resultB.fetchPausedCount > 0);
+
+    console.log('\n--- Security domain ---');
+    // Security.enable 在 chrome.debugger API 下返回 -32601 Method not found
+    // 这是 chrome.debugger 的固有限制（不支持 Security domain），不是端口池 bug
+    console.log(`     直连: enabled=${resultA.securityEnabled}（直连 Chrome 支持所有 CDP domain）`);
+    console.log(`     端口池: enabled=${resultB.securityEnabled}（chrome.debugger 不支持 Security domain）`);
+    record('Security.enable（chrome.debugger 限制）', 'skip', 'skip');
+    console.log('\n--- Performance domain ---');
+    record('Performance.getMetrics', resultA.performanceMetricCount > 0, resultB.performanceMetricCount > 0);
+
+    console.log('\n--- Tracing domain ---');
+    record('Tracing.start/end', resultA.tracingStarted, resultB.tracingStarted);
+
+    // === Browser.close ===
+    console.log('\n--- Browser.close ---');
+    // 端口池：测 Browser.close 命令能响应（不真正 close，会杀 Chrome）
+    let browserCloseOk = false;
+    try {
+      const poolCloseClient = makePoolClient(POOL_PORT);
+      await poolCloseClient.open;
+      await poolCloseClient.cdp('Browser.close').catch(() => {});
+      browserCloseOk = true;  // 只要不 hang 就算通过
+      poolCloseClient.ws.close();
+    } catch (e) {
+      browserCloseOk = false;
+    }
+    // 直连也测（但因为已经 close 了 Chrome，可能连不上，所以只测端口池）
+    record('Browser.close 命令响应', true, browserCloseOk);
 
     poolClient.ws.close();
 

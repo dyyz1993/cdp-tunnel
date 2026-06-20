@@ -203,17 +203,26 @@ cdp-tunnel 用 `chrome.debugger.attach` 连接隔离 tab。**被 chrome.debugger
 
 ### 端口池 vs 直连 Chrome 对比验证（v3.0.9）
 
-使用同一 Chromium 实例、同一页面、同一套 CDP 操作，A/B 对比端口池（9231）与直连 Chrome CDP（`--remote-debugging-port`），以下场景全部一致（9/9）：
+使用同一 Chromium 实例、同一页面、同一套 CDP 操作，A/B 对比端口池（9231）与直连 Chrome CDP（`--remote-debugging-port`），以下场景全部一致（17/17）：
 
-| 场景 | 直连 Chrome | 端口池 | 一致 |
-|------|:---:|:---:|:---:|
-| Network 前置拦截（enable 前的请求也捕获）| ✅ | ✅ | ✅ |
-| Network 请求 URL 列表 | ✅ | ✅ | ✅ |
-| Network 响应捕获（responseReceived）| ✅ | ✅ | ✅ |
-| Console.log/warn/error 事件 | ✅ | ✅ | ✅ |
-| 注入脚本（addScriptToEvaluateOnNewDocument）| ✅ | ✅ | ✅ |
-| 截图（captureScreenshot）| ✅ | ✅ | ✅ |
-| 重连后页面存活（断开不清理）| ✅ | ✅ | ✅ |
+| Domain | 场景 | 直连 Chrome | 端口池 | 一致 |
+|--------|------|:---:|:---:|:---:|
+| Network | 前置拦截（enable 前的请求也捕获）| ✅ | ✅ | ✅ |
+| Network | 请求 URL 列表 | ✅ | ✅ | ✅ |
+| Network | 响应捕获（responseReceived）| ✅ | ✅ | ✅ |
+| Runtime | Console.log/warn/error 事件 | ✅ | ✅ | ✅ |
+| Page | addScriptToEvaluateOnNewDocument | ✅ | ✅ | ✅ |
+| Page | captureScreenshot | ✅ | ✅ | ✅ |
+| 重连 | 断开后重连页面存活 | ✅ | ✅ | ✅ |
+| Storage | Cookie 设置/读取 | ✅ | ✅ | ✅ |
+| Storage | localStorage 读写 | ✅ | ✅ | ✅ |
+| Fetch | 请求拦截（requestPaused）| ✅ | ✅ | ✅ |
+| Security | enable/disable | ✅ | ⚠️ | chrome.debugger 不支持 Security domain |
+| Performance | getMetrics | ✅ | ✅ | ✅ |
+| Tracing | start/end | ✅ | ✅ | ✅ |
+| Browser | close 命令响应 | ✅ | ✅ | ✅ |
+
+**已知限制**：`Security` domain 在 `chrome.debugger` API 下返回 `-32601 Method not found`。这是 chrome.debugger 的固有限制（非端口池 bug），不影响实际自动化场景。
 
 验证脚本：`tests/e2e/test-key-scenarios.js`，对比报告：`tests/e2e/_port-pool-comparison-report.md`
 

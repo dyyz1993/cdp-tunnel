@@ -150,10 +150,20 @@ class PortPoolManager {
     }
 
     if (path === '/json' || path === '/json/list') {
-      // 只返回这个端口的 target（从主 proxy 拿全量后过滤）
-      const allTargets = await this.mainProxy.getAllTargets(session.portIndex);
+      // 返回这个端口创建的 tab 列表
+      // 从 session.targetIds 构建（这些是 createTarget 时记录的）
+      const targets = [];
+      for (const targetId of session.targetIds) {
+        targets.push({
+          id: targetId,
+          type: 'page',
+          url: 'about:blank',
+          title: '',
+          webSocketDebuggerUrl: `ws://localhost:${session.port}/devtools/page/${targetId}`
+        });
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(allTargets));
+      res.end(JSON.stringify(targets));
       return;
     }
 

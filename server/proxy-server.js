@@ -2096,49 +2096,34 @@ server.on('error', (err) => {
     process.exit(1);
 });
 
+// v3.2: 9221 = 主 server（plugin + client），9222 废弃
 server.listen(PORT, '0.0.0.0');
 
-const takeoverServer = http.createServer((req, res) => {
-    req._takeoverMode = true;
-    handleHttpRequest(req, res);
-});
-takeoverServer.on('upgrade', (req, socket, head) => {
-    req._takeoverMode = true;
-    const url = new URL(req.url, `http://localhost:${TAKEOVER_PORT}`);
-    const path = url.pathname;
-    const isPlugin = path === '/plugin';
-    const isClient = path === '/client' ||
-                     path.startsWith('/client/') ||
-                     path.startsWith('/client-') ||
-                     path.startsWith('/devtools/browser/') ||
-                     path.startsWith('/devtools/page/');
-
-    if (!isPlugin && !isClient) {
-        socket.destroy();
-        return;
-    }
-
-    wss.handleUpgrade(req, socket, head, (ws) => {
-        wss.emit('connection', ws, req);
-    });
-});
-takeoverServer.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-        console.error(`[WARN] Takeover port ${TAKEOVER_PORT} is already in use. Takeover mode disabled.`);
-    } else {
-        console.error('[WARN] Takeover server error:', err.message);
-    }
-});
-takeoverServer.listen(TAKEOVER_PORT, '0.0.0.0', () => {
-    console.log(`[TAKEOVER] Listening on port ${TAKEOVER_PORT}`);
-});
-
-// v3.0 端口池启动
+// v3.0 端口池启动（唯一模式）
 portPool = new PortPoolManager({
     getPluginConnection: () => {
         for (const ws of pluginConnections) return ws;
         return null;
     },
+    handlePluginUpgrade: (req, socket, head) => {
+        wss.handleUpgrade(req, socket, head, (ws) => {
+            wss.emit('connection', ws, req);
+        });
+    },
+    handleTakeoverUpgrade: (req, socket, head) => {
+        req._takeoverMode = true;
+        const url = new URL(req.url, `http://localhost:${CONFIG.TAKEOVER_PORT}`);
+        const path = url.pathname;
+        if (path !== '/plugin' && path !== '/client' && !path.startsWith('/client/') &&
+            !path.startsWith('/devtools/browser/') && !path.startsWith('/devtools/page/')) {
+            socket.destroy();
+            return;
+        }
+        wss.handleUpgrade(req, socket, head, (ws) => {
+            wss.emit('connection', ws, req);
+        });
+    },
+    handleHttpRequest: (req, res) => handleHttpRequest(req, res),
     handlePoolUpgrade: (req, socket, head, portIndex, port) => {
         req._poolPortIndex = portIndex;
         wss.handleUpgrade(req, socket, head, (ws) => {

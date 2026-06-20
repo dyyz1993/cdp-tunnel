@@ -1,5 +1,9 @@
 const CONFIG = {
   PORT: process.env.PORT ? parseInt(process.env.PORT) : 9221,
+  TAKEOVER_PORT: process.env.TAKEOVER_PORT ? parseInt(process.env.TAKEOVER_PORT) : 9220,
+  POOL_START: process.env.POOL_START ? parseInt(process.env.POOL_START) : 9231,
+  POOL_SIZE: process.env.POOL_SIZE ? parseInt(process.env.POOL_SIZE) : 9,
+  POOL_TAKEOVER_PORT: process.env.POOL_TAKEOVER_PORT ? parseInt(process.env.POOL_TAKEOVER_PORT) : 9220,
   HEARTBEAT_INTERVAL: 30000,
   STATUS_PRINT_INTERVAL: 60000,
   TARGETS_CACHE_TTL: 2000,
@@ -10,11 +14,7 @@ const CONFIG = {
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
   AUTO_RESTART: process.env.AUTO_RESTART === 'true',
   CHROME_RESTART_COOLDOWN: 30000,
-  PLUGIN_MAX_MISSED_PINGS: 3,
-  TAKEOVER_PORT: process.env.TAKEOVER_PORT ? parseInt(process.env.TAKEOVER_PORT) : (parseInt(process.env.PORT || '9221') + 1),
-  POOL_TAKEOVER_PORT: process.env.POOL_TAKEOVER_PORT ? parseInt(process.env.POOL_TAKEOVER_PORT) : 9220,
-  POOL_START: process.env.POOL_START ? parseInt(process.env.POOL_START) : 9231,
-  POOL_SIZE: process.env.POOL_SIZE ? parseInt(process.env.POOL_SIZE) : 9
+  PLUGIN_MAX_MISSED_PINGS: 3
 };
 
 const LOG_LEVELS = {

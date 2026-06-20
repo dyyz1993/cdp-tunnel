@@ -67,16 +67,24 @@ class PortPoolManager {
     const server = http.createServer();
     this.createServers[portIndex] = server;
 
-    // 端口池端口复用主 proxy 的 wss——通过 localPort 区分
+    server.on('request', (req, res) => {
+      this._handleHttp(req, res, session);
+    });
+
     server.on('upgrade', (req, socket, head) => {
       req._poolPortIndex = portIndex;
       req._poolPort = port;
-      // 转发给主 proxy 的 wss 处理
-      this.mainProxy.handlePoolUpgrade(req, socket, head, portIndex, port);
-    });
+      const url = new URL(req.url, `http://localhost:${port}`);
+      const path = url.pathname;
 
-    server.on('request', (req, res) => {
-      this._handleHttp(req, res, session);
+      // 只接受 client 连接（plugin 连 9221）
+      if (path !== '/client' && !path.startsWith('/client/') &&
+          !path.startsWith('/devtools/browser/') && !path.startsWith('/devtools/page/')) {
+        socket.destroy();
+        return;
+      }
+
+      this.mainProxy.handlePoolUpgrade(req, socket, head, portIndex, port);
     });
 
     server.on('error', (err) => {

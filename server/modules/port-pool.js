@@ -366,13 +366,11 @@ class PortPoolManager {
           }
         }
         // 竞态处理：targetCreated/attachedToTarget 在 createTarget 响应之前到达
-        // targetToPort 还没记录。检查 pendingCreate。
-        // 同时也对 attachedToTarget 放行（它的 targetId 和 targetCreated 一样）
+        // 只用 pendingCreate 精确匹配，不广播（广播会导致 sessionId 串）
         if (msg.method === 'Target.targetCreated' || msg.method === 'Target.attachedToTarget') {
           for (let pi = 0; pi < this.portSessions.length; pi++) {
             const sess = this.portSessions[pi];
             if (sess && sess.pendingCreate) {
-              // 提前注册
               sess.targetIds.add(targetId);
               sess.targetUrls.set(targetId, 'about:blank');
               this.targetToPort.set(targetId, pi);
@@ -381,11 +379,8 @@ class PortPoolManager {
               return true;
             }
           }
-          // 没有 pendingCreate——广播给所有端口（对齐直连 Chrome 的广播行为）
-          // 这样即使竞态导致没匹配到，客户端也能收到事件
-          for (let pi = 0; pi < this.portSessions.length; pi++) {
-            this._broadcastToPort(pi, msg);
-          }
+          // pendingCreate 没匹配到——记录但不广播（避免 sessionId 串）
+          // targetId 会在 createTarget 响应时注册
           return true;
         }
       }
@@ -397,25 +392,11 @@ class PortPoolManager {
           this._broadcastToPort(portIndex, msg);
           return true;
         }
-        // 竞态兜底：sessionId 还没注册（attachToTarget 响应未到）
-        // 但事件已经来了。广播给所有端口池 client，确保不丢。
-        // 对齐直连 Chrome——所有 session 事件都广播给所有连接。
-        for (let pi = 0; pi < this.portSessions.length; pi++) {
-          if (this.portSessions[pi]) {
-            this._broadcastToPort(pi, msg);
-          }
-        }
-        return true;
+        // sessionId 未注册——交给主 proxy 处理（不吞掉）
       }
 
-      // 兜底：有 method 但没有 targetId 也没有 sessionId 的事件
-      // 也广播，确保不丢（如 Target.targetDestroyed 等）
-      for (let pi = 0; pi < this.portSessions.length; pi++) {
-        if (this.portSessions[pi]) {
-          this._broadcastToPort(pi, msg);
-        }
-      }
-      return true;
+      // 其他未匹配的事件——交给主 proxy
+      return false;
     }
 
     return false;  // 不是端口池的消息

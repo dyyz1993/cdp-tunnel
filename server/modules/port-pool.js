@@ -210,10 +210,11 @@ class PortPoolManager {
       try { msg = JSON.parse(data.toString()); } catch { return; }
 
       if (msg.id !== undefined) {
-        // createTarget 串行化（避免并发 chrome.tabs.create 回调串）
+        // createTarget 串行化 + 标记 pending
         if (msg.method === 'Target.createTarget') {
           while (session.createTargetLock) { await session.createTargetLock; }
           session.createTargetLock = new Promise(r => { session._releaseCreateTarget = r; });
+          session.pendingCreate = true; // 标记：下一个 targetCreated 事件归属这个端口
         }
 
         // 合成输入命令：先 bringToFront + 等待，再发原命令
@@ -345,6 +346,19 @@ class PortPoolManager {
           const session = this.portSessions[portIndex];
           if (session) {
             this._broadcastToPort(portIndex, msg);
+            return true;
+          }
+        }
+        // 竞态处理：targetCreated 在 createTarget 响应之前到达
+        // 如果有 pendingCreate，把事件归属到对应端口
+        for (let pi = 0; pi < this.portSessions.length; pi++) {
+          const sess = this.portSessions[pi];
+          if (sess && sess.pendingCreate) {
+            sess.targetIds.add(targetId);
+            sess.targetUrls.set(targetId, 'about:blank');
+            this.targetToPort.set(targetId, pi);
+            sess.pendingCreate = false; // 消费掉
+            this._broadcastToPort(pi, msg);
             return true;
           }
         }

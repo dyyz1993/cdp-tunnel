@@ -349,18 +349,28 @@ class PortPoolManager {
             return true;
           }
         }
-        // 竞态处理：targetCreated 在 createTarget 响应之前到达
-        // 如果有 pendingCreate，把事件归属到对应端口
-        for (let pi = 0; pi < this.portSessions.length; pi++) {
-          const sess = this.portSessions[pi];
-          if (sess && sess.pendingCreate) {
-            sess.targetIds.add(targetId);
-            sess.targetUrls.set(targetId, 'about:blank');
-            this.targetToPort.set(targetId, pi);
-            sess.pendingCreate = false; // 消费掉
-            this._broadcastToPort(pi, msg);
-            return true;
+        // 竞态处理：targetCreated/attachedToTarget 在 createTarget 响应之前到达
+        // targetToPort 还没记录。检查 pendingCreate。
+        // 同时也对 attachedToTarget 放行（它的 targetId 和 targetCreated 一样）
+        if (msg.method === 'Target.targetCreated' || msg.method === 'Target.attachedToTarget') {
+          for (let pi = 0; pi < this.portSessions.length; pi++) {
+            const sess = this.portSessions[pi];
+            if (sess && sess.pendingCreate) {
+              // 提前注册
+              sess.targetIds.add(targetId);
+              sess.targetUrls.set(targetId, 'about:blank');
+              this.targetToPort.set(targetId, pi);
+              if (msg.method === 'Target.attachedToTarget') sess.pendingCreate = false;
+              this._broadcastToPort(pi, msg);
+              return true;
+            }
           }
+          // 没有 pendingCreate——广播给所有端口（对齐直连 Chrome 的广播行为）
+          // 这样即使竞态导致没匹配到，客户端也能收到事件
+          for (let pi = 0; pi < this.portSessions.length; pi++) {
+            this._broadcastToPort(pi, msg);
+          }
+          return true;
         }
       }
 

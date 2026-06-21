@@ -192,7 +192,6 @@ class PortPoolManager {
     }
 
     // SW 冷启动 warmup：第一个 client 连接时创建一个临时 tab 再关闭
-    // 确保 chrome.debugger API 完全初始化，避免第一批并发请求失败
     if (!session.warmedUp) {
       session.warmedUp = true;
       const warmupId = `pool${session.portIndex}_internal_warmup`;
@@ -203,8 +202,8 @@ class PortPoolManager {
         __portIndex: session.portIndex,
         __clientId: `pool_${session.port}`
       }));
-      // 响应回来后在 handlePluginMessage 里丢弃（_internal 前缀）
-      // tab 会在 Browser.close 或断开时清理
+      // warmup 响应回来后在 handlePluginMessage 里关闭这个 tab
+      session.pendingWarmupClose = true;
     }
 
     // 通知扩展有 client 连接（带端口号作为分组标识）
@@ -280,8 +279,23 @@ class PortPoolManager {
 
     // 1. 响应消息：id 以 pool 开头（排除事件——事件有 method 字段）
     if (msg.id && typeof msg.id === 'string' && msg.id.startsWith('pool') && !msg.method) {
-      // 内部命令（ensureVisible 用的）响应直接丢弃
+      // 内部命令响应
       if (msg.id.includes('_internal')) {
+        // warmup createTarget 响应——关掉 warmup tab
+        const m = msg.id.match(/^pool(\d+)_/);
+        if (m && msg.id.includes('_warmup') && msg.result && msg.result.targetId) {
+          const pidx = parseInt(m[1]);
+          const sess = this.portSessions[pidx];
+          const warmupTid = msg.result.targetId;
+          const closeId = `pool${pidx}_internal_warmup_close_${Date.now()}`;
+          pluginWs.send(JSON.stringify({
+            id: closeId,
+            method: 'Target.closeTarget',
+            params: { targetId: warmupTid },
+            __portIndex: pidx,
+            __clientId: `pool_${sess.port}`
+          }));
+        }
         return true;
       }
       const match = msg.id.match(/^pool(\d+)_(.+)$/);

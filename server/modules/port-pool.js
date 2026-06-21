@@ -146,7 +146,7 @@ class PortPoolManager {
         Browser: 'Chrome/131.0.6778.86 (cdp-tunnel)',
         'Protocol-Version': '1.3',
         'User-Agent': 'cdp-tunnel/3.0',
-        'webSocketDebuggerUrl': `ws://localhost:${session.port}/devtools/browser/pool_${session.portIndex}`
+        'webSocketDebuggerUrl': `ws://localhost:${session.port}/client`
       }));
       return;
     }
@@ -374,14 +374,32 @@ class PortPoolManager {
         }
       }
 
-      // sessionId 路由（Network/Screencast/Input 等 session 事件）
+      // sessionId 路由（Network/Screencast/Input/Page 等 session 事件）
       if (msg.sessionId) {
         const portIndex = this.sessionToPort.get(msg.sessionId);
         if (portIndex !== undefined) {
           this._broadcastToPort(portIndex, msg);
           return true;
         }
+        // 竞态兜底：sessionId 还没注册（attachToTarget 响应未到）
+        // 但事件已经来了。广播给所有端口池 client，确保不丢。
+        // 对齐直连 Chrome——所有 session 事件都广播给所有连接。
+        for (let pi = 0; pi < this.portSessions.length; pi++) {
+          if (this.portSessions[pi]) {
+            this._broadcastToPort(pi, msg);
+          }
+        }
+        return true;
       }
+
+      // 兜底：有 method 但没有 targetId 也没有 sessionId 的事件
+      // 也广播，确保不丢（如 Target.targetDestroyed 等）
+      for (let pi = 0; pi < this.portSessions.length; pi++) {
+        if (this.portSessions[pi]) {
+          this._broadcastToPort(pi, msg);
+        }
+      }
+      return true;
     }
 
     return false;  // 不是端口池的消息

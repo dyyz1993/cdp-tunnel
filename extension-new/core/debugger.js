@@ -107,23 +107,37 @@ var DebuggerManager = (function() {
   }
 
   function doAttach(tabId, state) {
-    return chrome.debugger.attach({ tabId: tabId }, Config.DEBUGGER_VERSION)
-      .then(function() {
-        Logger.info('[Debugger] Attached to tab', tabId);
-        if (state) {
-          state.addAttachedTab(tabId);
-          state.setCurrentTabId(tabId);
-          state.persist(tabId, true);
-        }
-        return injectInternalUrlBlocker(tabId);
-      })
-      .then(function() {
-        return true;
-      })
-      .catch(function(error) {
-        Logger.error('[Debugger] Failed to attach to tab', tabId, ':', error.message);
-        return false;
-      });
+    var retryCount = 0;
+    var maxRetries = 3;
+
+    function attemptAttach() {
+      return chrome.debugger.attach({ tabId: tabId }, Config.DEBUGGER_VERSION)
+        .then(function() {
+          Logger.info('[Debugger] Attached to tab', tabId);
+          if (state) {
+            state.addAttachedTab(tabId);
+            state.setCurrentTabId(tabId);
+            state.persist(tabId, true);
+          }
+          return injectInternalUrlBlocker(tabId);
+        })
+        .then(function() {
+          return true;
+        })
+        .catch(function(error) {
+          retryCount++;
+          if (retryCount <= maxRetries) {
+            Logger.warn('[Debugger] Attach retry', retryCount, 'for tab', tabId, ':', error.message);
+            return new Promise(function(resolve) {
+              setTimeout(function() { resolve(attemptAttach()); }, 100 * retryCount);
+            });
+          }
+          Logger.error('[Debugger] Failed to attach to tab', tabId, 'after', maxRetries, 'retries:', error.message);
+          return false;
+        });
+    }
+
+    return attemptAttach();
   }
 
   function injectInternalUrlBlocker(tabId) {

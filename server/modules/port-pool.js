@@ -45,6 +45,7 @@ class PortPoolManager {
       this.cdpIdCounter = 1;             // CDP 命令 id 计数器
       this.pendingRequests = new Map();  // id → {clientWs, resolve, reject}
       this.targetToClient = new Map();   // targetId → clientWs（attachToTarget 时绑定）
+      this.sessionToClient = new Map();  // sessionId → clientWs（事件精确路由用）
       this.browserWsUrl = null;          // /json/version 返回的 webSocketDebuggerUrl
     }
   };
@@ -339,9 +340,11 @@ class PortPoolManager {
         }
       }
 
-      // 如果是 attachToTarget 响应，记录 sessionId → portIndex
+      // 如果是 attachToTarget 响应，记录 sessionId → portIndex + 发起请求的 client
       if (msg.result && msg.result.sessionId) {
         this.sessionToPort.set(msg.result.sessionId, portIndex);
+        // 记录 sessionId → 哪个 client 发起的（用于精确路由事件）
+        session.sessionToClient.set(msg.result.sessionId, pending ? pending.clientWs : null);
       }
 
       // 如果是 getTargets 响应，按 portIndex 过滤 targetInfos
@@ -403,8 +406,15 @@ class PortPoolManager {
       if (msg.sessionId) {
         const portIndex = this.sessionToPort.get(msg.sessionId);
         if (portIndex !== undefined) {
-          this._broadcastToPort(portIndex, msg);
-          return true;
+          const sess = this.portSessions[portIndex];
+          if (sess) {
+            // 精确路由：只发给持有这个 sessionId 的 client（不广播）
+            const ownerWs = sess.sessionToClient.get(msg.sessionId);
+            if (ownerWs && ownerWs.readyState === WebSocket.OPEN) {
+              ownerWs.send(JSON.stringify(msg));
+            }
+            return true;
+          }
         }
         // sessionId 未注册——交给主 proxy 处理（不吞掉）
       }

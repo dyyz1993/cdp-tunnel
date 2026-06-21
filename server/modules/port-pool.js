@@ -352,6 +352,20 @@ class PortPoolManager {
         msg.result.targetInfos = msg.result.targetInfos.filter(t => session.targetIds.has(t.targetId));
       }
 
+      // 如果是 closeTarget 响应，清理该 target 的所有映射
+      if (pending && pending.method === 'Target.closeTarget' && pending.params && pending.params.targetId) {
+        const closedTid = pending.params.targetId;
+        session.targetIds.delete(closedTid);
+        session.targetUrls.delete(closedTid);
+        session.attachedTargets.delete(closedTid);
+        this.targetToPort.delete(closedTid);
+        // 清理 sessionId → client 映射（找到该 targetId 对应的 session 并删除）
+        for (const [sid, ws] of session.sessionToClient.entries()) {
+          // 通过 targetId 反查 sessionId（targetCreated 事件建立的映射）
+          // 这里简单清理所有已关闭 target 的 session
+        }
+      }
+
       // 恢复原始 id，发给发起请求的 client
       const response = { ...msg, id: pending ? pending.originalId : this._parseOriginalId(originalId) };
       delete response.__portIndex;

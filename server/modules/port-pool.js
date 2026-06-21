@@ -191,6 +191,22 @@ class PortPoolManager {
       return;
     }
 
+    // SW 冷启动 warmup：第一个 client 连接时创建一个临时 tab 再关闭
+    // 确保 chrome.debugger API 完全初始化，避免第一批并发请求失败
+    if (!session.warmedUp) {
+      session.warmedUp = true;
+      const warmupId = `pool${session.portIndex}_internal_warmup`;
+      pluginWs.send(JSON.stringify({
+        id: warmupId,
+        method: 'Target.createTarget',
+        params: { url: 'about:blank' },
+        __portIndex: session.portIndex,
+        __clientId: `pool_${session.port}`
+      }));
+      // 响应回来后在 handlePluginMessage 里丢弃（_internal 前缀）
+      // tab 会在 Browser.close 或断开时清理
+    }
+
     // 通知扩展有 client 连接（带端口号作为分组标识）
     // clientId 固定为 pool_{port}，让扩展为每个端口建一个独立分组
     const poolClientId = `pool_${session.port}`;

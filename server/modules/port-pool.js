@@ -239,12 +239,14 @@ class PortPoolManager {
 
     // 通知扩展有 client 连接（带端口号作为分组标识）
     // clientId 固定为 pool_{port}，让扩展为每个端口建一个独立分组
+    // __groupName 带 key 名称，让扩展用 key 名称命名 Chrome 分组（一眼看出是谁的浏览器）
     const poolClientId = `pool_${session.port}`;
     pluginWs.send(JSON.stringify({
       type: 'client-connected',
       clientId: poolClientId,
       __mode: 'create',
-      __connectionTag: String(session.port)
+      __connectionTag: String(session.port),
+      __groupName: pluginWs.apiKeyName || null
     }));
 
     // 合成输入命令需要 ensureVisible（和 forward.js 的逻辑一致）

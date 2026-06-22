@@ -244,7 +244,8 @@ var WebSocketConnection = (function() {
         if (message.__connectionTag) {
           self.state.setTagForClient(message.clientId, message.__connectionTag);
         }
-        self._createGroupForClient(message.clientId, message.__mode);
+        // __groupName 来自 API Key 名称，用作 Chrome 分组名（一眼看出是谁的浏览器）
+        self._createGroupForClient(message.clientId, message.__mode, message.__groupName);
         self._broadcastStateUpdate();
         break;
 
@@ -555,7 +556,7 @@ var WebSocketConnection = (function() {
     });
   };
 
-  WebSocketConnection.prototype._createGroupForClient = function(clientId, mode) {
+  WebSocketConnection.prototype._createGroupForClient = function(clientId, mode, groupName) {
     var self = this;
     if (!clientId || !chrome.tabGroups) return;
     if (mode === 'takeover') {
@@ -581,7 +582,7 @@ var WebSocketConnection = (function() {
     self.state.setGroupCreationPromise(clientId, readyPromise);
 
     var tag = (self.state.getTagForClient ? self.state.getTagForClient(clientId) : null) || (self.config ? self.config.tag : null);
-    var baseName = CDPUtils.getGroupBaseName(clientId, tag, mode);
+    var baseName = CDPUtils.getGroupBaseName(clientId, tag, mode, groupName);
     chrome.tabs.query({ currentWindow: true }, function(tabs) {
       if (!tabs || tabs.length === 0) {
         Logger.warn('[WS:' + self.connectionId + '] No tabs found for group creation');

@@ -1018,6 +1018,7 @@ function handlePluginConnection(ws, clientInfo, request) {
                 ws.userId = keyInfo.userId;
                 ws.apiKeyId = keyInfo.keyId;
                 ws.apiKey = apiKey;  // 记录 key 字符串，供 client 连接时反查 plugin
+                ws.apiKeyName = keyInfo.keyName;  // key 名称，用作 Chrome 分组名
                 logConnectionEvent('PLUGIN_AUTHED', `userId=${keyInfo.userId} keyName=${keyInfo.keyName}`);
             } else {
                 logConnectionEvent('PLUGIN_AUTH_FAIL', 'Invalid API key');

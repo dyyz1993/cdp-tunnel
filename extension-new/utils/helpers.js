@@ -42,8 +42,14 @@ var CDPUtils = (function() {
     return 0;
   }
 
-  function buildGroupName(clientId, connectionTag, mode) {
+  function buildGroupName(clientId, connectionTag, mode, groupName) {
     if (!clientId) return 'CDP';
+    // 如果传了 groupName（来自 API Key 的名称），直接用它作为分组名
+    // Chrome 分组显示为 "CDP-张三的浏览器"，一眼看出是谁的浏览器
+    if (groupName) {
+      var prefixG = (mode === 'takeover') ? 'TAKE-' : 'CDP-';
+      return prefixG + groupName;
+    }
     var hash = 0;
     for (var i = 0; i < clientId.length; i++) {
       var chr = clientId.charCodeAt(i);
@@ -56,8 +62,8 @@ var CDPUtils = (function() {
     return prefix + tag + suffix;
   }
 
-  function getGroupBaseName(clientId, connectionTag, mode) {
-    return buildGroupName(clientId, connectionTag, mode);
+  function getGroupBaseName(clientId, connectionTag, mode, groupName) {
+    return buildGroupName(clientId, connectionTag, mode, groupName);
   }
 
   function findGroupByName(allGroups, baseName) {

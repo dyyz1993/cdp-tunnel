@@ -74,9 +74,22 @@ td { padding: 10px; border-bottom: 1px solid #f3f4f6; }
   <div class="section">
     <h2>⚡ CDP 快捷操作 <span id="selectedBrowser" class="muted" style="font-size:13px;font-weight:normal;"></span></h2>
     <div id="cdpActions" style="display:none;">
+      <!-- 快捷操作 -->
+      <div style="margin-bottom:12px; padding:10px; background:#f9fafb; border-radius:6px;">
+        <div style="font-size:12px; color:#6b7280; margin-bottom:8px;">⚡ 快捷操作（点一下直接执行）</div>
+        <div class="actions">
+          <button class="btn btn-copy" onclick="quickOpen('https://www.baidu.com')">🔍 打开百度</button>
+          <button class="btn btn-copy" onclick="quickOpen('https://www.example.com')">📰 打开 Example</button>
+          <button class="btn btn-copy" onclick="quickInfo('url')">📋 看 URL</button>
+          <button class="btn btn-copy" onclick="quickInfo('title')">📊 看 Title</button>
+          <button class="btn btn-copy" onclick="quickRefresh()">🔄 刷新页面</button>
+          <button class="btn btn-copy" onclick="cdpScreenshot()">📸 截图</button>
+          <button class="btn" style="background:#f59e0b;color:white;font-weight:600;" onclick="runDemo()">🎬 一键演示</button>
+        </div>
+      </div>
+      <!-- 高级操作 -->
       <div class="actions">
         <button class="btn btn-primary" onclick="cdpEvaluate()">📝 执行 JS</button>
-        <button class="btn btn-primary" onclick="cdpScreenshot()">📸 截图</button>
         <button class="btn btn-primary" onclick="cdpNewTab()">🆕 新建标签</button>
       </div>
       <div id="cdpResult"></div>
@@ -272,7 +285,84 @@ async function runCdp(action, extra = {}) {
   }
 }
 
-// ===== 辅助 =====
+// ===== 快捷操作 =====
+async function quickOpen(url) {
+  if (!checkSelected()) return;
+  showResult('⏳ 正在打开 ' + url + ' ...');
+  // 用 navigate 方式（先拿到 page 的 sessionId，再 Page.navigate）
+  const { ok, data } = await api('cdp/evaluate', 'POST', {
+    pluginId: SELECTED_PLUGIN, action: 'evaluate',
+    expression: `window.location.href = '${url}'`
+  });
+  if (data.error) { showResult('❌ ' + data.error); return; }
+  showResult('✅ 已打开 ' + url + '，等待加载...');
+  setTimeout(() => cdpScreenshot(), 3000);  // 3 秒后自动截图
+}
+
+async function quickInfo(field) {
+  if (!checkSelected()) return;
+  const expr = field === 'url' ? 'window.location.href' : 'document.title';
+  const { data } = await api('cdp/evaluate', 'POST', { pluginId: SELECTED_PLUGIN, action: 'evaluate', expression: expr });
+  if (data.error) { showResult('❌ ' + data.error); return; }
+  showResult('📋 ' + (field === 'url' ? 'URL' : 'Title') + ': ' + data.result);
+}
+
+async function quickRefresh() {
+  if (!checkSelected()) return;
+  const { data } = await api('cdp/evaluate', 'POST', { pluginId: SELECTED_PLUGIN, action: 'evaluate', expression: 'window.location.reload(); "refreshing"' });
+  showResult(data.error ? '❌ ' + data.error : '🔄 页面刷新中...');
+  setTimeout(() => cdpScreenshot(), 3000);
+}
+
+// ===== 一键演示循环 =====
+async function runDemo() {
+  if (!checkSelected()) return;
+  const steps = [
+    { label: '🎬 开始演示', fn: () => showResult('🎬 演示开始！即将打开百度搜索"天气"\n\n') },
+    { label: '🔍 打开百度', fn: () => quickOpenSilent('https://www.baidu.com') },
+    { label: '⌨️ 输入"天气"', fn: () => demoEval('document.querySelector("#kw").value = "天气"; document.querySelector("#kw").dispatchEvent(new Event("input")); "已输入"') },
+    { label: '🔘 点击搜索', fn: () => demoEval('document.querySelector("#su").click(); "已点击搜索"') },
+    { label: '⏳ 等待结果加载', fn: () => sleep(3000) },
+    { label: '📋 搜索结果标题', fn: () => demoEval('document.title') },
+    { label: '📸 截图', fn: () => demoScreenshot() },
+    { label: '✅ 演示完成', fn: () => showResult(prevResult + '\n\n✅ 演示完成！这就是远程控制浏览器的完整链路。') },
+  ];
+  let prevResult = '';
+  showResult('🎬 演示开始...\n');
+  for (const step of steps) {
+    appendResult('\n' + step.label + '...');
+    try {
+      const r = await step.fn();
+      if (r) { prevResult = r; appendResult(' → ' + r); }
+    } catch (e) { appendResult(' ❌ ' + e.message); }
+  }
+}
+
+async function quickOpenSilent(url) {
+  await api('cdp/evaluate', 'POST', { pluginId: SELECTED_PLUGIN, action: 'evaluate', expression: `window.location.href='${url}'` });
+  await sleep(2000);
+  return '已加载';
+}
+async function demoEval(expr) {
+  const { data } = await api('cdp/evaluate', 'POST', { pluginId: SELECTED_PLUGIN, action: 'evaluate', expression: expr });
+  return data.error ? ('失败:' + data.error) : data.result;
+}
+async function demoScreenshot() {
+  const { data } = await api('cdp/screenshot', 'POST', { pluginId: SELECTED_PLUGIN, action: 'screenshot' });
+  if (data.screenshot) {
+    document.getElementById('cdpResult').innerHTML += '<br><img class="screenshot-preview" src="data:image/png;base64,' + data.screenshot + '">';
+    return '已截图';
+  }
+  return '截图失败';
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function showResult(text) { document.getElementById('cdpResult').innerHTML = '<div class="cdp-result">' + text + '</div>'; }
+function appendResult(text) {
+  const el = document.getElementById('cdpResult');
+  const current = el.querySelector('.cdp-result');
+  if (current) current.textContent += text;
+}
 function refreshAll() { loadBrowsers(); loadKeys(); }
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
 function copyText(text) { navigator.clipboard.writeText(text).then(() => toast('已复制')); }

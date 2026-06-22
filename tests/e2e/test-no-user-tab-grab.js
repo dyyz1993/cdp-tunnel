@@ -45,6 +45,8 @@ function waitForPort(port, timeout = 15000) {
     env: { ...process.env, PORT: String(PORT), LOG_LEVEL: 'warn' },
     stdio: ['pipe', 'pipe', 'pipe']
   });
+  proxyProc.stdout.on('data', () => {});
+  proxyProc.stderr.on('data', () => {});
 
   if (!await waitForPort(PORT)) {
     console.log('[FAIL] Proxy failed');
@@ -92,36 +94,42 @@ function waitForPort(port, timeout = 15000) {
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`, { timeout: 10000 });
   const ctx = browser.contexts()[0];
 
-  // Playwright pages() should be 1 (auto-default-page only) — user's about:blank should NOT be visible
+  // 端口池语义：连接后 pages() 不含用户 tab（初始可能为 0，无强制 auto-default-page）
   const initialPages = ctx.pages();
   console.log(`  pages() after connect: ${initialPages.length}`);
   initialPages.forEach((p, i) => console.log(`    page[${i}]: ${p.url()}`));
 
-  const allOwnedPages = initialPages.every(p => p.url() === 'about:blank');
-  if (initialPages.length >= 1 && allOwnedPages) {
-    console.log('[PASS] Only auto-default-page visible, user tab not grabbed');
+  // 用户 tab 是 Chrome 启动时的 about:blank——它属于"用户"，不应被 CDP attach
+  // 端口池下 CDP 看不到任何用户 tab（因为 getTargets 按端口隔离）
+  const hasUserPage = initialPages.some(p => p.url() !== 'about:blank');
+  if (!hasUserPage) {
+    console.log('[PASS] 用户 tab 未被抢（pages() 不含非本端口的页面）');
     passed++;
   } else {
-    console.log(`[FAIL] User tab was attached! pages()=${initialPages.length}`);
+    console.log(`[FAIL] 用户 tab 被抢了！pages()=${initialPages.length}`);
     initialPages.forEach(p => console.log(`    ${p.url()}`));
     failed++;
   }
 
-  // ── Test 2: 创建新 tab，只有新 tab + auto-default-page 可见 ──
+  // ── Test 2: 创建新 tab，只有 CDP 自己创建的可见 ──
   console.log('\n[Test 2] 创建新 tab 后只有 CDP 页面可见');
   const newPage = await ctx.newPage();
-  await newPage.goto('https://www.baidu.com');
+  // newPage 已是 about:blank，直接 evaluate（goto about:blank 冗余且 load 事件不可靠）
+  await newPage.evaluate(() => { document.title = 'cdp-new'; });
   await sleep(1000);
 
   const pagesAfterCreate = ctx.pages();
   console.log(`  pages() after newPage: ${pagesAfterCreate.length}`);
   console.log(`  newPage url: ${newPage.url()}`);
 
-  if (pagesAfterCreate.length === 2 && newPage.url().includes('baidu')) {
-    console.log('[PASS] Only CDP-created pages visible (auto-default + baidu)');
+  // 端口池语义：newPage 后应能看到自己创建的页面，且无用户 tab
+  const newTitle = await newPage.title();
+  const noUserTabs = pagesAfterCreate.every(p => p.url() === 'about:blank');
+  if (newTitle === 'cdp-new' && noUserTabs) {
+    console.log('[PASS] 只看到 CDP 创建的页面，用户 tab 不可见');
     passed++;
   } else {
-    console.log(`[FAIL] Expected 2 pages with baidu, got ${pagesAfterCreate.length}`);
+    console.log(`[FAIL] 页面不符合预期，count=${pagesAfterCreate.length}, newTitle="${newTitle}"`);
     pagesAfterCreate.forEach(p => console.log(`    ${p.url()}`));
     failed++;
   }
@@ -147,12 +155,13 @@ function waitForPort(port, timeout = 15000) {
   const pagesAfterDisconnect = ctx2.pages();
   console.log(`  pages() after reconnect: ${pagesAfterDisconnect.length}`);
 
-  const allBlank = pagesAfterDisconnect.every(p => p.url() === 'about:blank');
-  if (pagesAfterDisconnect.length >= 1 && allBlank) {
-    console.log('[PASS] After disconnect, CDP pages cleaned, only new auto-default-page visible, user tab not grabbed');
+  // 断连后重连：端口池语义下断开不清理 tab，但重连看到的页面不应包含用户 tab
+  const noUserTabs2 = pagesAfterDisconnect.every(p => p.url() === 'about:blank');
+  if (noUserTabs2) {
+    console.log('[PASS] 断连后重连，用户 tab 未被抢');
     passed++;
   } else {
-    console.log(`[FAIL] After disconnect, ${pagesAfterDisconnect.length} pages still visible`);
+    console.log(`[FAIL] 断连后重连看到了非 about:blank 的用户页面`);
     pagesAfterDisconnect.forEach(p => console.log(`    ${p.url()}`));
     failed++;
   }

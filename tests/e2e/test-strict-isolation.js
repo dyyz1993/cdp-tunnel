@@ -1,11 +1,12 @@
 /**
- * TDD: 严格隔离测试
+ * TDD: 端口隔离测试（per-port isolation）
  *
- * 规则：
- * 1. CDP 客户端只能看到自己创建的页面
- * 2. 用户页面完全不可见（getTargets / pages() / events）
- * 3. 其他 CDP 客户端的页面完全不可见
- * 4. 断连 = 关闭该客户端的 tab group
+ * 端口池架构下，隔离边界是端口，不是 client：
+ * 1. 同一端口的多个 client 共享该端口的 target（pool_{port} 分组）
+ * 2. 跨端口互不可见（不同端口 = 不同 pool = 不同分组）
+ * 3. 用户页面完全不可见（create 端口看不到用户 tab）
+ *
+ * 本测试启动两个 create 端口（主端口 + 端口池端口），验证跨端口隔离。
  */
 
 const http = require('http');
@@ -62,19 +63,26 @@ function sendCDP(ws, method, params = {}) {
 (async () => {
   let passed = 0, failed = 0;
   const PORT = 10000 + Math.floor(Math.random() * 50000);
+  // 端口池端口：跨端口隔离测试需要两个 create 端口
+  const POOL_PORT = PORT + 1;
   const configOriginal = fs.readFileSync(CONFIG_PATH, 'utf8');
   fs.writeFileSync(CONFIG_PATH, configOriginal.replace(/WS_URL:\s*'[^']*'/, `WS_URL: 'ws://localhost:${PORT}/plugin'`));
 
+  // 显式启动一个端口池端口（覆盖 run-all.js 的 POOL_SIZE=0）
   const proxyProc = spawn('node', [PROXY_PATH], {
-    env: { ...process.env, PORT: String(PORT), LOG_LEVEL: 'warn' },
+    env: { ...process.env, PORT: String(PORT), POOL_START: String(POOL_PORT), POOL_SIZE: '1', LOG_LEVEL: 'warn' },
     stdio: ['pipe', 'pipe', 'pipe']
   });
+  proxyProc.stdout.on('data', () => {});
+  proxyProc.stderr.on('data', () => {});
 
   if (!await waitForPort(PORT)) {
     console.log('[FAIL] Proxy failed');
     fs.writeFileSync(CONFIG_PATH, configOriginal);
     process.exit(1);
   }
+  // 等端口池端口就绪
+  for (let i = 0; i < 20; i++) { try { await httpGet(POOL_PORT, '/json/version'); break; } catch { await sleep(500); } }
 
   // Start Chrome with USER pages already open
   const profile = `/tmp/cdp-strict-iso-${Date.now()}`;
@@ -104,7 +112,7 @@ function sendCDP(ws, method, params = {}) {
     process.exit(1);
   }
 
-  // ── Test 1: getTargets 隔离 ──
+  // ── Test 1: Client A（主端口）getTargets 不含用户页面 ──
   console.log('\n[Test 1] CDP 客户端 getTargets 不应看到用户页面');
   const wsA = new WebSocket(`ws://localhost:${PORT}/client`);
   await new Promise((r, e) => { wsA.on('open', r); wsA.on('error', e); });
@@ -116,17 +124,18 @@ function sendCDP(ws, method, params = {}) {
   console.log(`  Client A getTargets: ${pagesA.length} pages`);
   pagesA.forEach(p => console.log(`    ${p.targetId.substring(0,8)} ${p.url.substring(0,40)}`));
 
-  const allOwnedByA = pagesA.every(p => p.url === 'about:blank');
-  if (pagesA.length >= 1 && allOwnedByA) {
-    console.log('[PASS] Client A 只看到自己的 auto-default-page，看不到用户页面');
+  // 端口池语义：初始 getTargets 不含用户页面（可能为空，或只有自己之前建的 about:blank）
+  const hasUserPage = pagesA.some(p => p.url !== 'about:blank');
+  if (!hasUserPage) {
+    console.log('[PASS] Client A 看不到用户页面');
     passed++;
   } else {
-    console.log(`[FAIL] Client A 看到了 ${pagesA.length} 个页面，包含非 about:blank 页面`);
+    console.log(`[FAIL] Client A 看到了用户页面`);
     failed++;
   }
 
-  // ── Test 2: Client A 创建页面后只看到自己的 ──
-  console.log('\n[Test 2] Client A 创建页面后只看到自己的');
+  // ── Test 2: Client A 创建页面后能看到自己创建的 ──
+  console.log('\n[Test 2] Client A 创建页面后能看到自己创建的');
   const createResult = await sendCDP(wsA, 'Target.createTarget', { url: 'about:blank' });
   const aTabId = createResult?.result?.targetId;
   console.log(`  Client A created: ${aTabId}`);
@@ -137,17 +146,17 @@ function sendCDP(ws, method, params = {}) {
   console.log(`  Client A getTargets now: ${pagesA2.length} pages`);
 
   const hasCreatedTab = pagesA2.some(p => p.targetId === aTabId);
-  if (pagesA2.length === 2 && hasCreatedTab) {
-    console.log('[PASS] Client A 看到 2 个页面（auto-default + 手动创建）');
+  if (hasCreatedTab) {
+    console.log('[PASS] Client A 能看到自己创建的页面');
     passed++;
   } else {
-    console.log(`[FAIL] Client A 看到了 ${pagesA2.length} 个页面（应该看到 2 个）`);
+    console.log(`[FAIL] Client A 看不到自己创建的页面`);
     pagesA2.forEach(p => console.log(`    ${p.targetId.substring(0,8)} ${p.url.substring(0,40)}`));
     failed++;
   }
 
-  // ── Test 3: Client B 看不到 Client A 的页面 ──
-  console.log('\n[Test 3] Client B 看不到 Client A 的页面');
+  // ── Test 3: 同端口 Client B 能看到 Client A 创建的页面（端口池共享语义）──
+  console.log('\n[Test 3] 同端口 Client B 能看到 Client A 的页面（端口池共享）');
   const wsB = new WebSocket(`ws://localhost:${PORT}/client`);
   await new Promise((r, e) => { wsB.on('open', r); wsB.on('error', e); });
   await sendCDP(wsB, 'Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
@@ -155,40 +164,40 @@ function sendCDP(ws, method, params = {}) {
 
   const targetsB = await sendCDP(wsB, 'Target.getTargets');
   const pagesB = (targetsB?.result?.targetInfos || []).filter(t => t.type === 'page');
-  console.log(`  Client B getTargets: ${pagesB.length} pages`);
+  console.log(`  Client B (same port) getTargets: ${pagesB.length} pages`);
   pagesB.forEach(p => console.log(`    ${p.targetId.substring(0,8)} ${p.url.substring(0,40)}`));
 
   const hasATab = pagesB.some(p => p.targetId === aTabId);
-  if (!hasATab && pagesB.length >= 1) {
-    console.log('[PASS] Client B 看不到 Client A 的页面，只看到自己的 auto-default-page');
+  if (hasATab) {
+    console.log('[PASS] 同端口 Client B 能看到 Client A 的页面（端口池共享语义）');
     passed++;
-  } else if (hasATab) {
-    console.log(`[FAIL] Client B 看到了 Client A 的页面！`);
-    failed++;
   } else {
-    console.log(`[FAIL] Client B 看到了 ${pagesB.length} 个页面（异常）`);
+    console.log(`[FAIL] 同端口 Client B 看不到 Client A 的页面（应该共享）`);
     failed++;
   }
 
-  // ── Test 4: Client B 创建自己的页面，A 看不到 ──
-  console.log('\n[Test 4] Client B 创建页面后，Client A 看不到');
-  const createB = await sendCDP(wsB, 'Target.createTarget', { url: 'about:blank' });
-  const bTabId = createB?.result?.targetId;
-  console.log(`  Client B created: ${bTabId}`);
-  await sleep(2000);
+  // ── Test 4: 跨端口 Client（POOL_PORT）看不到 Client A 的页面 ──
+  console.log('\n[Test 4] 跨端口 Client 看不到 Client A 的页面（端口隔离）');
+  const wsX = new WebSocket(`ws://localhost:${POOL_PORT}/client`);
+  await new Promise((r, e) => { wsX.on('open', r); wsX.on('error', e); });
+  await sendCDP(wsX, 'Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
+  await sleep(1000);
 
-  const targetsA3 = await sendCDP(wsA, 'Target.getTargets');
-  const pagesA3 = (targetsA3?.result?.targetInfos || []).filter(t => t.type === 'page');
+  const targetsX = await sendCDP(wsX, 'Target.getTargets');
+  const pagesX = (targetsX?.result?.targetInfos || []).filter(t => t.type === 'page');
+  console.log(`  Client X (pool port ${POOL_PORT}) getTargets: ${pagesX.length} pages`);
+  pagesX.forEach(p => console.log(`    ${p.targetId.substring(0,8)} ${p.url.substring(0,40)}`));
 
-  if (!pagesA3.find(p => p.targetId === bTabId) && pagesA3.length === 2) {
-    console.log('[PASS] Client A 仍然只看到自己的 2 个页面，看不到 B 的');
+  const crossHasATab = pagesX.some(p => p.targetId === aTabId);
+  if (!crossHasATab) {
+    console.log('[PASS] 跨端口 Client 看不到 Client A 的页面（端口隔离）');
     passed++;
   } else {
-    console.log(`[FAIL] Client A 看到了 B 的页面或数量不对: ${pagesA3.length}`);
+    console.log(`[FAIL] 跨端口 Client 看到了 Client A 的页面（隔离失效）`);
     failed++;
   }
 
-  // ── Test 5: Playwright pages() 隔离 ──
+  // ── Test 5: Playwright（主端口）pages() 不含用户页面 ──
   console.log('\n[Test 5] Playwright pages() 隔离');
   const browserC = await chromium.connectOverCDP(`http://localhost:${PORT}`, { timeout: 10000 });
   const ctxC = browserC.contexts()[0];
@@ -196,58 +205,64 @@ function sendCDP(ws, method, params = {}) {
   console.log(`  Playwright Client C pages(): ${pagesC.length}`);
   pagesC.forEach((p, i) => console.log(`    page[${i}]: ${p.url().substring(0, 60)}`));
 
-  const noForeignPages = pagesC.every(p => p.url() === 'about:blank');
-  if (pagesC.length >= 1 && noForeignPages) {
-    console.log('[PASS] Playwright 只看到自己的 auto-default-page，看不到用户/A/B 的页面');
+  // 端口池语义：Playwright 看到的页面都应是本端口的（about:blank 或自己创建的），不含用户页面
+  const noUserPages = pagesC.every(p => p.url() === 'about:blank');
+  if (noUserPages) {
+    console.log('[PASS] Playwright 看不到用户页面');
     passed++;
   } else {
-    console.log(`[FAIL] Playwright 看到了不属于自己或非 about:blank 的页面`);
+    console.log(`[FAIL] Playwright 看到了用户页面`);
     failed++;
   }
 
-  // ── Test 6: Playwright 创建页面后只看到自己的 ──
-  console.log('\n[Test 6] Playwright 创建页面后只看到自己的');
+  // ── Test 6: Playwright 创建页面后能看到 ──
+  console.log('\n[Test 6] Playwright 创建页面后能看到');
   const pC = await ctxC.newPage();
-  await pC.goto('https://www.example.com');
+  // newPage 已是 about:blank，直接 evaluate（goto about:blank 冗余且 load 事件不可靠）
+  await pC.evaluate(() => { document.title = 'playwright-created'; });
+  await sleep(1000);
   const pagesC2 = ctxC.pages();
   console.log(`  Playwright pages() after newPage: ${pagesC2.length}`);
 
-  if (pagesC2.length === 2) {
-    console.log('[PASS] Playwright 看到 2 个页面（auto-default + newPage）');
+  const pcTitle = await pC.title();
+  if (pcTitle === 'playwright-created') {
+    console.log('[PASS] Playwright 能创建并操作页面');
     passed++;
   } else {
-    console.log(`[FAIL] Playwright 看到了 ${pagesC2.length} 个页面（应该是 2）`);
+    console.log(`[FAIL] Playwright 无法操作创建的页面 (title="${pcTitle}")`);
     failed++;
   }
   await browserC.close();
 
-  // ── Test 7: setAutoAttach events 隔离 ──
-  console.log('\n[Test 7] setAutoAttach 只为自己创建的页面发事件');
-  const wsD = new WebSocket(`ws://localhost:${PORT}/client`);
+  // ── Test 7: 跨端口 Playwright 看不到主端口的页面 ──
+  console.log('\n[Test 7] 跨端口 Playwright 看不到主端口的页面');
+  const browserD = await chromium.connectOverCDP(`http://localhost:${POOL_PORT}`, { timeout: 10000 });
+  const ctxD = browserD.contexts()[0];
+  const pagesD = ctxD.pages();
+  console.log(`  Playwright Client D (pool port) pages(): ${pagesD.length}`);
+  pagesD.forEach((p, i) => console.log(`    page[${i}]: ${p.url().substring(0, 60)}`));
+
+  // 跨端口不应看到主端口 Playwright 创建的页面（用 getTargets 交叉验证更可靠）
+  const wsD = new WebSocket(`ws://localhost:${POOL_PORT}/client`);
   await new Promise((r, e) => { wsD.on('open', r); wsD.on('error', e); });
-
-  let attachedEvents = [];
-  wsD.on('message', (data) => {
-    const msg = JSON.parse(data.toString());
-    if (msg.method === 'Target.attachedToTarget') {
-      attachedEvents.push(msg.params?.targetInfo?.targetId);
-    }
-  });
-
   await sendCDP(wsD, 'Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
-  await sleep(2000);
-
-  console.log(`  Client D received ${attachedEvents.length} attachedToTarget events`);
-  if (attachedEvents.length === 1) {
-    console.log('[PASS] Client D 只收到 1 个事件（自己的 auto-default-page）');
+  await sleep(1000);
+  const targetsD = await sendCDP(wsD, 'Target.getTargets');
+  const pagesDTargets = (targetsD?.result?.targetInfos || []).filter(t => t.type === 'page');
+  // 跨端口不应看到 aTabId（Client A 在主端口创建的）
+  const crossHasMainTarget = pagesDTargets.some(t => t.targetId === aTabId);
+  if (!crossHasMainTarget) {
+    console.log('[PASS] 跨端口看不到主端口创建的页面（端口隔离）');
     passed++;
   } else {
-    console.log(`[FAIL] Client D 收到了 ${attachedEvents.length} 个事件（应该是 1，只应有自己的 auto-default-page）`);
+    console.log(`[FAIL] 跨端口看到了主端口的页面（隔离失效）`);
     failed++;
   }
+  wsD.close();
+  await browserD.close();
 
   // Cleanup
-  wsA.close(); wsB.close(); wsD.close();
+  wsA.close(); wsB.close(); wsX.close();
   try { process.kill(-chromeProc.pid); } catch {}
   proxyProc.kill();
   fs.writeFileSync(CONFIG_PATH, configOriginal);

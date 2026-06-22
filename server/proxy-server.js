@@ -319,7 +319,19 @@ function resolvePluginFromUrl(url) {
 
 async function handleHttpRequest(req, res) {
     const url = new URL(req.url, `http://localhost:${PORT}`);
-    
+
+    // 主端口（9221）的 /json/version、/json/list 委托端口池 session[0]，
+    // 语义与 9231-9239 一致：只返回本端口（pool_9221）创建的 target。
+    // takeover（9220，req._takeoverMode=true）不走这条——它要看用户全部 tab。
+    if (!req._takeoverMode && portPool && portPool.portSessions[0] &&
+        (url.pathname === '/json/version' || url.pathname === '/json/version/' ||
+         url.pathname === '/json' || url.pathname === '/json/' ||
+         url.pathname === '/json/list' || url.pathname === '/json/list/' ||
+         url.pathname === '/json/new')) {
+        portPool._handleHttp(req, res, portPool.portSessions[0]);
+        return;
+    }
+
     if (url.pathname === '/json/browsers' || url.pathname === '/json/browsers/') {
         const browsers = [];
         for (const pluginWs of pluginConnections) {
@@ -465,6 +477,19 @@ wss.on('connection', (ws, req) => {
         }
     }
 
+    // 主端口（9221）的 create 连接走端口池第 0 个 session（与 9231-9239 行为一致）
+    // 注意：takeover（9220，req._takeoverMode=true）不走端口池，保留原 handleClientConnection 逻辑
+    if (!req._takeoverMode && portPool && portPool.portSessions[0]) {
+        const isMainPortClient = path === '/client' ||
+                                 path.startsWith('/client/') ||
+                                 path.startsWith('/devtools/browser/') ||
+                                 path.startsWith('/devtools/page/');
+        if (isMainPortClient) {
+            portPool._handleClientConnect(ws, req, portPool.portSessions[0]);
+            return;
+        }
+    }
+
     const clientInfo = {
         ip: req.socket.remoteAddress,
         port: req.socket.remotePort
@@ -473,6 +498,7 @@ wss.on('connection', (ws, req) => {
     if (path === '/plugin') {
         handlePluginConnection(ws, clientInfo, req);
     } else if (path === '/client' || path.startsWith('/client/') || path.startsWith('/client-') || path.startsWith('/devtools/browser/')) {
+        // 仅 takeover（9220）会走到这里；create 已被上面的端口池分支拦截
         const customClientId = path.startsWith('/client-') ? path.replace('/client-', '') : null;
         let targetPluginId = null;
         if (pathParts[0] === 'client' && pathParts[1]) {
@@ -483,6 +509,7 @@ wss.on('connection', (ws, req) => {
         const mode = req._takeoverMode ? 'takeover' : 'create';
         handleClientConnection(ws, clientInfo, customClientId, targetPluginId, mode);
     } else if (path.startsWith('/devtools/page/')) {
+        // 仅 takeover 会走到这里
         const targetId = path.replace('/devtools/page/', '');
         const mode = req._takeoverMode ? 'takeover' : 'create';
         handlePageConnection(ws, clientInfo, targetId, mode);

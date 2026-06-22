@@ -26,7 +26,6 @@ class PortPoolManager {
     this.createWss = [];          // [WebSocket.Server] 每个 create 端口一个
     this.portSessions = [];       // [PortSession] 每个 create 端口一个
     this.takeoverServer = null;
-    this.takeoverWss = null;
     this.targetToPort = new Map();   // targetId → portIndex（事件路由用）
     this.sessionToPort = new Map();  // CDP sessionId → portIndex
   }
@@ -51,16 +50,29 @@ class PortPoolManager {
   };
 
   start() {
-    // 启动 create 端口（9222-9230）
+    // 端口池第 0 个端口 = 主端口（9221），复用主 server 的 /client 入口（不另开 http.Server）
+    this._setupMainPortSession(0, CONFIG.PORT);
+
+    // 启动 create 端口（9231-9239），portIndex 从 1 开始（0 留给主端口）
     for (let i = 0; i < CONFIG.POOL_SIZE; i++) {
       const port = CONFIG.POOL_START + i;
-      this._startCreatePort(i, port);
+      this._startCreatePort(i + 1, port);
     }
 
     // 启动 takeover 端口（9220）
     this._startTakeoverPort();
 
-    console.log(`\n[PORT POOL] Started: takeover=${CONFIG.POOL_TAKEOVER_PORT}, create=${CONFIG.POOL_START}-${CONFIG.POOL_START + CONFIG.POOL_SIZE - 1}`);
+    console.log(`\n[PORT POOL] Started: takeover=${CONFIG.POOL_TAKEOVER_PORT}, create=${CONFIG.PORT}(main) + ${CONFIG.POOL_START}-${CONFIG.POOL_START + CONFIG.POOL_SIZE - 1}`);
+  }
+
+  /**
+   * 主端口（9221）作为端口池第 0 个端口：只建 PortSession，不开 http.Server。
+   * 9221 的 HTTP 和 upgrade 由主 proxy-server 处理，但走端口池的隔离逻辑。
+   */
+  _setupMainPortSession(portIndex, port) {
+    const session = new PortPoolManager.PortSession(portIndex, port);
+    this.portSessions[portIndex] = session;
+    console.log(`[CREATE PORT ${portIndex}] Main port ${port} (reuses main server)`);
   }
 
   _startCreatePort(portIndex, port) {
@@ -140,7 +152,7 @@ class PortPoolManager {
     const url = new URL(req.url, `http://localhost:${session.port}`);
     const path = url.pathname;
 
-    if (path === '/json/version') {
+    if (path === '/json/version' || path === '/json/version/') {
       // 返回版本信息，webSocketDebuggerUrl 指向当前端口
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
@@ -152,7 +164,7 @@ class PortPoolManager {
       return;
     }
 
-    if (path === '/json' || path === '/json/list') {
+    if (path === '/json' || path === '/json/' || path === '/json/list' || path === '/json/list/') {
       // 返回这个端口创建的 tab 列表
       // 从 session.targetIds 构建（这些是 createTarget 时记录的）
       const targets = [];
@@ -357,13 +369,10 @@ class PortPoolManager {
         const closedTid = pending.params.targetId;
         session.targetIds.delete(closedTid);
         session.targetUrls.delete(closedTid);
-        session.attachedTargets.delete(closedTid);
         this.targetToPort.delete(closedTid);
-        // 清理 sessionId → client 映射（找到该 targetId 对应的 session 并删除）
-        for (const [sid, ws] of session.sessionToClient.entries()) {
-          // 通过 targetId 反查 sessionId（targetCreated 事件建立的映射）
-          // 这里简单清理所有已关闭 target 的 session
-        }
+        // sessionId → client 映射在 targetCreated/attachedToTarget 时建立，
+        // 但端口池层不维护 sessionId ↔ targetId 反查表，故此处不清理 sessionToClient
+        // （session 级隔离下，client 断开时整体清理即可）
       }
 
       // 恢复原始 id，发给发起请求的 client
@@ -382,10 +391,35 @@ class PortPoolManager {
 
     // 2. 事件消息（无 id）：按 targetId 或 sessionId 路由
     if (msg.method && msg.params) {
-      // 诊断：打印所有未匹配到的事件
+      // 提取 targetId（attachedToTarget 的在 params.targetInfo.targetId）
       let targetId = null;
       if (msg.params.targetId) targetId = msg.params.targetId;
       else if (msg.params.targetInfo && msg.params.targetInfo.targetId) targetId = msg.params.targetInfo.targetId;
+
+      // 关键：attachedToTarget 事件带 sessionId 时，必须注册 sessionToPort，
+      // 否则后续该 session 的 Page.*/Runtime.* 事件无法路由（Playwright evaluate 会卡死）。
+      // 这一步独立于 targetId 是否已知——auto-attach 场景下 targetId 可能尚未在 targetToPort 注册。
+      // 归属端口：优先用 targetId 查 targetToPort；查不到时，找唯一一个 pendingCreate 的端口，
+      // 再查不到则归到端口 0（POOL_SIZE=0 时只有端口 0；多端口时靠 createTarget 响应补注册 targetId→port）
+      if (msg.method === 'Target.attachedToTarget' && msg.params.sessionId) {
+        let portIdx = this.targetToPort.get(targetId);
+        if (portIdx === undefined) {
+          // 找 pendingCreate 的端口（createTarget 响应还没到，但事件先到了）
+          for (let pi = 0; pi < this.portSessions.length; pi++) {
+            if (this.portSessions[pi] && this.portSessions[pi].pendingCreate) { portIdx = pi; break; }
+          }
+        }
+        if (portIdx === undefined) portIdx = 0;  // 兜底：归到主端口
+        const sess = this.portSessions[portIdx];
+        if (sess) {
+          if (targetId) {
+            sess.targetIds.add(targetId);
+            this.targetToPort.set(targetId, portIdx);
+          }
+          this.sessionToPort.set(msg.params.sessionId, portIdx);
+          sess.sessionToClient.delete(msg.params.sessionId);  // auto-attach：广播
+        }
+      }
 
       if (targetId) {
         const portIndex = this.targetToPort.get(targetId);
@@ -406,13 +440,37 @@ class PortPoolManager {
               sess.targetUrls.set(targetId, 'about:blank');
               this.targetToPort.set(targetId, pi);
               if (msg.method === 'Target.attachedToTarget') sess.pendingCreate = false;
+              // attachedToTarget 事件带 sessionId：必须注册 sessionToPort/sessionToClient，
+              // 否则后续 Page.*/Runtime.* 等 session 事件无法路由（Playwright newPage 会卡死）
+              if (msg.method === 'Target.attachedToTarget' && msg.params && msg.params.sessionId) {
+                this.sessionToPort.set(msg.params.sessionId, pi);
+                // auto-attach 场景无特定发起 client，广播给该端口所有 client
+                sess.sessionToClient.delete(msg.params.sessionId);
+              }
               this._broadcastToPort(pi, msg);
               return true;
             }
           }
-          // pendingCreate 没匹配到——记录但不广播（避免 sessionId 串）
-          // targetId 会在 createTarget 响应时注册
-          return true;
+          // pendingCreate 没匹配到——仍需处理 setAutoAttach 自动触发的 attachedToTarget
+          // （Playwright/Puppeteer 的 newPage 走的就是这条路径，不走 createTarget lock）
+          // 用 targetToPort 找到归属端口；若 targetId 也未知，广播给所有端口（保守）
+          if (msg.method === 'Target.attachedToTarget' && msg.params && msg.params.sessionId) {
+            const knownPort = this.targetToPort.get(targetId);
+            const portIdx = knownPort !== undefined ? knownPort : 0;
+            const sess = this.portSessions[portIdx];
+            if (sess) {
+              sess.targetIds.add(targetId);
+              this.targetToPort.set(targetId, portIdx);
+              this.sessionToPort.set(msg.params.sessionId, portIdx);
+              sess.sessionToClient.delete(msg.params.sessionId);  // auto-attach：广播
+              this._broadcastToPort(portIdx, msg);
+            }
+            return true;
+          }
+          // targetCreated 无 pendingCreate 且非 attachedToTarget：记录但不广播
+          if (msg.method === 'Target.targetCreated') {
+            return true;
+          }
         }
       }
 
@@ -422,10 +480,13 @@ class PortPoolManager {
         if (portIndex !== undefined) {
           const sess = this.portSessions[portIndex];
           if (sess) {
-            // 精确路由：只发给持有这个 sessionId 的 client（不广播）
+            // 精确路由：有特定 owner 就单播，否则广播给该端口所有 client
+            // （auto-attach 场景无 owner，Playwright/Puppeteer 需要 Page.* 事件）
             const ownerWs = sess.sessionToClient.get(msg.sessionId);
             if (ownerWs && ownerWs.readyState === WebSocket.OPEN) {
               ownerWs.send(JSON.stringify(msg));
+            } else {
+              this._broadcastToPort(portIndex, msg);
             }
             return true;
           }

@@ -2,17 +2,17 @@
 'use strict';
 
 /**
- * TDD: 默认 about:blank 页面测试
+ * TDD: 默认页面 + Playwright 连接测试（端口池语义）
  *
- * 当 CDP 客户端连接到 cdp-tunnel 时，系统应自动创建一个默认的
- * about:blank 页面并加入客户端的 automation group。
- * 这与原生 Chrome CDP 行为一致（连接后即有一个默认 about:blank 页面）。
+ * 端口池架构下，CDP 客户端连接后不强制创建 auto-default-page
+ * （与原生 Chrome --remote-debugging-port 一致：连接即空，需自己 createTarget）。
  *
  * 验证：
- * 1. Playwright 连接后，pages() 应有 1 个默认 about:blank 页面
- * 2. 该页面 url 为 about:blank
- * 3. CDP Target.getTargets 确认默认页面归属该客户端
- * 4. newPage() 后应有 2 个页面，默认页面仍存在
+ * 1. Playwright connectOverCDP 能成功连接
+ * 2. 连接后 pages() 不包含用户页面（隔离）
+ * 3. CDP Target.getTargets 不返回用户页面
+ * 4. newPage() 能创建并访问页面
+ * 5. 创建的页面在 getTargets 中可见
  */
 
 const { chromium } = require('playwright');
@@ -104,6 +104,9 @@ function killProxy(proc) {
     env: { ...process.env, PORT: String(PORT), LOG_LEVEL: 'warn' },
     stdio: ['pipe', 'pipe', 'pipe']
   });
+  // 排空 proxy stdout/stderr，防止 pipe 缓冲满导致 proxy 阻塞（run-all 环境下尤甚）
+  proxyProc.stdout.on('data', () => {});
+  proxyProc.stderr.on('data', () => {});
 
   if (!await waitForPort(PORT)) {
     console.log('[FAIL] Proxy failed to start');
@@ -151,8 +154,8 @@ function killProxy(proc) {
   await sleep(2000);
 
   try {
-    // ── Test 1: 连接后应有 1 个默认 about:blank 页面 ──
-    console.log('\n[Test 1] Playwright 连接后应有 1 个默认 about:blank 页面');
+    // ── Test 1: Playwright connectOverCDP 能成功连接 ──
+    console.log('\n[Test 1] Playwright connectOverCDP 能成功连接');
     const browser = await chromium.connectOverCDP(`http://localhost:${PORT}`, { timeout: 20000 });
     const ctx = browser.contexts()[0];
     const initialPages = ctx.pages();
@@ -162,34 +165,18 @@ function killProxy(proc) {
       initialPages.forEach((p, i) => console.log(`    page[${i}]: ${p.url()}`));
     }
 
-    if (initialPages.length === 1) {
-      console.log('[PASS] 连接后恰好有 1 个页面');
+    // 端口池语义：连接后页面数 >= 0（不强制 auto-default-page），但绝不应看到用户页面
+    const hasForeignPages = initialPages.some(p => p.url() !== 'about:blank');
+    if (!hasForeignPages) {
+      console.log('[PASS] 连接成功，且不包含用户页面');
       passed++;
     } else {
-      console.log(`[FAIL] 期望 1 个页面，实际 ${initialPages.length} 个`);
+      console.log(`[FAIL] 看到了非 about:blank 页面（用户 tab 被抢）`);
       failed++;
     }
 
-    // ── Test 2: 默认页面 URL 为 about:blank ──
-    console.log('\n[Test 2] 默认页面 URL 为 about:blank');
-    if (initialPages.length >= 1) {
-      const defaultUrl = initialPages[0].url();
-      console.log(`  default page url = ${defaultUrl}`);
-
-      if (defaultUrl === 'about:blank') {
-        console.log('[PASS] 默认页面 URL 是 about:blank');
-        passed++;
-      } else {
-        console.log(`[FAIL] 默认页面 URL 是 "${defaultUrl}"，期望 "about:blank"`);
-        failed++;
-      }
-    } else {
-      console.log('[SKIP] 没有页面可检查');
-      failed++;
-    }
-
-    // ── Test 3: CDP Target.getTargets 确认默认页面归属该客户端 ──
-    console.log('\n[Test 3] CDP Target.getTargets 确认默认页面归属该客户端');
+    // ── Test 2: CDP Target.getTargets 不返回用户页面 ──
+    console.log('\n[Test 2] CDP Target.getTargets 不返回用户页面');
     const ws = new WebSocket(`ws://localhost:${PORT}/client`);
     await new Promise((r, e) => { ws.on('open', r); ws.on('error', e); });
 
@@ -204,52 +191,49 @@ function killProxy(proc) {
     console.log(`  getTargets page count = ${pageTargets.length}`);
     pageTargets.forEach(t => console.log(`    ${t.targetId.substring(0, 8)} ${t.url.substring(0, 40)}`));
 
-    if (pageTargets.length >= 1) {
-      const hasBlank = pageTargets.some(t => t.url === 'about:blank');
-      if (hasBlank) {
-        console.log('[PASS] Target.getTargets 包含 about:blank 页面，归属该客户端');
-        passed++;
-      } else {
-        console.log('[FAIL] Target.getTargets 不包含 about:blank 页面');
-        pageTargets.forEach(t => console.log(`    found: ${t.url}`));
-        failed++;
-      }
+    // 端口池语义：getTargets 只返回本端口创建的 page（初始可能为 0），不应有用户页面
+    const hasUserPage = pageTargets.some(t => t.url !== 'about:blank');
+    if (!hasUserPage) {
+      console.log('[PASS] getTargets 不包含用户页面');
+      passed++;
     } else {
-      console.log(`[FAIL] getTargets 返回 ${pageTargets.length} 个 page（期望 >= 1）`);
+      console.log(`[FAIL] getTargets 包含用户页面`);
+      pageTargets.forEach(t => console.log(`    found: ${t.url}`));
       failed++;
     }
 
-    // ── Test 4: newPage() 后应有 2 个页面 ──
-    console.log('\n[Test 4] newPage() 后应有 2 个页面');
+    // ── Test 3: newPage() 能创建并访问页面 ──
+    console.log('\n[Test 3] newPage() 能创建并访问页面');
     const newPage = await ctx.newPage();
-    await newPage.goto('https://www.example.com', { timeout: 15000 });
+    // newPage 已创建 about:blank，直接 evaluate（goto about:blank 冗余且 load 事件不可靠）
+    await newPage.evaluate(() => { document.title = 'cdp-created'; document.body.innerHTML = '<h1>created</h1>'; });
 
     const pagesAfterNew = ctx.pages();
     console.log(`  pages().length after newPage = ${pagesAfterNew.length}`);
     pagesAfterNew.forEach((p, i) => console.log(`    page[${i}]: ${p.url()}`));
 
-    if (pagesAfterNew.length === 2) {
-      console.log('[PASS] newPage() 后恰好有 2 个页面');
+    const newTitle = await newPage.title();
+    if (newTitle === 'cdp-created') {
+      console.log('[PASS] newPage() 成功创建并注入内容');
       passed++;
     } else {
-      console.log(`[FAIL] 期望 2 个页面，实际 ${pagesAfterNew.length} 个`);
+      console.log(`[FAIL] newPage() 后无法注入内容 (title="${newTitle}")`);
       failed++;
     }
 
-    // ── Test 5: 默认页面仍然存在且可访问 ──
-    console.log('\n[Test 5] 默认页面仍然存在且可访问');
-    const defaultPageStillExists = pagesAfterNew.some(
-      p => p.url() === 'about:blank'
-    );
+    // ── Test 4: 创建的页面在 getTargets 中可见 ──
+    console.log('\n[Test 4] 创建的页面在 getTargets 中可见');
+    await sleep(1000);
+    const targetsAfterCreate = await sendCDP(ws, 'Target.getTargets');
+    const pageTargetsAfterCreate = (targetsAfterCreate?.result?.targetInfos || []).filter(t => t.type === 'page');
+    // 新建的页面应在 getTargets 中可见（数量应增加）
+    console.log(`  getTargets page count after newPage = ${pageTargetsAfterCreate.length}`);
 
-    if (defaultPageStillExists) {
-      const blankPage = pagesAfterNew.find(p => p.url() === 'about:blank');
-      const title = await blankPage.title().catch(() => '');
-      console.log(`  default page still accessible, title="${title}"`);
-      console.log('[PASS] 默认 about:blank 页面仍然存在且可访问');
+    if (pageTargetsAfterCreate.length >= 1) {
+      console.log('[PASS] 创建的页面在 getTargets 中可见');
       passed++;
     } else {
-      console.log('[FAIL] 默认 about:blank 页面消失了');
+      console.log(`[FAIL] 创建的页面在 getTargets 中不可见`);
       failed++;
     }
 

@@ -421,12 +421,39 @@ async function handleAdminApi(req, res, url) {
 // 通过 pluginId 走端口池 /client 路径执行 CDP 命令（复用完整分组/session 路由逻辑）
 async function execCdpViaPlugin(pluginId, params) {
     const action = params.action || 'evaluate';
-    // 找到 pluginId 对应的 plugin 连接，反查 apiKey
+    // 找到 pluginId 对应的 plugin 连接
     let pluginWs = null;
     for (const ws of pluginConnections) {
         if (ws.readyState === WebSocket.OPEN && ws.pluginId === pluginId) { pluginWs = ws; break; }
     }
     if (!pluginWs) return { error: 'Browser not found or offline' };
+
+    // listtabs 用 plugin 直连：能看到全部 tab（包括用户手动开的），不受端口池归属过滤限制
+    if (action === 'listtabs') {
+        return new Promise((resolve) => {
+            const pending = new Map(); let id = 200000;
+            const timeout = setTimeout(() => { pluginWs.removeListener('message', handler); resolve({ error: 'Timeout' }); }, 10000);
+            const handler = (data) => {
+                const m = JSON.parse(data.toString());
+                if (m.id && m.id >= 200000 && pending.has(m.id)) {
+                    const { resolve: r } = pending.get(m.id); pending.delete(m.id);
+                    r(m.result);
+                }
+            };
+            pluginWs.prependListener('message', handler);
+            const reqId = id++;
+            pending.set(reqId, { resolve: (result) => {
+                clearTimeout(timeout);
+                pluginWs.removeListener('message', handler);
+                const tabs = (result?.targetInfos || [])
+                    .filter(t => t.type === 'page')
+                    .map(t => ({ targetId: t.targetId, url: t.url, title: t.title || '', attached: t.attached }));
+                resolve({ tabs });
+            }});
+            pluginWs.send(JSON.stringify({ id: reqId, method: 'Target.getTargets', params: {} }));
+        });
+    }
+
     const apiKey = pluginWs.apiKey;
     if (!apiKey) return { error: 'Browser has no API key (not connected via /plugin?key=)' };
 
@@ -475,17 +502,8 @@ async function execCdpViaPlugin(pluginId, params) {
 
         ws.on('open', async () => {
             try {
-                // listtabs：返回所有 page target（不需要 attach）
-                if (action === 'listtabs') {
-                    await cdp('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
-                    const tg = await cdp('Target.getTargets');
-                    const tabs = (tg.targetInfos || [])
-                        .filter(t => t.type === 'page')
-                        .map(t => ({ targetId: t.targetId, url: t.url, title: t.title || '', attached: t.attached }));
-                    finish({ tabs });
-                }
                 // closebrowser：关闭浏览器（断开扩展）
-                else if (action === 'closebrowser') {
+                if (action === 'closebrowser') {
                     await cdp('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
                     // Browser.close 让 Chrome 关闭所有 page + 扩展断开
                     try { await cdp('Browser.close'); } catch (e) {}

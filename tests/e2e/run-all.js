@@ -39,6 +39,7 @@ const TESTS = [
   { file: 'test-user-tab-not-grouped.js', name: 'User Tab Not Grouped', timeout: 120000, tier: 'core' },
   { file: 'test-sw-keepalive.js', name: 'SW Keepalive + Reconnect', timeout: 180000, tier: 'new' },
   { file: 'test-cli-commands.js', name: 'CLI Commands', timeout: 30000, tier: 'core' },
+  { file: 'test-api-key-auth.js', name: 'API Key Auth (REQUIRE_AUTH)', timeout: 120000, tier: 'core' },
   { file: 'test-multi-client-tab-switch.js', name: 'Multi-client Tab Switch', timeout: 120000, tier: 'core' },
   { file: 'test-page-connection-dedup.js', name: 'Page Connection Dedup', timeout: 120000, tier: 'core' },
   { file: 'test-residual-tabs-cleanup.js', name: 'Residual Tabs Cleanup', timeout: 120000, tier: 'core' },

@@ -407,6 +407,7 @@ async function handleAdminApi(req, res, url) {
         // CDP 快捷操作（通过 pluginId 直接连已在线浏览器）
         if (path.startsWith('cdp/') && method === 'POST') {
             const body = await readBody(req);
+            console.log(`[ADMIN CDP] path=${path} action=${body.action} pluginId=${body.pluginId?.slice(0,20)}`);
             if (!body.pluginId) return adminJson(res, 400, { error: 'Missing pluginId' });
             const result = await execCdpViaPlugin(body.pluginId, body);
             return adminJson(res, result.error ? 500 : 200, result);
@@ -427,6 +428,30 @@ async function execCdpViaPlugin(pluginId, params) {
         if (ws.readyState === WebSocket.OPEN && ws.pluginId === pluginId) { pluginWs = ws; break; }
     }
     if (!pluginWs) return { error: 'Browser not found or offline' };
+
+    // closebrowser 特殊处理：不走 /client（会被 Browser.close 断开），
+    // 直接用 pluginWs 发 client-disconnected + closeTarget
+    if (action === 'closebrowser') {
+        // 从 apiKey 找到对应的 key session 的端口，拿到正确的 clientId
+        let clientId = `pool_${PORT}`;  // fallback
+        if (pluginWs.apiKey && portPool && portPool._keyToPortIndex) {
+            const portIdx = portPool._keyToPortIndex.get(pluginWs.apiKey);
+            if (portIdx !== undefined && portPool.portSessions[portIdx]) {
+                clientId = `pool_${portPool.portSessions[portIdx].port}`;
+            }
+        }
+        console.log(`[CLOSEBROWSER] clientId=${clientId} apiKey=${pluginWs.apiKey?.slice(0,16)}`);
+        // 发 client-disconnected 让扩展关分组 + 关 tab
+        try {
+            pluginWs.send(JSON.stringify({ type: 'client-disconnected', clientId }));
+        } catch (e) { console.log(`[CLOSEBROWSER] send error: ${e.message}`); }
+        // 清理 key session（让下次连接重新分配）
+        if (pluginWs.apiKey && portPool) {
+            portPool.keySessions.delete(pluginWs.apiKey);
+            if (portPool._keyToPortIndex) portPool._keyToPortIndex.delete(pluginWs.apiKey);
+        }
+        return { closed: true };
+    }
 
     const apiKey = pluginWs.apiKey;
     if (!apiKey) return { error: 'Browser has no API key (not connected via /plugin?key=)' };
@@ -484,13 +509,6 @@ async function execCdpViaPlugin(pluginId, params) {
                         .filter(t => t.type === 'page')
                         .map(t => ({ targetId: t.targetId, url: t.url, title: t.title || '', attached: t.attached }));
                     finish({ tabs });
-                }
-                // closebrowser：关闭浏览器（断开扩展）
-                else if (action === 'closebrowser') {
-                    await cdp('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
-                    // Browser.close 让 Chrome 关闭所有 page + 扩展断开
-                    try { await cdp('Browser.close'); } catch (e) {}
-                    finish({ closed: true });
                 }
                 // closetab：关闭指定 targetId
                 else if (action === 'closetab') {

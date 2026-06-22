@@ -24,7 +24,9 @@ class PortPoolManager {
     this.idCounter = 0; // 全局唯一 id 计数器  // 现有 proxy 的引用（拿 plugin 连接）
     this.createServers = [];      // [http.Server] 每个 create 端口一个
     this.createWss = [];          // [WebSocket.Server] 每个 create 端口一个
-    this.portSessions = [];       // [PortSession] 每个 create 端口一个
+    this.portSessions = [];       // [PortSession] 每个 create 端口一个（端口池端口用）
+    this.keySessions = new Map(); // apiKey → PortSession（主端口按 key 隔离，一 key 一 session）
+    this._keyToPortIndex = new Map();  // apiKey → portIndex（key 到端口池端口的映射）
     this.takeoverServer = null;
     this.targetToPort = new Map();   // targetId → portIndex（事件路由用）
     this.sessionToPort = new Map();  // CDP sessionId → portIndex
@@ -93,6 +95,7 @@ class PortPoolManager {
     for (let i = 1; i < this.portSessions.length; i++) {
       if (this.portSessions[i] && !usedIndexes.has(i)) {
         this._keyToPortIndex.set(apiKey, i);
+        this.portSessions[i].apiKey = apiKey;  // 标记这个 session 属于哪个 key
         console.log(`[KEY SESSION] key=${apiKey.slice(0, 16)}... → portIndex=${i} (port ${this.portSessions[i].port})`);
         return this.portSessions[i];
       }
@@ -279,6 +282,7 @@ class PortPoolManager {
     // clientId 固定为 pool_{port}，让扩展为每个端口建一个独立分组
     // __groupName 带 key 名称，让扩展用 key 名称命名 Chrome 分组（一眼看出是谁的浏览器）
     const poolClientId = `pool_${session.port}`;
+    pluginWs._lastPoolClientId = poolClientId;  // 记录，供 closebrowser 发 client-disconnected 用
     pluginWs.send(JSON.stringify({
       type: 'client-connected',
       clientId: poolClientId,

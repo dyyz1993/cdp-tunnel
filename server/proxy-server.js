@@ -418,84 +418,100 @@ async function handleAdminApi(req, res, url) {
     }
 }
 
-// 通过 pluginId 直接连已在线的浏览器执行 CDP 命令（内部辅助）
-// 直接用 plugin 的 WebSocket 连接发 CDP 命令（chrome.debugger 通道）
+// 通过 pluginId 走端口池 /client 路径执行 CDP 命令（复用完整分组/session 路由逻辑）
 async function execCdpViaPlugin(pluginId, params) {
     const action = params.action || 'evaluate';
-    // 找到 pluginId 对应的 plugin 连接
+    // 找到 pluginId 对应的 plugin 连接，反查 apiKey
     let pluginWs = null;
     for (const ws of pluginConnections) {
         if (ws.readyState === WebSocket.OPEN && ws.pluginId === pluginId) { pluginWs = ws; break; }
     }
     if (!pluginWs) return { error: 'Browser not found or offline' };
+    const apiKey = pluginWs.apiKey;
+    if (!apiKey) return { error: 'Browser has no API key (not connected via /plugin?key=)' };
 
-    // 直接通过 plugin WebSocket 发 CDP 命令
-    // 命令格式：{id, method, params, tabId?, __admin: true}
-    const pending = new Map(); let id = 100000; let sessionId = null;
-    const timeout = setTimeout(() => resolve_result({ error: 'Timeout' }), 15000);
-    let resolve_result;
-
-    return new Promise(async (resolve) => {
-        resolve_result = resolve;
-        const msgHandler = (data) => {
-            const m = JSON.parse(data.toString());
-            // admin 命令的 id 从 100000 起，拦截响应
-            if (m.id && m.id >= 100000 && pending.has(m.id)) {
-                const { resolve: r, reject: rj } = pending.get(m.id); pending.delete(m.id);
-                m.error ? rj(new Error(JSON.stringify(m.error))) : r(m.result);
-            }
-        };
-        pluginWs.prependListener('message', msgHandler);
+    // 内部连 /client?key=xxx，走端口池完整路径（建组 + session 路由 + 分组）
+    const port = PORT;
+    return new Promise((resolve) => {
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/client?key=${apiKey}`);
+        const pending = new Map(); let id = 1; let sessionId = null;
+        const timeout = setTimeout(() => { try { ws.close(); } catch {}; resolve({ error: 'Timeout' }); }, 15000);
 
         function cdp(method, p = {}, sid) {
             return new Promise((res, rej) => {
                 const i = id++; pending.set(i, { resolve: res, reject: rej });
                 const o = { id: i, method, params: p };
-                if (sid) o.sessionId = sid;
-                pluginWs.send(JSON.stringify(o));
+                if (sid) o.sessionId = sid; else if (sessionId) o.sessionId = sessionId;
+                ws.send(JSON.stringify(o));
                 setTimeout(() => { if (pending.has(i)) { pending.delete(i); rej(new Error('CDP timeout: ' + method)); } }, 12000);
             });
         }
 
-        async function execAction(targetId) {
+        function finish(result) { clearTimeout(timeout); try { ws.close(); } catch {}; resolve(result); }
+
+        ws.on('message', async (data) => {
+            const m = JSON.parse(data.toString());
+            if (m.id && pending.has(m.id)) {
+                const { resolve: r, reject: rj } = pending.get(m.id); pending.delete(m.id);
+                m.error ? rj(new Error(JSON.stringify(m.error))) : r(m.result);
+                return;
+            }
+            // attachedToTarget 事件 → 记 sessionId
+            if (m.method === 'Target.attachedToTarget' && m.params?.sessionId && !sessionId) {
+                sessionId = m.params.sessionId;
+                try {
+                    if (action === 'evaluate') {
+                        await cdp('Runtime.enable', {}, sessionId);
+                        const ev = await cdp('Runtime.evaluate', { expression: params.expression || 'document.title', returnByValue: true }, sessionId);
+                        finish({ result: ev.result.value });
+                    } else if (action === 'screenshot') {
+                        await cdp('Page.enable', {}, sessionId);
+                        const shot = await cdp('Page.captureScreenshot', { format: 'png' }, sessionId);
+                        finish({ screenshot: shot.data });
+                    }
+                } catch (e) { finish({ error: e.message }); }
+            }
+        });
+
+        ws.on('open', async () => {
             try {
-                // attach 到这个 page（flatten 模式，响应里带 sessionId）
-                const at = await cdp('Target.attachToTarget', { targetId, flatten: true });
-                const sid = at.sessionId;
-                if (action === 'evaluate') {
-                    await cdp('Runtime.enable', {}, sid);
-                    const ev = await cdp('Runtime.evaluate', { expression: params.expression || 'document.title', returnByValue: true }, sid);
-                    finish({ result: ev.result.value });
-                } else if (action === 'screenshot') {
-                    await cdp('Page.enable', {}, sid);
-                    const shot = await cdp('Page.captureScreenshot', { format: 'png' }, sid);
-                    finish({ screenshot: shot.data });
+                if (action === 'newtab') {
+                    await cdp('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+                    const created = await cdp('Target.createTarget', { url: params.url || 'about:blank' });
+                    finish({ targetId: created.targetId });
+                } else {
+                    // evaluate/screenshot：直接 getTargets + attach（不等 setAutoAttach 事件，避免超时）
+                    await cdp('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+                    const tg = await cdp('Target.getTargets');
+                    let page = (tg.targetInfos || []).find(t => t.type === 'page');
+                    if (!page) {
+                        const created = await cdp('Target.createTarget', { url: 'about:blank' });
+                        page = { targetId: created.targetId };
+                    }
+                    // attach 后等 attachedToTarget 事件触发 evaluate/screenshot
+                    // 如果事件没来，1 秒后用手动方式（attach 响应里的 sessionId）
+                    const at = await cdp('Target.attachToTarget', { targetId: page.targetId, flatten: true });
+                    // 如果事件路径没处理，手动执行
+                    setTimeout(async () => {
+                        if (sessionId || !at.sessionId) return;
+                        sessionId = at.sessionId;
+                        try {
+                            if (action === 'evaluate') {
+                                await cdp('Runtime.enable', {}, sessionId);
+                                const ev = await cdp('Runtime.evaluate', { expression: params.expression || 'document.title', returnByValue: true }, sessionId);
+                                finish({ result: ev.result.value });
+                            } else if (action === 'screenshot') {
+                                await cdp('Page.enable', {}, sessionId);
+                                const shot = await cdp('Page.captureScreenshot', { format: 'png' }, sessionId);
+                                finish({ screenshot: shot.data });
+                            }
+                        } catch (e) { finish({ error: e.message }); }
+                    }, 1000);
                 }
             } catch (e) { finish({ error: e.message }); }
-        }
+        });
 
-        function finish(result) {
-            clearTimeout(timeout);
-            pluginWs.removeListener('message', msgHandler);
-            resolve(result);
-        }
-
-        try {
-            if (action === 'newtab') {
-                const created = await cdp('Target.createTarget', { url: params.url || 'about:blank' });
-                finish({ targetId: created.targetId });
-            } else {
-                // evaluate/screenshot：找现有 page，attach 它
-                const tg = await cdp('Target.getTargets');
-                let page = (tg.targetInfos || []).find(t => t.type === 'page' && t.attached);
-                if (!page) {
-                    // 没有已 attach 的 page，创建一个
-                    const created = await cdp('Target.createTarget', { url: 'about:blank' });
-                    page = { targetId: created.targetId };
-                }
-                await execAction(page.targetId);
-            }
-        } catch (e) { finish({ error: e.message }); }
+        ws.on('error', e => { clearTimeout(timeout); resolve({ error: e.message }); });
     });
 }
 

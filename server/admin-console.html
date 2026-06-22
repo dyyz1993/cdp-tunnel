@@ -58,6 +58,9 @@ td { padding: 10px; border-bottom: 1px solid #f3f4f6; }
   <!-- 在线浏览器 -->
   <div class="section">
     <h2>📱 在线浏览器 <span id="browserCount" class="muted"></span></h2>
+    <div class="actions" style="margin-bottom:12px;">
+      <button class="btn btn-primary" onclick="showCreateBrowserModal()" style="font-weight:600;">➕ 创建浏览器（新分组）</button>
+    </div>
     <div id="browsersTable"><div class="empty">加载中...</div></div>
   </div>
 
@@ -106,6 +109,20 @@ td { padding: 10px; border-bottom: 1px solid #f3f4f6; }
     <div id="cdpEmpty" class="empty">👆 先在上方浏览器列表点"选择"按钮</div>
   </div>
 
+</div>
+
+<!-- 创建浏览器弹窗 -->
+<div class="modal-overlay" id="createBrowserModal">
+  <div class="modal" style="max-width:600px;">
+    <h3>🆕 创建浏览器（新分组）</h3>
+    <p class="muted" style="font-size:13px; margin-bottom:12px;">创建后会生成一个专用地址。把这个地址填到用户 Chrome 扩展的配置页，扩展连上后这里就会显示为在线浏览器。</p>
+    <input type="text" id="browserName" placeholder="浏览器名称（如：张三的电脑）" style="margin-bottom:12px;">
+    <div id="browserCreateResult" style="display:none; margin-bottom:12px; padding:12px; background:#f0f9ff; border-radius:6px;"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button class="btn" style="background:#e5e7eb;" onclick="closeModal('createBrowserModal')">关闭</button>
+      <button class="btn btn-primary" id="createBrowserBtn" onclick="createBrowser()">创建</button>
+    </div>
+  </div>
 </div>
 
 <!-- 创建 Key 弹窗 -->
@@ -233,6 +250,45 @@ async function loadKeys() {
 }
 
 function showCreateKeyModal() { document.getElementById('keyName').value = ''; document.getElementById('createKeyModal').classList.add('show'); }
+
+// ===== 创建浏览器（= 创建 key + 生成完整地址）=====
+function showCreateBrowserModal() {
+  document.getElementById('browserName').value = '';
+  document.getElementById('browserCreateResult').style.display = 'none';
+  document.getElementById('createBrowserBtn').style.display = '';
+  document.getElementById('createBrowserModal').classList.add('show');
+}
+
+async function createBrowser() {
+  const name = document.getElementById('browserName').value || ('browser-' + Date.now().toString(36));
+  const { ok, data } = await api('keys', 'POST', { name });
+  if (!ok) { toast('创建失败: ' + (data.error || ''), true); return; }
+
+  // 用当前域名生成完整地址（用户直接复制给扩展配置页）
+  const host = location.host;  // cdp.shanbox.19930810.xyz:8443
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const pluginUrl = `${proto}://${host}/plugin?key=${data.key}`;
+  const clientUrl = `${proto}://${host}/client?key=${data.key}`;
+
+  document.getElementById('createBrowserBtn').style.display = 'none';
+  const result = document.getElementById('browserCreateResult');
+  result.style.display = 'block';
+  result.innerHTML = `
+    <div style="font-weight:600; margin-bottom:8px;">✅ 浏览器 "${name}" 创建成功！</div>
+    <div style="margin-bottom:10px;">
+      <div style="font-size:12px; color:#6b7280; margin-bottom:4px;">📋 扩展配置地址（填到用户 Chrome 扩展配置页）:</div>
+      <div class="mono" style="background:white; padding:8px; border-radius:4px; border:1px solid #e5e7eb; word-break:break-all;">${pluginUrl}</div>
+      <button class="btn btn-copy" style="margin-top:4px;" onclick="copyText('${pluginUrl}')">📋 复制扩展地址</button>
+    </div>
+    <div>
+      <div style="font-size:12px; color:#6b7280; margin-bottom:4px;">🔌 CDP 客户端地址（给 Playwright/Puppeteer 用）:</div>
+      <div class="mono" style="background:white; padding:8px; border-radius:4px; border:1px solid #e5e7eb; word-break:break-all;">${clientUrl}</div>
+      <button class="btn btn-copy" style="margin-top:4px;" onclick="copyText('${clientUrl}')">📋 复制客户端地址</button>
+    </div>
+    <div class="muted" style="font-size:12px; margin-top:8px;">💡 用户填好扩展地址后，Chrome 里会自动出现 "${name}" 分组。扩展连上后上方"在线浏览器"列表会显示它。</div>
+  `;
+  loadKeys();  // 刷新 key 列表
+}
 
 async function createKey() {
   const name = document.getElementById('keyName').value || ('browser-' + Date.now().toString(36));

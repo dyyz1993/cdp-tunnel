@@ -103,14 +103,16 @@
       var isActive = conn.enabled && statusClass === 'connected';
       var cdpAddr = getCdpAddress(conn.url, conn.mode);
       var statusHtml = getStatusHtml(statusClass);
+      var hasKey = (conn.url || '').indexOf('key=') >= 0;
+      var maskedUrl = maskUrl(conn.url);
       html +=
         '<div class="conn-config-item' + (isActive ? ' active' : '') + '" data-id="' + conn.id + '">' +
           '<input type="checkbox" class="conn-toggle" data-id="' + conn.id + '"' + (conn.enabled ? ' checked' : '') + ' title="启用/禁用">' +
           '<span class="status-dot ' + statusClass + '" title="' + statusClass + '"></span>' +
           '<div class="conn-config-info">' +
-            '<div class="conn-config-tag">' + (conn.mode === 'takeover' ? '🔗 ' : '🆕 ') + escapeHtml(conn.tag) + '</div>' +
-            '<div class="conn-config-url" title="' + escapeAttr(conn.url) + '">WS:  ' + escapeHtml(conn.url) + '</div>' +
-            (cdpAddr ? '<div class="conn-config-cdp">CDP: <span class="cdp-addr" data-cdp="' + escapeAttr(cdpAddr) + '">' + escapeHtml(cdpAddr) + '</span> <button class="btn-copy-cdp" data-cdp="' + escapeAttr(cdpAddr) + '" title="复制 CDP 地址">📋</button></div>' : '') +
+            '<div class="conn-config-tag">' + (conn.mode === 'takeover' ? '🔗 ' : '🆕 ') + escapeHtml(conn.tag) + (hasKey ? ' <span class="auth-badge" title="带 API Key 鉴权">🔑</span>' : '') + '</div>' +
+            '<div class="conn-config-url" title="' + escapeAttr(maskedUrl) + '">WS:  ' + escapeHtml(maskedUrl) + '</div>' +
+            (cdpAddr ? '<div class="conn-config-cdp">CDP: <span class="cdp-addr" data-cdp="' + escapeAttr(cdpAddr) + '">' + escapeHtml(cdpAddr.replace(/(key=)(cdp_[a-f0-9]{8})[a-f0-9]*/, '$1$2••••')) + '</span> <button class="btn-copy-cdp" data-cdp="' + escapeAttr(cdpAddr) + '" title="复制 CDP 地址（含 key）">📋</button></div>' : '') +
             '<div class="conn-config-status">' + statusHtml + '</div>' +
           '</div>' +
           '<button class="btn-delete" data-id="' + conn.id + '" title="删除">删除</button>' +
@@ -313,7 +315,16 @@
     var host = match[1];
     var port = parseInt(match[2], 10);
     if (mode === 'takeover') port += 1;
-    return 'http://' + host + ':' + port;
+    // 保留 key（如果 URL 里带了 ?key=xxx，CDP 客户端连接也需要带）
+    var keyMatch = (wsUrl || '').match(/[?&]key=([^&]+)/);
+    var keyParam = keyMatch ? '?key=' + keyMatch[1] : '';
+    return 'http://' + host + ':' + port + keyParam;
+  }
+
+  // 显示 URL 时隐藏 key 的明文（防截图泄露），但保留可识别性
+  function maskUrl(wsUrl) {
+    if (!wsUrl) return '';
+    return wsUrl.replace(/([?&]key=)(cdp_[a-f0-9]{8})[a-f0-9]*/, '$1$2••••');
   }
 
   function init() {

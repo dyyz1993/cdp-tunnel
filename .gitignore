@@ -12,3 +12,7 @@ test-body-screenshot.png
 analysis/
 .codenomad/
 .opencode/
+
+# 本地部署文档（含服务器信息，不提交）
+AGENTS.md
+DEPLOY-LOCAL.md

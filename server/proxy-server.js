@@ -23,8 +23,9 @@ const TAKEOVER_PORT = CONFIG.TAKEOVER_PORT;
 let portPool = null;
 const { logCDP, logEvent, clearLog, logStatus, logConnectionEvent, flushAllLogs, logDisconnect } = require('./modules/logger');
 
+let validateApiKey = null;
 try {
-    const { validateApiKey } = require('./saas/auth');
+    validateApiKey = require('./saas/auth').validateApiKey;
     var HAS_SAAS = true;
 } catch (e) {
     var HAS_SAAS = false;
@@ -742,11 +743,19 @@ function handlePluginConnection(ws, clientInfo, request) {
             }
         }
 
+        if (HAS_SAAS && process.env.REQUIRE_AUTH === 'true' && !apiKey) {
+            // 强制鉴权模式：plugin 必须带 key
+            logConnectionEvent('PLUGIN_AUTH_FAIL', 'No API key (REQUIRE_AUTH=true)');
+            ws.close(4001, 'API key required');
+            return;
+        }
+
         if (HAS_SAAS && apiKey) {
             const keyInfo = validateApiKey(apiKey);
             if (keyInfo) {
                 ws.userId = keyInfo.userId;
                 ws.apiKeyId = keyInfo.keyId;
+                ws.apiKey = apiKey;  // 记录 key 字符串，供 client 连接时反查 plugin
                 logConnectionEvent('PLUGIN_AUTHED', `userId=${keyInfo.userId} keyName=${keyInfo.keyName}`);
             } else {
                 logConnectionEvent('PLUGIN_AUTH_FAIL', 'Invalid API key');
@@ -2128,9 +2137,24 @@ server.listen(PORT, '0.0.0.0');
 
 // v3.0 端口池启动（唯一模式）
 portPool = new PortPoolManager({
-    getPluginConnection: () => {
+    getPluginConnection: (apiKey) => {
+        // 鉴权模式：按 key 找对应的 plugin（一 key 一浏览器）
+        if (apiKey) {
+            for (const ws of pluginConnections) {
+                if (ws.readyState === WebSocket.OPEN && ws.apiKey === apiKey) return ws;
+            }
+            return null;
+        }
+        // 无鉴权模式（本地开发）：返回第一个 plugin
         for (const ws of pluginConnections) return ws;
         return null;
+    },
+    validateClientKey: (apiKey) => {
+        // 无 SaaS 或未开启强制鉴权时放行（本地开发模式）
+        if (!HAS_SAAS || process.env.REQUIRE_AUTH !== 'true') return true;
+        // 开启强制鉴权：必须有有效 key
+        if (!apiKey) return false;
+        return !!validateApiKey(apiKey);
     },
     handlePluginUpgrade: (req, socket, head) => {
         wss.handleUpgrade(req, socket, head, (ws) => {

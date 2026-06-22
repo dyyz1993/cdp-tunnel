@@ -198,9 +198,27 @@ class PortPoolManager {
   _handleClientConnect(ws, req, session) {
     session.clients.add(ws);
 
-    const pluginWs = this.mainProxy.getPluginConnection();
+    // 鉴权：从 URL 提取 key，找到对应的 plugin（一 key 一浏览器）
+    let apiKey = null;
+    try {
+      const url = new URL(req.url, `http://localhost:${session.port}`);
+      apiKey = url.searchParams.get('key') || null;
+    } catch {}
+
+    // 如果有 SaaS 鉴权（HAS_SAAS），校验 key
+    if (this.mainProxy.validateClientKey) {
+      const valid = this.mainProxy.validateClientKey(apiKey);
+      if (!valid) {
+        ws.close(4001, 'Invalid or missing API key');
+        return;
+      }
+    }
+
+    ws.apiKey = apiKey;  // 记录到 ws，后续命令转发时带上
+
+    const pluginWs = this.mainProxy.getPluginConnection(apiKey);
     if (!pluginWs) {
-      ws.close(1011, 'No extension connected');
+      ws.close(1011, apiKey ? 'No browser connected for this key' : 'No extension connected');
       return;
     }
 

@@ -85,7 +85,7 @@ function validateApiKey(key) {
     const apiKey = db.prepare('SELECT * FROM api_keys WHERE key = ? AND active = 1').get(key);
     if (!apiKey) return null;
     // 更新最后使用时间
-    db.prepare('UPDATE api_keys SET last_used_at = datetime("now") WHERE id = ?').run(apiKey.id);
+    db.prepare("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?").run(apiKey.id);
     return { userId: apiKey.user_id, keyId: apiKey.id, keyName: apiKey.name };
 }
 

@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.5.0] - 2026-06-22
+### Added
+- **API Key 鉴权**：proxy 支持 `REQUIRE_AUTH=true` 强制鉴权，一个 key 绑定一个浏览器。扩展连 `/plugin?key=xxx`，客户端连 `/client?key=xxx`，不同 key 互不可见。新增 `server/saas/key-manager.js` 手动管理 key（创建/列出/吊销）。
+- **版本校验加强**：`STRICT_VERSION=true` 时扩展版本与 proxy 不一致直接拒绝连接（close 4002），避免老扩展与新 proxy 不兼容。
+- **远程部署支持**：proxy 监听 0.0.0.0，可通过 nginx/Cloudflare 反代暴露到公网。新增 `docs/DEPLOY-CLOUDFLARE.md` 部署文档。
+- 新增自动化测试：`test-api-key-auth.js`（鉴权 7 项）、`test-version-check.js`（版本校验 3 项）、`test-prod-deploy.js`（生产环境验证 10 项）。
+- 扩展配置页优化：带 key 的 URL 自动隐藏明文（防截图泄露），显示 🔑 鉴权标识，CDP 地址自动带 key。
+
+### Changed
+- **9221 主端口纳入端口池**：9221 不再走老的 create 路径，改为端口池第 0 个 session（pool_9221），与 9231-9239 行为完全一致。takeover（9220）保持原逻辑。
+- 端口池 `/json/version` `/json/list` 支持尾斜杠（修复 Playwright connectOverCDP 404）。
+- pre-commit smoke test 从 3 个增加到 5 个（25 checks）。
+
+### Fixed
+- 修复 `attachedToTarget` 事件 sessionId 不注册导致 Playwright evaluate 卡死的根因（auto-attach 场景 targetId 可能未注册）。
+- 修复端口池 `closeTarget` 响应 `session.attachedTargets` 字段不存在的 TypeError。
+- 修复 SaaS `auth.js` 的 `datetime("now")` SQL 语法错误（双引号→单引号）。
+- 修复 `validateApiKey` 作用域 bug（定义在 try 块内导致 HAS_SAAS=true 时崩溃）。
+
 ## [3.0.0] - 2026-06-19
 ### Added
 - **端口池架构**：proxy 现在支持多端口隔离。每个 create 端口（默认 9222-9230）= 一个独立的隔离环境，不同端口的 client 互不可见对方的 tab。对齐原生 Chrome `--remote-debugging-port` 行为：多客户端可连同一端口、断开不清理 tab。

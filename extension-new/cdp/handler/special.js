@@ -504,6 +504,7 @@ var SpecialHandler = (function() {
     var targetId = params && params.targetId;
     if (targetId) {
       var tabId = state.getTabIdByTargetId(targetId);
+      Logger.info('[CloseTarget] targetId=' + targetId.slice(0,12) + ' tabId=' + tabId);
       if (tabId) {
         var closeClientId = state.getClientIdByTabId(tabId);
         return new Promise(function(resolve) {

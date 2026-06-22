@@ -41,6 +41,7 @@ const TESTS = [
   { file: 'test-cli-commands.js', name: 'CLI Commands', timeout: 30000, tier: 'core' },
   { file: 'test-api-key-auth.js', name: 'API Key Auth (REQUIRE_AUTH)', timeout: 120000, tier: 'core' },
   { file: 'test-version-check.js', name: 'Version Check (STRICT_VERSION)', timeout: 60000, tier: 'core' },
+  { file: 'test-key-isolation.js', name: 'Key Isolation (按 key 隔离)', timeout: 120000, tier: 'core' },
   { file: 'test-prod-deploy.js', name: 'Prod Deploy Verify (需 PROD_WSS/PROD_KEY)', timeout: 60000, tier: 'extended' },
   { file: 'test-admin-console.js', name: 'Admin Console', timeout: 60000, tier: 'extended' },
   { file: 'test-multi-client-tab-switch.js', name: 'Multi-client Tab Switch', timeout: 120000, tier: 'core' },

@@ -24,8 +24,10 @@ let portPool = null;
 const { logCDP, logEvent, clearLog, logStatus, logConnectionEvent, flushAllLogs, logDisconnect } = require('./modules/logger');
 
 let validateApiKey = null;
+let saasAuth = null;  // 完整 SaaS auth 模块（createApiKey/listApiKeys/revokeApiKey）
 try {
-    validateApiKey = require('./saas/auth').validateApiKey;
+    saasAuth = require('./saas/auth');
+    validateApiKey = saasAuth.validateApiKey;
     var HAS_SAAS = true;
 } catch (e) {
     var HAS_SAAS = false;
@@ -318,6 +320,207 @@ function resolvePluginFromUrl(url) {
     return pluginConnections.values().next().value || null;
 }
 
+// ===== 管理控制台 API =====
+// 鉴权：ADMIN_TOKEN 环境变量（Bearer token 或 query ?token=）
+// 未设 ADMIN_TOKEN 时只允许 localhost（开发友好）
+function checkAdminAuth(req, url) {
+    const token = process.env.ADMIN_TOKEN;
+    if (!token) {
+        // 未设 token：只允许 localhost
+        const ip = req.socket.remoteAddress;
+        return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+    }
+    // 设了 token：校验 Bearer 或 query
+    const authHeader = req.headers.authorization || '';
+    const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const queryToken = url.searchParams.get('token');
+    return bearer === token || queryToken === token;
+}
+
+function adminJson(res, code, data) {
+    res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(data));
+}
+
+async function readBody(req) {
+    return new Promise(resolve => {
+        let d = ''; req.on('data', c => d += c);
+        req.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({}); } });
+    });
+}
+
+async function handleAdminApi(req, res, url) {
+    const path = url.pathname.replace('/admin/api/', '');
+    const method = req.method;
+
+    if (!checkAdminAuth(req, url)) {
+        return adminJson(res, 401, { error: 'Unauthorized. Set ADMIN_TOKEN env or access from localhost.' });
+    }
+
+    try {
+        // 浏览器列表
+        if (path === 'browsers' && method === 'GET') {
+            const browsers = [];
+            for (const pluginWs of pluginConnections) {
+                if (pluginWs.readyState !== WebSocket.OPEN) continue;
+                const ns = getNamespace(pluginWs);
+                browsers.push({
+                    pluginId: pluginWs.pluginId,
+                    pluginName: pluginWs.pluginName || 'My Browser',
+                    userId: pluginWs.userId || null,
+                    apiKeyId: pluginWs.apiKeyId || null,
+                    browserName: ns.cachedBrowserVersion?.Browser || 'Unknown',
+                    userAgent: ns.cachedBrowserVersion?.['User-Agent'] || '',
+                    targets: ns.cachedTargets?.length || 0,
+                    connected: true,
+                    connectedAt: pluginWs.connectedAt,
+                    extVersion: pluginWs.extVersion || 'unknown'
+                });
+            }
+            return adminJson(res, 200, browsers);
+        }
+
+        // key 管理（需要 SaaS）
+        if (path === 'keys' && method === 'GET') {
+            if (!saasAuth) return adminJson(res, 503, { error: 'SaaS not available' });
+            return adminJson(res, 200, saasAuth.listApiKeys('builtin-admin'));
+        }
+        if (path === 'keys' && method === 'POST') {
+            if (!saasAuth) return adminJson(res, 503, { error: 'SaaS not available' });
+            const body = await readBody(req);
+            const name = body.name || ('browser-' + Date.now().toString(36));
+            const result = saasAuth.createApiKey('builtin-admin', name);
+            const port = PORT;
+            return adminJson(res, 200, {
+                ...result,
+                pluginUrl: `ws://localhost:${port}/plugin?key=${result.key}`,
+                clientUrl: `ws://localhost:${port}/client?key=${result.key}`
+            });
+        }
+        if (path.startsWith('keys/') && method === 'DELETE') {
+            if (!saasAuth) return adminJson(res, 503, { error: 'SaaS not available' });
+            const keyId = path.split('/')[1];
+            const result = saasAuth.revokeApiKey(keyId, 'builtin-admin');
+            return adminJson(res, result.changes > 0 ? 200 : 404, { ok: result.changes > 0, changes: result.changes });
+        }
+
+        // CDP 快捷操作（通过 key 找浏览器，发起 CDP 命令）
+        if (path.startsWith('cdp/') && method === 'POST') {
+            const body = await readBody(req);
+            if (!body.key) return adminJson(res, 400, { error: 'Missing key' });
+            const result = await execCdpViaKey(body.key, body);
+            return adminJson(res, result.error ? 500 : 200, result);
+        }
+
+        return adminJson(res, 404, { error: 'Not found: ' + path });
+    } catch (e) {
+        return adminJson(res, 500, { error: e.message });
+    }
+}
+
+// 通过 key 连浏览器执行 CDP 命令（内部辅助）
+async function execCdpViaKey(apiKey, params) {
+    const action = params.action || 'evaluate';
+    // 找到 key 对应的 plugin
+    let pluginWs = null;
+    for (const ws of pluginConnections) {
+        if (ws.readyState === WebSocket.OPEN && ws.apiKey === apiKey) { pluginWs = ws; break; }
+    }
+    if (!pluginWs) return { error: 'No browser connected for this key' };
+
+    // 用内部 WebSocket 连自己的 /client?key=xxx 来发 CDP 命令
+    // 这样复用所有路由逻辑（端口池、session 路由等）
+    const WebSocket = require('ws');
+    const port = PORT;
+    return new Promise(resolve => {
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/client?key=${apiKey}`);
+        const pending = new Map(); let id = 1; let sessionId = null;
+        const timeout = setTimeout(() => { try { ws.close(); } catch {}; resolve({ error: 'Timeout' }); }, 15000);
+
+        function cdp(method, p = {}) {
+            return new Promise((resolve, reject) => {
+                const i = id++; pending.set(i, { resolve, reject });
+                const o = { id: i, method, params: p }; if (sessionId) o.sessionId = sessionId;
+                ws.send(JSON.stringify(o));
+                setTimeout(() => { if (pending.has(i)) { pending.delete(i); reject(new Error('CDP timeout: ' + method)); } }, 12000);
+            });
+        }
+
+        ws.on('message', async (data) => {
+            const m = JSON.parse(data.toString());
+            if (m.id && pending.has(m.id)) {
+                const { resolve: r, reject: rj } = pending.get(m.id); pending.delete(m.id);
+                m.error ? rj(new Error(JSON.stringify(m.error))) : r(m.result);
+                return;
+            }
+            // attachedToTarget 事件 → 记 sessionId
+            if (m.method === 'Target.attachedToTarget' && m.params?.sessionId) {
+                sessionId = m.params.sessionId;
+                // 收到 attach 后执行操作
+                try {
+                    if (action === 'evaluate') {
+                        await cdp('Runtime.enable');
+                        const ev = await cdp('Runtime.evaluate', { expression: params.expression || 'document.title', returnByValue: true });
+                        clearTimeout(timeout); ws.close();
+                        resolve({ result: ev.result.value });
+                    } else if (action === 'screenshot') {
+                        await cdp('Page.enable');
+                        const shot = await cdp('Page.captureScreenshot', { format: 'png' });
+                        clearTimeout(timeout); ws.close();
+                        resolve({ screenshot: shot.data });  // base64
+                    } else if (action === 'newtab') {
+                        clearTimeout(timeout); ws.close();
+                        resolve({ targetId: m.params.targetInfo?.targetId });
+                    }
+                } catch (e) { clearTimeout(timeout); try { ws.close(); } catch {}; resolve({ error: e.message }); }
+            }
+        });
+
+        ws.on('open', async () => {
+            try {
+                if (action === 'newtab') {
+                    await cdp('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+                    await cdp('Target.createTarget', { url: params.url || 'about:blank' });
+                    // 等 attachedToTarget 事件
+                } else {
+                    // evaluate/screenshot：先 getTargets 找现有 page，attach 它
+                    await cdp('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+                    // 如果有多个 page，attach 第一个；等事件
+                    setTimeout(async () => {
+                        if (!sessionId) {
+                            // 没收到 attachedToTarget，手动 getTargets + attach
+                            try {
+                                const tg = await cdp('Target.getTargets');
+                                const page = (tg.targetInfos || []).find(t => t.type === 'page');
+                                if (page) {
+                                    const at = await cdp('Target.attachToTarget', { targetId: page.targetId, flatten: true });
+                                    sessionId = at.sessionId;
+                                    if (action === 'evaluate') {
+                                        await cdp('Runtime.enable');
+                                        const ev = await cdp('Runtime.evaluate', { expression: params.expression || 'document.title', returnByValue: true });
+                                        clearTimeout(timeout); ws.close();
+                                        resolve({ result: ev.result.value });
+                                    } else if (action === 'screenshot') {
+                                        await cdp('Page.enable');
+                                        const shot = await cdp('Page.captureScreenshot', { format: 'png' });
+                                        clearTimeout(timeout); ws.close();
+                                        resolve({ screenshot: shot.data });
+                                    }
+                                } else {
+                                    clearTimeout(timeout); ws.close();
+                                    resolve({ error: 'No page target found' });
+                                }
+                            } catch (e) { clearTimeout(timeout); ws.close(); resolve({ error: e.message }); }
+                        }
+                    }, 2000);
+                }
+            } catch (e) { clearTimeout(timeout); ws.close(); resolve({ error: e.message }); }
+        });
+
+        ws.on('error', e => { clearTimeout(timeout); resolve({ error: e.message }); });
+    });
+}
+
 async function handleHttpRequest(req, res) {
     const url = new URL(req.url, `http://localhost:${PORT}`);
 
@@ -331,6 +534,21 @@ async function handleHttpRequest(req, res) {
          url.pathname === '/json/new')) {
         portPool._handleHttp(req, res, portPool.portSessions[0]);
         return;
+    }
+
+    // 管理控制台：/admin 返回页面，/admin/api/* 返回 JSON
+    if (url.pathname === '/admin' || url.pathname === '/admin/') {
+        try {
+            const html = fs.readFileSync(path.join(__dirname, 'admin-console.html'), 'utf8');
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(html);
+        } catch (e) {
+            res.writeHead(500); res.end('Admin console not found: ' + e.message);
+        }
+        return;
+    }
+    if (url.pathname.startsWith('/admin/api/')) {
+        return handleAdminApi(req, res, url);
     }
 
     if (url.pathname === '/json/browsers' || url.pathname === '/json/browsers/') {

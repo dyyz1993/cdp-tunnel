@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CDP Tunnel 管理控制台</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #1f2937; }
+.header { background: #1a1a2e; color: white; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+.header h1 { font-size: 18px; }
+.header .token-area { display: flex; gap: 8px; align-items: center; }
+.header input { background: #16213e; border: 1px solid #0f3460; color: white; padding: 6px 10px; border-radius: 4px; width: 200px; font-size: 13px; }
+.header button { background: #0f3460; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.container { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+.section { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.section h2 { font-size: 16px; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #e5e7eb; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; padding: 8px 10px; background: #f9fafb; color: #6b7280; font-weight: 600; border-bottom: 1px solid #e5e7eb; }
+td { padding: 10px; border-bottom: 1px solid #f3f4f6; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+.badge-online { background: #d1fae5; color: #065f46; }
+.badge-offline { background: #fee2e2; color: #991b1b; }
+.btn { padding: 4px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.btn-primary { background: #3b82f6; color: white; }
+.btn-danger { background: #ef4444; color: white; }
+.btn-copy { background: #e5e7eb; color: #374151; }
+.btn:hover { opacity: 0.85; }
+.mono { font-family: 'Monaco', 'Courier New', monospace; font-size: 12px; }
+.muted { color: #9ca3af; }
+.empty { text-align: center; padding: 30px; color: #9ca3af; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 100; }
+.modal-overlay.show { display: flex; }
+.modal { background: white; padding: 24px; border-radius: 8px; max-width: 500px; width: 90%; }
+.modal h3 { margin-bottom: 16px; }
+.modal input, .modal textarea { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; margin-bottom: 12px; font-family: 'Monaco', monospace; font-size: 13px; }
+.modal textarea { height: 80px; resize: vertical; }
+.cdp-result { background: #1a1a2e; color: #4ade80; padding: 12px; border-radius: 4px; font-family: 'Monaco', monospace; font-size: 12px; max-height: 300px; overflow: auto; margin-top: 12px; white-space: pre-wrap; word-break: break-all; }
+.screenshot-preview { max-width: 100%; border: 1px solid #e5e7eb; border-radius: 4px; margin-top: 12px; }
+.toast { position: fixed; bottom: 20px; right: 20px; background: #1a1a2e; color: white; padding: 12px 20px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: none; z-index: 200; }
+.toast.show { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🎯 CDP Tunnel 管理控制台</h1>
+  <div class="token-area">
+    <input type="password" id="tokenInput" placeholder="Admin Token（可选）">
+    <button onclick="saveToken()">保存</button>
+    <button onclick="refreshAll()">🔄 刷新</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- 在线浏览器 -->
+  <div class="section">
+    <h2>📱 在线浏览器 <span id="browserCount" class="muted"></span></h2>
+    <div id="browsersTable"><div class="empty">加载中...</div></div>
+  </div>
+
+  <!-- API Key 管理 -->
+  <div class="section">
+    <h2>🔑 API Key 管理</h2>
+    <div class="actions">
+      <button class="btn btn-primary" onclick="showCreateKeyModal()">➕ 创建 Key</button>
+    </div>
+    <div id="keysTable"><div class="empty">加载中...</div></div>
+  </div>
+
+  <!-- CDP 快捷操作 -->
+  <div class="section">
+    <h2>⚡ CDP 快捷操作</h2>
+    <div class="actions">
+      <input type="text" id="cdpKey" placeholder="浏览器 Key (cdp_xxx)" style="flex:1; padding:6px 10px; border:1px solid #d1d5db; border-radius:4px; font-family:Monaco,monospace; font-size:13px;">
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" onclick="cdpEvaluate()">📝 执行 JS</button>
+      <button class="btn btn-primary" onclick="cdpScreenshot()">📸 截图</button>
+      <button class="btn btn-primary" onclick="cdpNewTab()">🆕 新建标签</button>
+    </div>
+    <div id="cdpResult"></div>
+  </div>
+
+</div>
+
+<!-- 创建 Key 弹窗 -->
+<div class="modal-overlay" id="createKeyModal">
+  <div class="modal">
+    <h3>创建 API Key</h3>
+    <input type="text" id="keyName" placeholder="名称（如：我的浏览器）">
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button class="btn" style="background:#e5e7eb;" onclick="closeModal('createKeyModal')">取消</button>
+      <button class="btn btn-primary" onclick="createKey()">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 执行 JS 弹窗 -->
+<div class="modal-overlay" id="evaluateModal">
+  <div class="modal">
+    <h3>执行 JavaScript</h3>
+    <textarea id="jsExpression" placeholder="document.title"></textarea>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button class="btn" style="background:#e5e7eb;" onclick="closeModal('evaluateModal')">取消</button>
+      <button class="btn btn-primary" onclick="runEvaluate()">执行</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新建标签弹窗 -->
+<div class="modal-overlay" id="newtabModal">
+  <div class="modal">
+    <h3>新建标签页</h3>
+    <input type="text" id="newtabUrl" placeholder="https://example.com">
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button class="btn" style="background:#e5e7eb;" onclick="closeModal('newtabModal')">取消</button>
+      <button class="btn btn-primary" onclick="runNewTab()">创建</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let TOKEN = localStorage.getItem('admin_token') || '';
+
+// ===== 初始化 =====
+window.onload = () => {
+  document.getElementById('tokenInput').value = TOKEN;
+  refreshAll();
+  // 自动刷新浏览器列表（5秒）
+  setInterval(loadBrowsers, 5000);
+};
+
+function saveToken() {
+  TOKEN = document.getElementById('tokenInput').value;
+  localStorage.setItem('admin_token', TOKEN);
+  toast('Token 已保存');
+  refreshAll();
+}
+
+function api(path, method = 'GET', body = null) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (TOKEN) headers['Authorization'] = 'Bearer ' + TOKEN;
+  return fetch('/admin/api/' + path, { method, headers, body: body ? JSON.stringify(body) : null })
+    .then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d })));
+}
+
+// ===== 浏览器列表 =====
+async function loadBrowsers() {
+  try {
+    const { ok, data } = await api('browsers');
+    if (!ok) { document.getElementById('browsersTable').innerHTML = '<div class="empty">' + (data.error || '加载失败') + '</div>'; return; }
+    document.getElementById('browserCount').textContent = `(${data.length} 个)`;
+    if (!data.length) { document.getElementById('browsersTable').innerHTML = '<div class="empty">没有浏览器连接</div>'; return; }
+    let html = '<table><tr><th>状态</th><th>名称</th><th>pluginId</th><th>UA</th><th>扩展版本</th><th>连接时间</th></tr>';
+    data.forEach(b => {
+      const time = b.connectedAt ? new Date(b.connectedAt).toLocaleTimeString() : '-';
+      const ua = (b.userAgent || '').slice(0, 50) || b.browserName || '-';
+      html += `<tr>
+        <td><span class="badge badge-online">在线</span></td>
+        <td>${b.pluginName || '-'}</td>
+        <td class="mono muted">${(b.pluginId||'').slice(0,20)}...</td>
+        <td class="mono" title="${b.userAgent}">${ua}</td>
+        <td><span class="badge badge-online">${b.extVersion}</span></td>
+        <td class="muted">${time}</td>
+      </tr>`;
+    });
+    document.getElementById('browsersTable').innerHTML = html + '</table>';
+  } catch (e) { document.getElementById('browsersTable').innerHTML = '<div class="empty">加载失败: ' + e.message + '</div>'; }
+}
+
+// ===== Key 管理 =====
+async function loadKeys() {
+  try {
+    const { ok, data } = await api('keys');
+    if (!ok) { document.getElementById('keysTable').innerHTML = '<div class="empty">' + (data.error || '加载失败') + '</div>'; return; }
+    if (!data.length) { document.getElementById('keysTable').innerHTML = '<div class="empty">没有 key，点上方按钮创建</div>'; return; }
+    let html = '<table><tr><th>名称</th><th>状态</th><th>Key ID</th><th>最后使用</th><th>创建时间</th><th>操作</th></tr>';
+    data.forEach(k => {
+      const last = k.last_used_at ? new Date(k.last_used_at).toLocaleString() : '从未';
+      const created = k.created_at ? new Date(k.created_at).toLocaleDateString() : '-';
+      html += `<tr>
+        <td>${k.name}</td>
+        <td>${k.active ? '<span class="badge badge-online">有效</span>' : '<span class="badge badge-offline">已吊销</span>'}</td>
+        <td class="mono muted">${k.id}</td>
+        <td class="muted">${last}</td>
+        <td class="muted">${created}</td>
+        <td>${k.active ? '<button class="btn btn-danger" onclick="revokeKey(\'' + k.id + '\')">吊销</button>' : ''}</td>
+      </tr>`;
+    });
+    document.getElementById('keysTable').innerHTML = html + '</table>';
+  } catch (e) { document.getElementById('keysTable').innerHTML = '<div class="empty">加载失败: ' + e.message + '</div>'; }
+}
+
+function showCreateKeyModal() { document.getElementById('keyName').value = ''; document.getElementById('createKeyModal').classList.add('show'); }
+
+async function createKey() {
+  const name = document.getElementById('keyName').value || ('browser-' + Date.now().toString(36));
+  const { ok, data } = await api('keys', 'POST', { name });
+  closeModal('createKeyModal');
+  if (!ok) { toast('创建失败: ' + (data.error || ''), true); return; }
+  // 显示完整的 key 和连接地址
+  let html = `<div style="margin-bottom:12px;">✅ Key 创建成功！</div>`;
+  html += `<div style="margin-bottom:8px;"><strong>Key:</strong><br><span class="mono">${data.key}</span> <button class="btn btn-copy" onclick="copyText('${data.key}')">📋</button></div>`;
+  html += `<div style="margin-bottom:8px;"><strong>扩展连接地址（填进扩展配置页）:</strong><br><span class="mono">${data.pluginUrl}</span> <button class="btn btn-copy" onclick="copyText('${data.pluginUrl}')">📋</button></div>`;
+  html += `<div><strong>CDP 客户端地址:</strong><br><span class="mono">${data.clientUrl}</span> <button class="btn btn-copy" onclick="copyText('${data.clientUrl}')">📋</button></div>`;
+  html += `<div style="margin-top:12px;text-align:right;"><button class="btn btn-primary" onclick="document.getElementById('cdpResult').innerHTML=''; loadKeys();">知道了</button></div>`;
+  document.getElementById('cdpResult').innerHTML = html;
+  loadKeys();
+}
+
+async function revokeKey(id) {
+  if (!confirm('确定吊销这个 key？已吊销的 key 无法恢复。')) return;
+  const { ok } = await api('keys/' + id, 'DELETE');
+  toast(ok ? '已吊销' : '吊销失败', !ok);
+  loadKeys();
+}
+
+// ===== CDP 操作 =====
+function cdpEvaluate() { if (!checkKey()) return; document.getElementById('evaluateModal').classList.add('show'); }
+function cdpScreenshot() { if (!checkKey()) return; runCdp('screenshot'); }
+function cdpNewTab() { if (!checkKey()) return; document.getElementById('newtabModal').classList.add('show'); }
+
+function checkKey() {
+  const key = document.getElementById('cdpKey').value.trim();
+  if (!key) { toast('请先填写浏览器 Key', true); return false; }
+  return true;
+}
+
+async function runEvaluate() {
+  const expr = document.getElementById('jsExpression').value || 'document.title';
+  closeModal('evaluateModal');
+  runCdp('evaluate', { expression: expr });
+}
+
+async function runNewTab() {
+  const url = document.getElementById('newtabUrl').value || 'about:blank';
+  closeModal('newtabModal');
+  runCdp('newtab', { url });
+}
+
+async function runCdp(action, extra = {}) {
+  const key = document.getElementById('cdpKey').value.trim();
+  document.getElementById('cdpResult').innerHTML = '<div class="cdp-result">执行中... (' + action + ')</div>';
+  const { ok, data } = await api('cdp/' + action, 'POST', { key, action, ...extra });
+  if (!ok) { document.getElementById('cdpResult').innerHTML = '<div class="cdp-result">❌ ' + (data.error || '失败') + '</div>'; return; }
+  if (data.error) { document.getElementById('cdpResult').innerHTML = '<div class="cdp-result">❌ ' + data.error + '</div>'; return; }
+  if (data.screenshot) {
+    document.getElementById('cdpResult').innerHTML = '<img class="screenshot-preview" src="data:image/png;base64,' + data.screenshot + '">';
+  } else if (data.result !== undefined) {
+    const display = typeof data.result === 'object' ? JSON.stringify(data.result, null, 2) : String(data.result);
+    document.getElementById('cdpResult').innerHTML = '<div class="cdp-result">✅ ' + display + '</div>';
+  } else if (data.targetId) {
+    document.getElementById('cdpResult').innerHTML = '<div class="cdp-result">✅ 已创建标签页: ' + data.targetId + '</div>';
+  }
+}
+
+// ===== 辅助 =====
+function refreshAll() { loadBrowsers(); loadKeys(); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+function copyText(text) { navigator.clipboard.writeText(text).then(() => toast('已复制')); }
+function toast(msg, isError) { const t = document.getElementById('toast'); t.textContent = msg; t.style.background = isError ? '#ef4444' : '#1a1a2e'; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2000); }
+</script>
+</body>
+</html>

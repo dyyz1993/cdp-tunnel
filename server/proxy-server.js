@@ -407,7 +407,6 @@ async function handleAdminApi(req, res, url) {
         // CDP 快捷操作（通过 pluginId 直接连已在线浏览器）
         if (path.startsWith('cdp/') && method === 'POST') {
             const body = await readBody(req);
-            console.log(`[ADMIN CDP] path=${path} action=${body.action} pluginId=${body.pluginId?.slice(0,20)}`);
             if (!body.pluginId) return adminJson(res, 400, { error: 'Missing pluginId' });
             const result = await execCdpViaPlugin(body.pluginId, body);
             return adminJson(res, result.error ? 500 : 200, result);
@@ -440,11 +439,10 @@ async function execCdpViaPlugin(pluginId, params) {
                 clientId = `pool_${portPool.portSessions[portIdx].port}`;
             }
         }
-        console.log(`[CLOSEBROWSER] clientId=${clientId} apiKey=${pluginWs.apiKey?.slice(0,16)}`);
         // 发 client-disconnected 让扩展关分组 + 关 tab
         try {
             pluginWs.send(JSON.stringify({ type: 'client-disconnected', clientId }));
-        } catch (e) { console.log(`[CLOSEBROWSER] send error: ${e.message}`); }
+        } catch (e) {}
         // 清理 key session（让下次连接重新分配）
         if (pluginWs.apiKey && portPool) {
             portPool.keySessions.delete(pluginWs.apiKey);

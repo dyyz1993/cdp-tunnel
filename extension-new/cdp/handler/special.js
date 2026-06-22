@@ -20,6 +20,15 @@ var SpecialHandler = (function() {
     return (wm && wm.config && wm.config.tag) || null;
   }
 
+  // 从 state 读取 key 名称（用作分组名），doGroup 等分组操作调用
+  function _getGroupName(clientId, context) {
+    var state = context ? context._state : null;
+    if (state && clientId && state.getGroupNameForClient) {
+      return state.getGroupNameForClient(clientId);
+    }
+    return null;
+  }
+
   function muteTabIfNeeded(tabId) {
     Config.getAutoMute(function(enabled) {
       if (!enabled) return;
@@ -297,7 +306,7 @@ var SpecialHandler = (function() {
         return;
       }
     }
-    var baseName = CDPUtils.getGroupBaseName(groupClientId, _getConnectionTag(context), context ? context.mode : null);
+    var baseName = CDPUtils.getGroupBaseName(groupClientId, _getConnectionTag(context), context ? context.mode : null, _getGroupName(groupClientId, context));
 
     Logger.info('[TabGroup] Grouping tab immediately for:', baseName);
     doGroup(tabId, groupClientId, baseName, 0, callback, context);
@@ -465,7 +474,8 @@ var SpecialHandler = (function() {
     chrome.tabs.query({ groupId: groupId }, function(tabs) {
       if (chrome.runtime.lastError || !tabs) return;
 
-      var baseName = CDPUtils.getGroupBaseName(clientId, connectionTag, mode);
+      var groupName = (state && state.getGroupNameForClient) ? state.getGroupNameForClient(clientId) : null;
+      var baseName = CDPUtils.getGroupBaseName(clientId, connectionTag, mode, groupName);
       var newName = baseName + ' (' + tabs.length + ')';
 
       if (chrome.runtime.lastError || tabs.length === 0) return;

@@ -244,6 +244,10 @@ var WebSocketConnection = (function() {
         if (message.__connectionTag) {
           self.state.setTagForClient(message.clientId, message.__connectionTag);
         }
+        // 存 groupName，供 doGroup 等后续分组操作使用
+        if (message.__groupName) {
+          self.state.setGroupNameForClient(message.clientId, message.__groupName);
+        }
         // __groupName 来自 API Key 名称，用作 Chrome 分组名（一眼看出是谁的浏览器）
         self._createGroupForClient(message.clientId, message.__mode, message.__groupName);
         self._broadcastStateUpdate();

@@ -308,6 +308,15 @@ ConnectionState.prototype.getTagForClient = function(clientId) {
   return this.clientIdToTag.get(clientId) || null;
 };
 
+ConnectionState.prototype.setGroupNameForClient = function(clientId, groupName) {
+  if (!this.clientIdToGroupName) this.clientIdToGroupName = new Map();
+  if (clientId && groupName) this.clientIdToGroupName.set(clientId, groupName);
+};
+
+ConnectionState.prototype.getGroupNameForClient = function(clientId) {
+  return (this.clientIdToGroupName && this.clientIdToGroupName.get(clientId)) || null;
+};
+
 ConnectionState.prototype.addCDPClient = function(clientId, info) {
   var exists = false;
   for (var i = 0; i < this.cdpClients.length; i++) {

@@ -282,7 +282,7 @@ class PortPoolManager {
     // clientId 固定为 pool_{port}，让扩展为每个端口建一个独立分组
     // __groupName 带 key 名称，让扩展用 key 名称命名 Chrome 分组（一眼看出是谁的浏览器）
     const poolClientId = `pool_${session.port}`;
-    pluginWs._lastPoolClientId = poolClientId;  // 记录，供 closebrowser 发 client-disconnected 用
+    pluginWs._lastPoolClientId = poolClientId;
     pluginWs.send(JSON.stringify({
       type: 'client-connected',
       clientId: poolClientId,

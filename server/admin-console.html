@@ -72,16 +72,16 @@ td { padding: 10px; border-bottom: 1px solid #f3f4f6; }
 
   <!-- CDP 快捷操作 -->
   <div class="section">
-    <h2>⚡ CDP 快捷操作</h2>
-    <div class="actions">
-      <input type="text" id="cdpKey" placeholder="浏览器 Key (cdp_xxx)" style="flex:1; padding:6px 10px; border:1px solid #d1d5db; border-radius:4px; font-family:Monaco,monospace; font-size:13px;">
+    <h2>⚡ CDP 快捷操作 <span id="selectedBrowser" class="muted" style="font-size:13px;font-weight:normal;"></span></h2>
+    <div id="cdpActions" style="display:none;">
+      <div class="actions">
+        <button class="btn btn-primary" onclick="cdpEvaluate()">📝 执行 JS</button>
+        <button class="btn btn-primary" onclick="cdpScreenshot()">📸 截图</button>
+        <button class="btn btn-primary" onclick="cdpNewTab()">🆕 新建标签</button>
+      </div>
+      <div id="cdpResult"></div>
     </div>
-    <div class="actions">
-      <button class="btn btn-primary" onclick="cdpEvaluate()">📝 执行 JS</button>
-      <button class="btn btn-primary" onclick="cdpScreenshot()">📸 截图</button>
-      <button class="btn btn-primary" onclick="cdpNewTab()">🆕 新建标签</button>
-    </div>
-    <div id="cdpResult"></div>
+    <div id="cdpEmpty" class="empty">👆 先在上方浏览器列表点"选择"按钮</div>
   </div>
 
 </div>
@@ -156,21 +156,35 @@ async function loadBrowsers() {
     if (!ok) { document.getElementById('browsersTable').innerHTML = '<div class="empty">' + (data.error || '加载失败') + '</div>'; return; }
     document.getElementById('browserCount').textContent = `(${data.length} 个)`;
     if (!data.length) { document.getElementById('browsersTable').innerHTML = '<div class="empty">没有浏览器连接</div>'; return; }
-    let html = '<table><tr><th>状态</th><th>名称</th><th>pluginId</th><th>UA</th><th>扩展版本</th><th>连接时间</th></tr>';
+    let html = '<table><tr><th>状态</th><th>名称</th><th>UA</th><th>扩展版本</th><th>连接时间</th><th>操作</th></tr>';
     data.forEach(b => {
       const time = b.connectedAt ? new Date(b.connectedAt).toLocaleTimeString() : '-';
-      const ua = (b.userAgent || '').slice(0, 50) || b.browserName || '-';
-      html += `<tr>
+      const ua = (b.userAgent || '').slice(0, 40) || b.browserName || '-';
+      const selected = SELECTED_PLUGIN === b.pluginId ? ' style="background:#eff6ff;"' : '';
+      html += `<tr${selected}>
         <td><span class="badge badge-online">在线</span></td>
         <td>${b.pluginName || '-'}</td>
-        <td class="mono muted">${(b.pluginId||'').slice(0,20)}...</td>
         <td class="mono" title="${b.userAgent}">${ua}</td>
         <td><span class="badge badge-online">${b.extVersion}</span></td>
         <td class="muted">${time}</td>
+        <td>
+          <button class="btn ${SELECTED_PLUGIN === b.pluginId ? 'btn-primary' : 'btn-copy'}" onclick="selectBrowser('${b.pluginId}','${b.pluginName || 'Browser'}')">
+            ${SELECTED_PLUGIN === b.pluginId ? '✓ 已选中' : '选择'}
+          </button>
+        </td>
       </tr>`;
     });
     document.getElementById('browsersTable').innerHTML = html + '</table>';
   } catch (e) { document.getElementById('browsersTable').innerHTML = '<div class="empty">加载失败: ' + e.message + '</div>'; }
+}
+
+let SELECTED_PLUGIN = null;
+function selectBrowser(pluginId, name) {
+  SELECTED_PLUGIN = pluginId;
+  document.getElementById('selectedBrowser').textContent = '已选: ' + name;
+  document.getElementById('cdpActions').style.display = 'block';
+  loadBrowsers(); // 刷新高亮
+  toast('已选择浏览器：' + name);
 }
 
 // ===== Key 管理 =====
@@ -221,13 +235,12 @@ async function revokeKey(id) {
 }
 
 // ===== CDP 操作 =====
-function cdpEvaluate() { if (!checkKey()) return; document.getElementById('evaluateModal').classList.add('show'); }
-function cdpScreenshot() { if (!checkKey()) return; runCdp('screenshot'); }
-function cdpNewTab() { if (!checkKey()) return; document.getElementById('newtabModal').classList.add('show'); }
+function cdpEvaluate() { if (!checkSelected()) return; document.getElementById('evaluateModal').classList.add('show'); }
+function cdpScreenshot() { if (!checkSelected()) return; runCdp('screenshot'); }
+function cdpNewTab() { if (!checkSelected()) return; document.getElementById('newtabModal').classList.add('show'); }
 
-function checkKey() {
-  const key = document.getElementById('cdpKey').value.trim();
-  if (!key) { toast('请先填写浏览器 Key', true); return false; }
+function checkSelected() {
+  if (!SELECTED_PLUGIN) { toast('请先在上方选择一个浏览器', true); return false; }
   return true;
 }
 
@@ -244,9 +257,8 @@ async function runNewTab() {
 }
 
 async function runCdp(action, extra = {}) {
-  const key = document.getElementById('cdpKey').value.trim();
   document.getElementById('cdpResult').innerHTML = '<div class="cdp-result">执行中... (' + action + ')</div>';
-  const { ok, data } = await api('cdp/' + action, 'POST', { key, action, ...extra });
+  const { ok, data } = await api('cdp/' + action, 'POST', { pluginId: SELECTED_PLUGIN, action, ...extra });
   if (!ok) { document.getElementById('cdpResult').innerHTML = '<div class="cdp-result">❌ ' + (data.error || '失败') + '</div>'; return; }
   if (data.error) { document.getElementById('cdpResult').innerHTML = '<div class="cdp-result">❌ ' + data.error + '</div>'; return; }
   if (data.screenshot) {
@@ -256,6 +268,7 @@ async function runCdp(action, extra = {}) {
     document.getElementById('cdpResult').innerHTML = '<div class="cdp-result">✅ ' + display + '</div>';
   } else if (data.targetId) {
     document.getElementById('cdpResult').innerHTML = '<div class="cdp-result">✅ 已创建标签页: ' + data.targetId + '</div>';
+    loadBrowsers(); // 刷新 target 数
   }
 }
 

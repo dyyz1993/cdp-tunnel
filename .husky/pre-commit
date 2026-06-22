@@ -6,7 +6,7 @@ node scripts/check-version-sync.js
 
 # Run smoke tests
 echo "🧪 Running smoke tests..."
-ONLY=test-default-page,test-strict-isolation,test-no-user-tab-grab,test-api-key-auth node tests/e2e/run-all.js
+ONLY=test-default-page,test-strict-isolation,test-no-user-tab-grab,test-api-key-auth,test-version-check node tests/e2e/run-all.js
 
 if [ $? -eq 0 ]; then
   echo ""

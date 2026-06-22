@@ -871,12 +871,18 @@ function handlePluginConnection(ws, clientInfo, request) {
             const extVersion = parsed.version || 'unknown';
             ws.extVersion = extVersion;
             const match = extVersion === PKG_VERSION;
-            const level = match ? 'info' : 'warn';
             const label = match ? '✅' : '⚠️ VERSION MISMATCH';
             const msg = `[VERSION CHECK] ${label} server=${PKG_VERSION} extension=${extVersion}`;
             console.log(msg);
             logCDP('VERSION', msg);
             if (!match) {
+                // STRICT_VERSION=true（生产环境）：版本不一致直接拒绝，避免老扩展与新 proxy 不兼容
+                if (process.env.STRICT_VERSION === 'true') {
+                    console.log(`  ↳ STRICT_VERSION=true，拒绝连接`);
+                    logConnectionEvent('PLUGIN_VERSION_REJECTED', `server=${PKG_VERSION} extension=${extVersion}`);
+                    ws.close(4002, `Version mismatch: server=${PKG_VERSION} extension=${extVersion}`);
+                    return;
+                }
                 console.log(`  ↳ Run "cdp-tunnel update" or reload the extension to sync versions`);
             }
             getNamespace(ws).cachedBrowserVersion = null;

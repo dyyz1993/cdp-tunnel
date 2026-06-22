@@ -88,9 +88,18 @@ td { padding: 10px; border-bottom: 1px solid #f3f4f6; }
         </div>
       </div>
       <!-- 高级操作 -->
+      <div style="margin-bottom:12px; padding:10px; background:#f0f9ff; border-radius:6px;">
+        <div style="font-size:12px; color:#6b7280; margin-bottom:8px;">🔧 Tab 管理</div>
+        <div class="actions">
+          <button class="btn btn-primary" onclick="cdpListTabs()">📋 Tab 列表</button>
+          <button class="btn btn-primary" onclick="cdpNewTab()">🆕 新建标签</button>
+          <button class="btn" style="background:#dc2626;color:white;" onclick="cdpCloseBrowser()">🔌 关闭浏览器</button>
+        </div>
+        <div id="tabList" style="margin-top:10px;"></div>
+      </div>
       <div class="actions">
         <button class="btn btn-primary" onclick="cdpEvaluate()">📝 执行 JS</button>
-        <button class="btn btn-primary" onclick="cdpNewTab()">🆕 新建标签</button>
+        <button class="btn btn-primary" onclick="cdpScreenshot()">📸 截图</button>
       </div>
       <div id="cdpResult"></div>
     </div>
@@ -283,6 +292,50 @@ async function runCdp(action, extra = {}) {
     document.getElementById('cdpResult').innerHTML = '<div class="cdp-result">✅ 已创建标签页: ' + data.targetId + '</div>';
     loadBrowsers(); // 刷新 target 数
   }
+}
+
+// ===== Tab 管理 =====
+async function cdpListTabs() {
+  if (!checkSelected()) return;
+  document.getElementById('tabList').innerHTML = '<div class="muted" style="font-size:13px;">⏳ 加载中...</div>';
+  const { data } = await api('cdp/listtabs', 'POST', { pluginId: SELECTED_PLUGIN, action: 'listtabs' });
+  if (data.error) { document.getElementById('tabList').innerHTML = '<div class="muted">❌ ' + data.error + '</div>'; return; }
+  const tabs = data.tabs || [];
+  if (!tabs.length) { document.getElementById('tabList').innerHTML = '<div class="muted">没有标签页</div>'; return; }
+  let html = '<table style="font-size:12px;"><tr><th>标题</th><th>URL</th><th>操作</th></tr>';
+  tabs.forEach(t => {
+    const title = (t.title || '(无标题)').slice(0, 30);
+    const url = (t.url || '').slice(0, 40);
+    html += `<tr>
+      <td>${title}</td>
+      <td class="mono muted">${url}</td>
+      <td>
+        <button class="btn btn-copy" onclick="cdpSwitchTab('${t.targetId}')" title="切换到此标签">切换</button>
+        <button class="btn btn-danger" onclick="cdpCloseTab('${t.targetId}')" title="关闭此标签">关闭</button>
+      </td>
+    </tr>`;
+  });
+  document.getElementById('tabList').innerHTML = html + '</table>';
+}
+
+async function cdpCloseTab(targetId) {
+  if (!confirm('确定关闭这个标签页？')) return;
+  const { data } = await api('cdp/closetab', 'POST', { pluginId: SELECTED_PLUGIN, action: 'closetab', targetId });
+  toast(data.closed ? '已关闭' : '关闭失败: ' + (data.error || ''), !data.closed);
+  cdpListTabs();  // 刷新列表
+}
+
+async function cdpSwitchTab(targetId) {
+  const { data } = await api('cdp/switchtab', 'POST', { pluginId: SELECTED_PLUGIN, action: 'switchtab', targetId });
+  toast(data.switched ? '已切换' : '切换失败: ' + (data.error || ''), !data.switched);
+}
+
+async function cdpCloseBrowser() {
+  if (!confirm('⚠️ 确定关闭整个浏览器？这将断开扩展连接，所有标签页都会关闭。')) return;
+  if (!checkSelected()) return;
+  const { data } = await api('cdp/closebrowser', 'POST', { pluginId: SELECTED_PLUGIN, action: 'closebrowser' });
+  toast(data.closed ? '浏览器已关闭' : '关闭失败: ' + (data.error || ''), !data.closed);
+  setTimeout(() => refreshAll(), 2000);
 }
 
 // ===== 快捷操作 =====

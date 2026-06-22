@@ -475,7 +475,39 @@ async function execCdpViaPlugin(pluginId, params) {
 
         ws.on('open', async () => {
             try {
-                if (action === 'newtab') {
+                // listtabs：返回所有 page target（不需要 attach）
+                if (action === 'listtabs') {
+                    await cdp('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+                    const tg = await cdp('Target.getTargets');
+                    const tabs = (tg.targetInfos || [])
+                        .filter(t => t.type === 'page')
+                        .map(t => ({ targetId: t.targetId, url: t.url, title: t.title || '', attached: t.attached }));
+                    finish({ tabs });
+                }
+                // closebrowser：关闭浏览器（断开扩展）
+                else if (action === 'closebrowser') {
+                    await cdp('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+                    // Browser.close 让 Chrome 关闭所有 page + 扩展断开
+                    try { await cdp('Browser.close'); } catch (e) {}
+                    finish({ closed: true });
+                }
+                // closetab：关闭指定 targetId
+                else if (action === 'closetab') {
+                    await cdp('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+                    await cdp('Target.closeTarget', { targetId: params.targetId });
+                    finish({ closed: true, targetId: params.targetId });
+                }
+                // switchtab：切换到指定 targetId（bringToFront）
+                else if (action === 'switchtab') {
+                    await cdp('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+                    const at = await cdp('Target.attachToTarget', { targetId: params.targetId, flatten: true });
+                    if (at.sessionId) {
+                        await cdp('Page.enable', {}, at.sessionId);
+                        await cdp('Page.bringToFront', {}, at.sessionId);
+                    }
+                    finish({ switched: true, targetId: params.targetId });
+                }
+                else if (action === 'newtab') {
                     await cdp('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
                     const created = await cdp('Target.createTarget', { url: params.url || 'about:blank' });
                     finish({ targetId: created.targetId });

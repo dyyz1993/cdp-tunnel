@@ -75,6 +75,33 @@ class PortPoolManager {
     console.log(`[CREATE PORT ${portIndex}] Main port ${port} (reuses main server)`);
   }
 
+  /**
+   * 按 key 获取/分配独立的端口池端口 session（一 key 一 session，完全隔离）
+   * 主端口(9221)的 /client 连接按 key 路由到端口池端口(9231+)的 session。
+   * 复用端口池端口的全部隔离逻辑（targetIds/事件路由/分组），不动 handlePluginMessage。
+   *
+   * @returns PortSession 或 null（无可用端口时）
+   */
+  _getKeySession(apiKey) {
+    if (!this._keyToPortIndex) this._keyToPortIndex = new Map();
+    // 已分配过 → 直接返回
+    if (this._keyToPortIndex.has(apiKey)) {
+      return this.portSessions[this._keyToPortIndex.get(apiKey)];
+    }
+    // 找一个未分配的端口池端口（portIndex >= 1）
+    const usedIndexes = new Set(this._keyToPortIndex.values());
+    for (let i = 1; i < this.portSessions.length; i++) {
+      if (this.portSessions[i] && !usedIndexes.has(i)) {
+        this._keyToPortIndex.set(apiKey, i);
+        console.log(`[KEY SESSION] key=${apiKey.slice(0, 16)}... → portIndex=${i} (port ${this.portSessions[i].port})`);
+        return this.portSessions[i];
+      }
+    }
+    // 端口池满（所有端口都已分配）→ 复用主端口 session（降级，不隔离）
+    console.warn(`[KEY SESSION] port pool exhausted, key=${apiKey.slice(0, 16)}... falling back to shared main session`);
+    return null;
+  }
+
   _startCreatePort(portIndex, port) {
     const session = new PortPoolManager.PortSession(portIndex, port);
     this.portSessions[portIndex] = session;
@@ -196,8 +223,6 @@ class PortPoolManager {
    * Client WebSocket 连接处理
    */
   _handleClientConnect(ws, req, session) {
-    session.clients.add(ws);
-
     // 鉴权：从 URL 提取 key，找到对应的 plugin（一 key 一浏览器）
     let apiKey = null;
     try {
@@ -215,6 +240,19 @@ class PortPoolManager {
     }
 
     ws.apiKey = apiKey;  // 记录到 ws，后续命令转发时带上
+
+    // 主端口（portIndex === 0）：按 key 路由到独立的端口池端口 session
+    // 每个 key 分配一个端口池端口（portSessions[1..N]），实现完全隔离
+    //   - targetIds 独立（listtabs 只看自己的）
+    //   - 事件路由用现有 targetToPort（按 portIndex，不动 handlePluginMessage）
+    //   - 分组名按 key（阶段1已实现）
+    // 无 key 或端口池满时，fallback 到主端口共享 session（兼容）
+    if (session.portIndex === 0 && apiKey) {
+      const keySession = this._getKeySession(apiKey);
+      if (keySession) session = keySession;
+    }
+
+    session.clients.add(ws);
 
     const pluginWs = this.mainProxy.getPluginConnection(apiKey);
     if (!pluginWs) {

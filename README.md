@@ -5,220 +5,309 @@
 </p>
 
 <p align="center">
-  <strong>Chrome DevTools Protocol Bridge</strong>
+  <strong>Bridge Chrome's debugger API to WebSocket — control your browser with Playwright/Puppeteer via CDP</strong>
 </p>
 
 <p align="center">
-  A Chrome extension that exposes your browser as a CDP endpoint,<br>
-  supporting multiple Playwright/Puppeteer clients to connect simultaneously.
+  Control your **existing** browser (with your logins, cookies, extensions) via standard CDP protocol.<br>
+  No headless Chrome, no Selenium, no browser restart. Just connect and automate.
 </p>
 
 <p align="center">
-  <a href="docs/README_CN.md">中文文档</a> | 
-  <a href="https://github.com/dyyz1993/cdp-tunnel">GitHub</a>
+  <a href="docs/README_CN.md">中文文档</a> ·
+  <a href="https://www.npmjs.com/package/cdp-tunnel">npm</a> ·
+  <a href="#quick-start">Quick Start</a>
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/npm/v/cdp-tunnel" alt="npm version">
   <img src="https://img.shields.io/github/stars/dyyz1993/cdp-tunnel?style=social" alt="GitHub stars">
   <img src="https://img.shields.io/github/forks/dyyz1993/cdp-tunnel?style=social" alt="GitHub forks">
-  <img src="https://img.shields.io/github/watchers/dyyz1993/cdp-tunnel?style=social" alt="GitHub watchers">
 </p>
 
 ---
 
+## What It Does
+
+CDP Tunnel lets standard CDP clients (Playwright/Puppeteer/CDP SDK) control your **real Chrome browser** — the one with your logins, cookies, and extensions. It works like `chrome --remote-debugging-port`, but **without restarting Chrome**.
+
+**Key capabilities:**
+- ✅ Control your existing browser (keep logins/cookies/extensions)
+- ✅ Standard CDP protocol — Playwright/Puppeteer work out of the box
+- ✅ Multiple isolated environments (port pool — each port = one independent "browser")
+- ✅ API Key authentication for remote/cloud deployment
+- ✅ Built-in admin console (browser list, key management, CDP operations)
+- ✅ Tab Group isolation — automation tabs never mix with user tabs
+- ✅ Takeover mode — attach to user's existing tabs
+
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Proxy Server                             │
-│                     (localhost:9221)                            │
-│                                                                 │
-│   /plugin  ←─── Chrome Extension (WebSocket)                    │
-│   HTTP     ←─── Playwright/Puppeteer Clients                    │
-└─────────────────────────────────────────────────────────────────┘
-         ↑              ↑              ↑
-         │              │              │
-    Client 1       Client 2       Client 3
-   (clientId_1)    (clientId_2)    (clientId_3)
+Playwright/Puppeteer                   Chrome Extension
+       │                                     │
+       │ ws://localhost:9221/client          │ ws://localhost:9221/plugin
+       ▼                                     ▼
+  ┌─────────────────────────────────────────────┐
+  │              CDP Tunnel Proxy               │
+  │           (Node.js WebSocket)               │
+  │                                             │
+  │  9221  ── create mode (port pool #0)       │
+  │  9220  ── takeover mode (attach user tabs)  │
+  │  9231+ ── port pool (each = isolated env)  │
+  │  /admin ── web management console          │
+  └─────────────────────────────────────────────┘
+       │                        │
+       ▼                        ▼
+  chrome.debugger API     Tab Group isolation
 ```
-
-## Features
-
-- **Multi-client Support** - Multiple Playwright/Puppeteer clients can connect simultaneously
-- **Message Isolation** - Pages created by each client are owned by that client
-- **Configuration Page** - Visualize connection status, client list, and controlled pages
-- **Auto Reconnect** - Extension automatically reconnects to the server
-
-## Screenshot
-
-![Config Page](docs/config-page-screenshot.png)
 
 ## Quick Start
 
-### Option 1: Install Extension Only (No npm needed)
-
-Download and install the Chrome extension directly:
-
-1. Download [`cdp-tunnel-extension.zip`](https://github.com/dyyz1993/cdp-tunnel/releases/latest/download/cdp-tunnel-extension.zip) from the latest release
-2. Unzip it
-3. Open `chrome://extensions/` in Chrome
-4. Enable **Developer mode** (top right)
-5. Click **Load unpacked** → select the unzipped folder
-6. Start the proxy server separately (see Option 2 or 3 below)
-
-### Option 2: Install via npm (Recommended)
+### 1. Install
 
 ```bash
-# One command to set up everything
-npx cdp-tunnel setup
-
-# Or install globally
 npm install -g cdp-tunnel
-cdp-tunnel setup        # Start server + auto-load extension into Chrome
-cdp-tunnel status       # Check status
-cdp-tunnel diagnose     # Diagnose connection issues
+cdp-tunnel setup    # Start server + auto-load extension
 ```
 
-### Option 3: Manual Installation
-
-#### 1. Start the Proxy Server
+Or run from source:
 
 ```bash
-npx cdp-tunnel start
-# or manually:
-npx cdp-tunnel start -p 9221
+git clone https://github.com/dyyz1993/cdp-tunnel.git
+cd cdp-tunnel
+npm install
+node server/proxy-server.js
 ```
 
-#### 2. Install Chrome Extension
+### 2. Load Extension
 
 1. Open `chrome://extensions/`
-2. Enable "Developer mode"
-3. Click "Load unpacked"
-4. Select the `extension-new` directory
+2. Enable **Developer mode**
+3. Click **Load unpacked** → select `extension-new/` directory
+4. Extension connects to `ws://localhost:9221/plugin` automatically
 
-#### 3. Connect the Extension
-
-Click the extension icon, then click **打开完整配置** to open the configuration page. Add a connection: fill in Name (e.g., "local"), WebSocket URL (default `ws://localhost:9221/plugin`), and Mode (create/takeover). The CDP address will be displayed (e.g., `http://localhost:9221` for create mode, `http://localhost:9222` for takeover mode). Copy it and use it in Playwright: `chromium.connectOverCDP('http://localhost:9221')`.
-
-### 3. Client Connection
+### 3. Connect Your Automation
 
 ```javascript
-// Playwright
+// Playwright — control your real browser!
 const { chromium } = require('playwright');
-
 const browser = await chromium.connectOverCDP('http://localhost:9221');
-const context = browser.contexts()[0];
-const page = await context.newPage();
-await page.goto('https://example.com');
-
-// Puppeteer
-const puppeteer = require('puppeteer');
-
-const browser = await puppeteer.connect({
-  browserWSEndpoint: 'ws://localhost:9221'
-});
-const page = await browser.newPage();
-await page.goto('https://example.com');
+const page = await browser.contexts()[0].newPage();
+await page.goto('https://www.google.com');
+console.log(await page.title());
 ```
 
-### 4. Using with agent-browser
+```python
+# Python Playwright
+from playwright.sync_api import sync_playwright
 
-[agent-browser](https://github.com/nick1udwig/agent-browser) is a browser automation CLI that can connect to CDP Tunnel:
+with sync_playwright() as p:
+    browser = p.chromium.connect_over_cdp("http://localhost:9221")
+    page = browser.contexts[0].new_page()
+    page.goto("https://www.google.com")
+    print(page.title())
+```
+
+## Key Features
+
+### Port Pool — Multiple Isolated Environments
+
+Each port = one independent "browser" with its own Tab Group. Different ports can't see each other's tabs.
 
 ```bash
-# Install agent-browser
-npm install -g agent-browser
-
-# Connect to CDP Tunnel
-agent-browser --cdp http://localhost:9221 open https://example.com
-
-# Take a snapshot
-agent-browser --cdp http://localhost:9221 snapshot -i
-
-# Interact with elements
-agent-browser --cdp http://localhost:9221 click @e1
-agent-browser --cdp http://localhost:9221 fill @e2 "hello"
-
-# Take screenshot
-agent-browser --cdp http://localhost:9221 screenshot output.png
+# Default ports
+9221  ── Main create port (port pool #0)
+9220  ── Takeover port (attach user's existing tabs)
+9231-9239 ── Port pool (9 isolated environments)
 ```
-
-This allows you to control the browser through CDP Tunnel using simple CLI commands.
-
-## Multi-client Usage
-
-All clients connect to the same endpoint `http://localhost:9221`. The server automatically assigns a unique `clientId` to each connection.
 
 ```javascript
-// Multiple clients can connect simultaneously
-const browser1 = await chromium.connectOverCDP('http://localhost:9221');
-const browser2 = await chromium.connectOverCDP('http://localhost:9221');
-const browser3 = await chromium.connectOverCDP('http://localhost:9221');
-
-// Pages created by each client are independent
-const page1 = await browser1.contexts()[0].newPage();
-const page2 = await browser2.contexts()[0].newPage();
-const page3 = await browser3.contexts()[0].newPage();
+// Each port is independent
+const browserA = await chromium.connectOverCDP('http://localhost:9231');
+const browserB = await chromium.connectOverCDP('http://localhost:9232');
+// browserA and browserB have completely separate tabs
 ```
 
-## Configuration Page
+### Takeover Mode — Control Existing Tabs
 
-Click the extension icon to open the configuration page, where you can view:
+Connect to port `9220` to take over the user's already-open tabs (no new Tab Group created).
 
-- **CDP Client List** - Shows connected Playwright/Puppeteer clients
-- **Controlled Pages List** - Shows controlled pages with click-to-navigate support
-- **Activity Log** - Connection status change records
+```javascript
+const browser = await chromium.connectOverCDP('http://localhost:9220');
+// Now you can see and control all user's open tabs
+```
+
+### API Key Authentication (Remote Deployment)
+
+Enable authentication for cloud/remote deployment:
+
+```bash
+REQUIRE_AUTH=true node server/proxy-server.js
+
+# Create an API key
+node server/saas/key-manager.js create my-browser
+# Output: ws://localhost:9221/plugin?key=cdp_xxxxx
+```
+
+```javascript
+// Client connects with key
+const browser = await chromium.connectOverCDP(
+  'ws://your-server.com:9221/client?key=cdp_xxxxx'
+);
+```
+
+**One key = one browser = one isolated Tab Group.** Different keys are completely isolated.
+
+### Admin Console
+
+Built-in web UI at `/admin`:
+
+```
+http://localhost:9221/admin
+```
+
+Features:
+- 📱 Online browser list (real-time)
+- 🔑 API Key management (create/revoke + copy address)
+- 🔧 Tab management (list/close/switch)
+- ⚡ CDP operations (evaluate JS, screenshot, new tab)
+- 🎬 One-click demo
+
+### Version Check
+
+```bash
+STRICT_VERSION=true node server/proxy-server.js
+# Extension version must match proxy version, otherwise connection rejected
+```
+
+## Remote / Cloud Deployment
+
+CDP Tunnel can be deployed to a VPS for remote browser control:
+
+```
+Remote Client ──wss──▶ Cloud Proxy ──wss──▶ User's Chrome + Extension
+```
+
+See [`docs/DEPLOY-CLOUDFLARE.md`](docs/DEPLOY-CLOUDFLARE.md) for Cloudflare Tunnel setup.
+
+Key environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | 9221 | Main create port |
+| `TAKEOVER_PORT` | 9220 | Takeover port |
+| `POOL_START` | 9231 | Port pool start |
+| `POOL_SIZE` | 9 | Number of port pool ports |
+| `REQUIRE_AUTH` | false | Require API key |
+| `STRICT_VERSION` | false | Reject version mismatch |
+| `ADMIN_TOKEN` | (none) | Admin console auth token |
+
+## CLI Commands
+
+```bash
+cdp-tunnel setup      # Start server + load extension
+cdp-tunnel start      # Start server only
+cdp-tunnel stop       # Stop server
+cdp-tunnel status     # Check status
+cdp-tunnel diagnose   # Diagnose connection
+cdp-tunnel extension  # Open extension installation guide
+```
+
+## API Key Management
+
+```bash
+# Create a key (returns connection address)
+node server/saas/key-manager.js create "张三的浏览器"
+
+# List all keys
+node server/saas/key-manager.js list
+
+# Revoke a key
+node server/saas/key-manager.js revoke <keyId>
+```
+
+## Testing
+
+```bash
+# Smoke tests (runs before every commit via husky pre-commit)
+node tests/e2e/run-all.js
+
+# A/B Gate (compare with direct Chrome CDP)
+node tests/e2e/test-ab-gate.js
+
+# Key isolation test
+node tests/e2e/test-key-isolation.js
+
+# Admin console test
+node tests/e2e/test-admin-console.js
+
+# Production deployment verification
+PROD_WSS=wss://your-server:port PROD_KEY=cdp_xxx node tests/e2e/test-prod-deploy.js
+```
+
+## How It Works
+
+CDP Tunnel uses Chrome's `chrome.debugger` API (available to extensions) to bridge CDP commands:
+
+```
+Playwright command (e.g., Page.navigate)
+  → CDP Tunnel Proxy (WebSocket)
+  → Chrome Extension (chrome.debugger.attach)
+  → Chrome renders the page
+  → Events flow back: Chrome → Extension → Proxy → Playwright
+```
+
+The extension acts as the bridge — it receives CDP commands via WebSocket and executes them via `chrome.debugger`. This means:
+- Your browser keeps all logins, cookies, extensions
+- No need to restart Chrome or use `--remote-debugging-port`
+- Works with regular Chrome (not just Chromium)
+
+**Synthetic input handling:** Chrome throttles synthetic events (keyboard/mouse) on non-active tabs. CDP Tunnel automatically calls `Page.bringToFront` before synthetic input commands, making it transparent to Playwright/Puppeteer.
 
 ## Project Structure
 
 ```
 cdp-tunnel/
 ├── server/
-│   └── proxy-server.js      # Proxy server
-├── extension-new/
-│   ├── background.js        # Extension Service Worker
-│   ├── config-page-preview.html  # Configuration page
-│   ├── config-page.js       # Configuration page script
+│   ├── proxy-server.js          # Main proxy server
+│   ├── modules/
+│   │   ├── config.js            # Port configuration
+│   │   └── port-pool.js         # Port pool manager (v3.0+)
+│   ├── saas/
+│   │   ├── auth.js              # API Key + JWT authentication
+│   │   ├── key-manager.js       # Key management CLI
+│   │   └── db.js                # SQLite database
+│   └── admin-console.html       # Admin web UI
+├── extension-new/               # Chrome Extension (Manifest V3)
+│   ├── background.js            # Service Worker
 │   ├── core/
-│   │   ├── state.js         # State management
-│   │   └── websocket.js     # WebSocket connection management
-│   └── features/
-│       ├── cdp-router.js    # CDP message routing
-│       └── screencast.js    # Screenshot functionality
-└── tests/
-    ├── playwright-single.js      # Single client test
-    ├── playwright-multi.js       # Multi-client test
-    └── playwright-interactive.js # Interactive test
+│   │   ├── websocket.js         # WebSocket connection
+│   │   ├── connection-state.js  # State management
+│   │   └── connection-manager.js# Multi-connection
+│   ├── cdp/
+│   │   ├── handler/
+│   │   │   ├── special.js       # Tab grouping logic
+│   │   │   └── forward.js       # CDP command forwarding
+│   │   └── response.js          # CDP response builder
+│   └── utils/
+│       ├── config.js            # Extension config
+│       └── helpers.js           # Group naming/color
+├── cli/                         # CLI tool
+├── tests/e2e/                   # E2E tests
+└── docs/                        # Documentation
 ```
 
-## Testing
+## Changelog
 
-```bash
-# Single client test
-node tests/playwright-single.js
-
-# Multi-client test
-node tests/playwright-multi.js
-
-# Interactive test
-node tests/playwright-interactive.js
-```
-
-## Notes
-
-1. **Port Availability** - Ensure port 9221 is not in use
-2. **Extension Permissions** - The extension requires `debugger`, `tabs`, and other permissions
-3. **Browser Limitation** - Only one extension can control a browser via debugger at a time
+See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## License
 
-This project is licensed under the Apache License 2.0 with Attribution Requirement.
-
-See [LICENSE](LICENSE) for details.
+Apache License 2.0 with Attribution Requirement. See [LICENSE](LICENSE).
 
 ---
 
-If you use this project in your work, please include attribution:
+If you use this project, please include attribution:
 - Project: CDP Tunnel
 - Author: dyyz1993
 - Source: https://github.com/dyyz1993/cdp-tunnel

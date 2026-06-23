@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.6.0] - 2026-06-23
+### Added
+- **云管理控制台**：proxy 内置管理网页 `/admin`，查看在线浏览器、管理 key、CDP 快捷操作
+- **Tab 管理**：列表/关闭/切换标签页，关闭浏览器
+- **快捷操作 + 一键演示**：打开百度、截图、执行 JS、自动搜索演示
+- **创建浏览器入口**：直观创建新分组，生成完整地址一键复制
+- **按 key 隔离分组**：每个 key 独立端口池端口 session，listtabs 只看自己的 tab
+- test-key-isolation.js（5 项）、test-admin-console.js（10 项）自动化测试
+
+### Changed
+- 分组名按 API Key 名称命名（CDP-张三的浏览器），一眼看出是谁的
+- 扩展端 buildGroupName/_createGroupForClient/doGroup 支持 groupName
+- listtabs 走 /client 路径（按 key 过滤，不入侵用户 tab）
+
+### Fixed
+- closebrowser 正确关闭分组（clientId 按 key 反查 + client-disconnected）
+- keySessions constructor 补全（git checkout 遗漏）
+- doGroup 实际建分组时 groupName 没传（根因：state 没存 groupName）
+
 ## [3.5.0] - 2026-06-22
 ### Added
 - **API Key 鉴权**：proxy 支持 `REQUIRE_AUTH=true` 强制鉴权，一个 key 绑定一个浏览器。扩展连 `/plugin?key=xxx`，客户端连 `/client?key=xxx`，不同 key 互不可见。新增 `server/saas/key-manager.js` 手动管理 key（创建/列出/吊销）。

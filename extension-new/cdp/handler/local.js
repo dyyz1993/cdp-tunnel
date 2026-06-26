@@ -32,11 +32,29 @@ var LocalHandler = (function() {
     };
   }
 
-  function getWindowBounds() {
-    return {
-      bounds: { left: 0, top: 0, width: 1920, height: 1080, windowState: 'normal' }
-    };
-  }
+	function getWindowBounds() {
+		return {
+			bounds: { left: 0, top: 0, width: 1920, height: 1080, windowState: 'normal' }
+		};
+	}
+
+	/**
+	 * Browser.setWindowBounds — 设置窗口位置/大小，支持 focused。
+	 * 当 bounds.focused = true 时，用 Chrome 扩展 API 将窗口弹到前台。
+	 * 这是跨平台最可靠的方式（替代 CDP 原生 setWindowBounds 在 macOS 上的限制）。
+	 */
+	function setWindowBounds(context) {
+		var params = context ? context.params : null;
+		var bounds = params ? params.bounds : null;
+		if (bounds && bounds.focused) {
+			chrome.windows.getCurrent(function(w) {
+				if (w && w.id) {
+					chrome.windows.update(w.id, { focused: true });
+				}
+			});
+		}
+		return {};
+	}
 
   function targetSetDiscoverTargets(context) {
     var state = _getState(context);
@@ -517,7 +535,8 @@ var LocalHandler = (function() {
     browserGetVersion: browserGetVersion,
     browserClose: browserClose,
     getWindowForTarget: getWindowForTarget,
-    getWindowBounds: getWindowBounds,
+	    getWindowBounds: getWindowBounds,
+	    setWindowBounds: setWindowBounds,
     targetSetDiscoverTargets: targetSetDiscoverTargets,
     targetGetTargets: targetGetTargets,
     targetGetTargetInfo: targetGetTargetInfo,

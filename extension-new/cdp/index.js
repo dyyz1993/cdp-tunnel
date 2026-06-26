@@ -5,7 +5,7 @@ var CDP_HANDLERS = {
   'Browser.crash': { type: 'LOCAL', handler: LocalHandler.emptyResult },
   'Browser.crashGpuProcess': { type: 'LOCAL', handler: LocalHandler.emptyResult },
   'Browser.getWindowForTarget': { type: 'LOCAL', handler: LocalHandler.getWindowForTarget },
-  'Browser.setWindowBounds': { type: 'LOCAL', handler: LocalHandler.emptyResult },
+	'Browser.setWindowBounds': { type: 'LOCAL', handler: LocalHandler.setWindowBounds },
   'Browser.getWindowBounds': { type: 'LOCAL', handler: LocalHandler.getWindowBounds },
   'Browser.getBrowserCommandLine': { type: 'LOCAL', handler: LocalHandler.emptyArray },
   'Browser.getHistograms': { type: 'LOCAL', handler: LocalHandler.emptyArray },

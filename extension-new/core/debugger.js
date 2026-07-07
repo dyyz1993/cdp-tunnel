@@ -187,10 +187,6 @@ var DebuggerManager = (function() {
       });
   }
 
-  function isAttached(tabId) {
-    return getActualAttachState(tabId);
-  }
-
   function getActualAttachState(tabId) {
     return chrome.debugger.getTargets().then(function(targets) {
       var target = targets.find(function(t) {
@@ -364,7 +360,6 @@ var DebuggerManager = (function() {
   return {
     attach: attach,
     detach: detach,
-    isAttached: isAttached,
     getActualAttachState: getActualAttachState,
     handleDebuggerEvent: handleDebuggerEvent,
     handleDetach: handleDetach

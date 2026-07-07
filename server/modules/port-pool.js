@@ -143,8 +143,6 @@ class PortPoolManager {
     server.listen(port, '0.0.0.0', () => {
       console.log(`[CREATE PORT ${portIndex}] Listening on ${port}`);
     });
-
-    this.createServers[portIndex] = server;
   }
 
   _startTakeoverPort() {

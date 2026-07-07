@@ -166,7 +166,6 @@ const clientConnections = new Set();
 class PluginNamespace {
     constructor() {
         this.sessionToClientId = new Map();
-        this.pendingAttachRequests = new Map();
         this.pendingAttachedEvents = new Map();
         this.pendingTargetCreatedEvents = new Map();
         this.targetIdToClientId = new Map();
@@ -968,8 +967,7 @@ function cleanupPlugin(ws, id, reason) {
         remainingPlugins: pluginConnections.size,
         affectedClients,
         uptime: ws.connectedAt ? `${((Date.now() - ws.connectedAt) / 1000).toFixed(0)}s` : 'unknown',
-        activeSessions: ns.sessionToClientId.size,
-        pendingRequests: ns.pendingAttachRequests.size
+        activeSessions: ns.sessionToClientId.size
     });
 
     if (ws.pairedClientId) {
@@ -1385,23 +1383,7 @@ function handlePluginConnection(ws, clientInfo, request) {
                         invalidateTargetsCache(ws);
                     }
                     
-                    if (mapping.isAutoDefaultPage) {
-                        console.log(`[AUTO DEFAULT PAGE] createTarget response received for client=${mapping.clientId}, targetId=${parsed.result?.targetId?.substring(0,8) || 'none'} — skipping response send to client`);
-                        
-                        if (mapping.pendingSetAutoAttach) {
-                            const pending = mapping.pendingSetAutoAttach;
-                            const pendingParsed = pending.parsed;
-                            const pendingClientId = pending.clientId;
-                            
-                            console.log(`[AUTO DEFAULT PAGE] Now forwarding pending setAutoAttach for client=${pendingClientId}`);
-                            
-                            if (ws.readyState === WebSocket.OPEN) {
-                                const forwardMsg = { ...pendingParsed, __clientId: pendingClientId };
-                                ws.send(JSON.stringify(forwardMsg));
-                                console.log(`[SEND TO PLUGIN] Forwarding setAutoAttach for client=${pendingClientId}`);
-                            }
-                        }
-                    } else {
+                    {
                         const originalId = mapping.originalId;
                         parsed.id = originalId;
                         if (mapping.sessionId && !parsed.sessionId) {
@@ -1505,52 +1487,6 @@ function handlePluginConnection(ws, clientInfo, request) {
         fresh: (Date.now() - SERVER_START_TIME) < 5000,
         timestamp: Date.now()
     }));
-}
-
-function autoCreateDefaultPageAndForward(clientWs, setAutoAttachParsed, originalData, clientId, originalRequestId) {
-    const pluginWs = clientWs.pairedPlugin;
-    if (!pluginWs || pluginWs.readyState !== WebSocket.OPEN) {
-        forwardToPlugin(clientWs, originalData, clientId);
-        return;
-    }
-
-    globalRequestIdCounter++;
-    const createGlobalId = globalRequestIdCounter;
-
-    globalRequestIdMap.set(createGlobalId, {
-        clientId: clientId,
-        originalId: -1,
-        sessionId: null,
-        method: 'Target.createTarget',
-        isCreateTarget: true,
-        isAutoDefaultPage: true,
-        pendingSetAutoAttach: {
-            parsed: setAutoAttachParsed,
-            data: originalData,
-            clientId: clientId,
-            originalRequestId: originalRequestId
-        }
-    });
-
-    const request = {
-        id: createGlobalId,
-        method: 'Target.createTarget',
-        params: { url: 'about:blank' },
-        __clientId: clientId
-    };
-
-    console.log(`[AUTO DEFAULT PAGE] Sending Target.createTarget for client=${clientId} globalId=${createGlobalId}, will forward setAutoAttach after`);
-    pluginWs.send(JSON.stringify(request));
-}
-
-function forwardToPlugin(clientWs, data, clientId) {
-    const pluginWs = clientWs.pairedPlugin;
-    if (pluginWs && pluginWs.readyState === WebSocket.OPEN) {
-        console.log(`[SEND TO PLUGIN] method=Target.setAutoAttach clientId=${clientId}`);
-        pluginWs.send(data);
-    } else {
-        broadcastToPlugins(data, clientWs);
-    }
 }
 
 /**
@@ -1775,13 +1711,9 @@ function handleClientConnection(ws, clientInfo, customClientId = null, targetPlu
 
         if (parsed && parsed.method === 'Target.setAutoAttach' && parsed.params?.autoAttach && !ws._autoDefaultPageSent) {
             ws._autoDefaultPageSent = true;
-            if (ws.mode === 'takeover') {
-                const takeoverMsg = { ...parsed, __clientId: id, __mode: 'takeover' };
-                if (ws.pairedPlugin && ws.pairedPlugin.readyState === WebSocket.OPEN) {
-                    ws.pairedPlugin.send(JSON.stringify(takeoverMsg));
-                }
-            } else {
-                autoCreateDefaultPageAndForward(ws, parsed, modifiedData, id, originalId);
+            const forwardMsg = { ...parsed, __clientId: id, __mode: ws.mode };
+            if (ws.pairedPlugin && ws.pairedPlugin.readyState === WebSocket.OPEN) {
+                ws.pairedPlugin.send(JSON.stringify(forwardMsg));
             }
             return;
         }
@@ -2331,10 +2263,8 @@ setInterval(() => {
     });
     
     let totalSessions = 0;
-    let totalPendingAttach = 0;
     pluginNamespaces.forEach(ns => {
         totalSessions += ns.sessionToClientId.size;
-        totalPendingAttach += ns.pendingAttachRequests.size;
     });
     
     logStatus({
@@ -2346,8 +2276,7 @@ setInterval(() => {
         pairs: connectionPairs.size,
         pluginDetails: pluginList,
         clientDetails: clientList,
-        sessions: totalSessions,
-        pendingAttach: totalPendingAttach
+        sessions: totalSessions
     });
 }, CONFIG.STATUS_PRINT_INTERVAL);
 
@@ -2424,11 +2353,6 @@ portPool = new PortPoolManager({
         if (!apiKey) return false;
         return !!validateApiKey(apiKey);
     },
-    handlePluginUpgrade: (req, socket, head) => {
-        wss.handleUpgrade(req, socket, head, (ws) => {
-            wss.emit('connection', ws, req);
-        });
-    },
     handleTakeoverUpgrade: (req, socket, head) => {
         req._takeoverMode = true;
         const url = new URL(req.url, `http://localhost:${CONFIG.TAKEOVER_PORT}`);
@@ -2448,22 +2372,6 @@ portPool = new PortPoolManager({
         wss.handleUpgrade(req, socket, head, (ws) => {
             wss.emit('connection', ws, req);
         });
-    },
-    getAllTargets: async (portIndex) => {
-        const session = portPool.portSessions[portIndex];
-        if (!session) return [];
-        // 从主 proxy 的 namespace 拿所有 target，过滤出这个端口的
-        const targets = [];
-        for (const [, ns] of pluginNamespaces) {
-            if (ns.cachedTargets) {
-                for (const t of ns.cachedTargets) {
-                    if (session.targetIds.has(t.targetId)) {
-                        targets.push(t);
-                    }
-                }
-            }
-        }
-        return targets;
     }
 });
 portPool.start();

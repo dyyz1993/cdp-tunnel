@@ -89,6 +89,7 @@ function runTest(test, index, total) {
       cwd: __dirname,
       env: {
         ...process.env,
+        NO_PROXY: process.env.NO_PROXY || 'localhost,127.0.0.1,::1',
         POOL_SIZE: '0',  // 测试时禁用端口池，避免端口冲突
         CHROME_PATH: process.env.CHROME_PATH || '/Applications/Chromium.app/Contents/MacOS/Chromium',
         CHROMIUM_FLAGS: '--headless=new',

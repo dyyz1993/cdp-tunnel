@@ -1,14 +1,12 @@
 function ConnectionState(connectionId, mode) {
   this.connectionId = connectionId;
   this.mode = mode || 'create';
-  this.connectionTag = null;
   this.clientIdToTag = new Map();
   this.ws = null;
   this.reconnectTimer = null;
   this._hasConnectedClient = false;
   this.cdpClients = [];
   this.currentTabId = null;
-  this.isAttached = false;
 
   this.sessionIdToTabId = new Map();
   this.sessionIdToTargetId = new Map();
@@ -372,18 +370,7 @@ ConnectionState.prototype.clearAllState = function() {
 
 ConnectionState.prototype.persist = function(tabId, attached) {
   this.currentTabId = tabId;
-  this.isAttached = attached;
   return new Promise(function(resolve) {
     chrome.storage.local.set({ currentTabId: tabId, isAttached: attached }, resolve);
-  }.bind(this));
-};
-
-ConnectionState.prototype.loadPersisted = function() {
-  return new Promise(function(resolve) {
-    chrome.storage.local.get(['currentTabId', 'isAttached'], function(result) {
-      this.currentTabId = result.currentTabId || null;
-      this.isAttached = result.isAttached || false;
-      resolve(result);
-    }.bind(this));
   }.bind(this));
 };

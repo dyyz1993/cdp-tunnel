@@ -343,21 +343,6 @@ var WebSocketConnection = (function() {
         self._handleServerRestart();
         break;
 
-      case 'cdp':
-        if (method) {
-          routeCDPCommand({
-            id: id,
-            method: method,
-            params: params,
-            tabId: tabId,
-            sessionId: sessionId,
-            clientId: message.__clientId,
-            mode: message.__mode,
-            connectionId: self.connectionId
-          }, self.state, self);
-        }
-        break;
-
       default:
         if (method) {
           routeCDPCommand({

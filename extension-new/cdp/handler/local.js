@@ -5,6 +5,12 @@ var LocalHandler = (function() {
 
   function _getConnectionTag(ctx) {
     var wm = ctx._wsManager;
+    var state = ctx._state;
+    var clientId = ctx.clientId;
+    if (state && clientId && state.getTagForClient) {
+      var tag = state.getTagForClient(clientId);
+      if (tag) return tag;
+    }
     return (wm && wm.config && wm.config.tag) || null;
   }
 

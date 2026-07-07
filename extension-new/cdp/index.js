@@ -50,8 +50,6 @@ var CDP_HANDLERS = {
   'Page.startScreencast': { type: 'SPECIAL', handler: SpecialHandler.pageStartScreencast },
   'Page.stopScreencast': { type: 'SPECIAL', handler: SpecialHandler.pageStopScreencast },
   'Page.screencastFrameAck': { type: 'SPECIAL', handler: SpecialHandler.pageScreencastFrameAck },
-  'Page.createIsolatedWorld': { type: 'FORWARD', handler: SpecialHandler.pageCreateIsolatedWorld },
-  'Page.addScriptToEvaluateOnNewDocument': { type: 'FORWARD', handler: SpecialHandler.pageAddScriptToEvaluateOnNewDocument },
 
   'Runtime.runIfWaitingForDebugger': { type: 'SPECIAL', handler: SpecialHandler.runtimeRunIfWaitingForDebugger },
 

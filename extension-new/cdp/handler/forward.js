@@ -29,8 +29,17 @@ var ForwardHandler = (function() {
 
     Logger.debug('[Forward]', method, '-> tabId:', tabId);
 
-    // 合成输入事件需要页面 visible：先 ensureVisible 再发命令
+    // 合成输入事件 + 带 clip 的元素截图需要页面 visible：先 ensureVisible 再发命令
     if (SYNTHETIC_INPUT_METHODS.indexOf(method) >= 0) {
+      return ensureVisible(tabId).then(function() {
+        return chrome.debugger.sendCommand({ tabId: tabId }, method, params);
+      }).then(function(result) {
+        return result || {};
+      });
+    }
+
+    // 元素级截图（带 clip）在 hidden 状态下可能返回空数据，需要 ensureVisible 确保渲染完成
+    if (method === 'Page.captureScreenshot' && params && params.clip) {
       return ensureVisible(tabId).then(function() {
         return chrome.debugger.sendCommand({ tabId: tabId }, method, params);
       }).then(function(result) {

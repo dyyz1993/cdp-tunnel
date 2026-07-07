@@ -785,14 +785,6 @@ function checkTabVisibility(tabId) {
     });
   }
 
-  function pageCreateIsolatedWorld(context) {
-    return ForwardHandler.execute(context);
-  }
-
-  function pageAddScriptToEvaluateOnNewDocument(context) {
-    return ForwardHandler.execute(context);
-  }
-
   function domSetFileInputFiles(context) {
     var params = context.params;
     var sessionId = context.sessionId;
@@ -899,8 +891,6 @@ function checkTabVisibility(tabId) {
     pageStartScreencast: pageStartScreencast,
     pageStopScreencast: pageStopScreencast,
     pageScreencastFrameAck: pageScreencastFrameAck,
-    pageCreateIsolatedWorld: pageCreateIsolatedWorld,
-    pageAddScriptToEvaluateOnNewDocument: pageAddScriptToEvaluateOnNewDocument,
     runtimeRunIfWaitingForDebugger: runtimeRunIfWaitingForDebugger,
     domSetFileInputFiles: domSetFileInputFiles,
     updateTabGroupName: updateTabGroupName,

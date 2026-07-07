@@ -76,7 +76,6 @@ importScripts('features/automation-badge.js');
         var primary = ConnectionManager.getPrimaryConnection();
         if (primary && result.currentTabId != null) {
           primary.state.currentTabId = result.currentTabId;
-          primary.state.isAttached = result.isAttached;
         }
 
         ConnectionManager.connectAll();
@@ -196,9 +195,14 @@ importScripts('features/automation-badge.js');
   }
 
   chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
-    if (changeInfo.status === 'complete') {
+    if (changeInfo.status === 'complete' || changeInfo.title) {
       var entry = ConnectionManager.getConnectionByTabId(tabId);
       if (entry && entry.state.isTabAttached(tabId)) {
+        LocalHandler.getTargetInfoById(String(tabId)).then(function(targetInfo) {
+          if (targetInfo) {
+            EventBuilder.send('Target.targetInfoChanged', { targetInfo: targetInfo }, null, entry.wsManager);
+          }
+        });
       }
     }
 

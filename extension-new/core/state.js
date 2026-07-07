@@ -62,14 +62,6 @@ var State = (function() {
     });
   }
 
-  function persist(tabId, attached) {
-    _state.currentTabId = tabId;
-    _state.isAttached = attached;
-    return new Promise(function(resolve) {
-      chrome.storage.local.set({ currentTabId: tabId, isAttached: attached }, resolve);
-    });
-  }
-
   function isTabAttached(tabId) {
     var entry = ConnectionManager.getConnectionByTabId(tabId);
     return entry ? entry.state.isTabAttached(tabId) : false;

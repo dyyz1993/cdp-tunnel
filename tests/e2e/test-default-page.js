@@ -4,8 +4,9 @@
 /**
  * TDD: 默认页面 + Playwright 连接测试（端口池语义）
  *
- * 端口池架构下，CDP 客户端连接后不强制创建 auto-default-page
- * （与原生 Chrome --remote-debugging-port 一致：连接即空，需自己 createTarget）。
+ * 对齐原生 Chrome --remote-debugging-port：客户端连接后不产生任何隐式 about:blank。
+ * 原生 Chrome 在 client 连接后 target 列表为空（需自己 createTarget）。
+ * 端口池也一样：client 连接后 getTargets 返回空，pages() 返回空。
  *
  * 验证：
  * 1. Playwright connectOverCDP 能成功连接
@@ -165,7 +166,8 @@ function killProxy(proc) {
       initialPages.forEach((p, i) => console.log(`    page[${i}]: ${p.url()}`));
     }
 
-    // 端口池语义：连接后页面数 >= 0（不强制 auto-default-page），但绝不应看到用户页面
+    // 对齐原生 CDP：端口池连接后无隐式页面，pages() 应为空
+    // （无 auto-default-page，无 warmup tab）
     const hasForeignPages = initialPages.some(p => p.url() !== 'about:blank');
     if (!hasForeignPages) {
       console.log('[PASS] 连接成功，且不包含用户页面');

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.6.3] - 2026-07-07
+### Fixed
+- **不再产生隐式 about:blank 页面**：删除端口池 warmup 逻辑（每个 session 第一个 client 连接时用 `Target.createTarget` 创建临时 about:blank tab 再关闭），时间窗口内 Playwright 的 `setAutoAttach` 会看到这个 tab，导致用户看到多余空白页或自动测试断言 `pages().length` 不稳定
+- **对齐原生 CDP**：移除 warmup 后，client 连接后 `pages()` 返回 0（与 `chrome --remote-debugging-port` 一致），不再有隐式页面
+
+### Changed
+- 更新 test-default-page.js 注释：描述改为"客户端连接后不产生任何隐式 about:blank"
+
 ## [3.6.2] - 2026-07-07
 ### Fixed
 - **内存泄漏**：`Target.targetDestroyed` / `Target.detachedFromTarget` 事件路径清理 `sessionToPort`、`targetToPort`、`sessionToClient`，避免长跑后无界增长

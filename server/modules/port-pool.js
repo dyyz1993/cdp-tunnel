@@ -261,22 +261,12 @@ class PortPoolManager {
       return;
     }
 
-    // SW 冷启动 warmup：第一个 client 连接时创建一个临时 tab 再关闭
-    if (!session.warmedUp) {
-      session.warmedUp = true;
-      const warmupId = `pool${session.portIndex}_internal_warmup`;
-      pluginWs.send(JSON.stringify({
-        id: warmupId,
-        method: 'Target.createTarget',
-        params: { url: 'about:blank' },
-        __portIndex: session.portIndex,
-        __clientId: `pool_${session.port}`
-      }));
-      // warmup 响应回来后在 handlePluginMessage 里关闭这个 tab
-      session.pendingWarmupClose = true;
-    }
-
     // 通知扩展有 client 连接（带端口号作为分组标识）
+    // 对齐原生 CDP：不创建任何隐式的 about:blank 页面。
+    // 原生 chrome --remote-debugging-port 在 client 连接后不创建任何 target，
+    // 只在 connectOverCDP 的 setAutoAttach 期间发现已有 target。
+    // （移除旧版 warmup 逻辑：它用 Target.createTarget 创建临时 about:blank 再关闭，
+    //   但时间窗口内 Playwright 的 setAutoAttach 会发现它，导致用户看到多余空白页。）
     // clientId 固定为 pool_{port}，让扩展为每个端口建一个独立分组
     // __groupName 带 key 名称，让扩展用 key 名称命名 Chrome 分组（一眼看出是谁的浏览器）
     const poolClientId = `pool_${session.port}`;
@@ -360,23 +350,8 @@ class PortPoolManager {
 
     // 1. 响应消息：id 以 pool 开头（排除事件——事件有 method 字段）
     if (msg.id && typeof msg.id === 'string' && msg.id.startsWith('pool') && !msg.method) {
-      // 内部命令响应
+      // 内部命令响应（_ensureVisible 的 bringToFront/waitVis 等）：丢弃，不路由给 client
       if (msg.id.includes('_internal')) {
-        // warmup createTarget 响应——关掉 warmup tab
-        const m = msg.id.match(/^pool(\d+)_/);
-        if (m && msg.id.includes('_warmup') && msg.result && msg.result.targetId) {
-          const pidx = parseInt(m[1]);
-          const sess = this.portSessions[pidx];
-          const warmupTid = msg.result.targetId;
-          const closeId = `pool${pidx}_internal_warmup_close_${Date.now()}`;
-          pluginWs.send(JSON.stringify({
-            id: closeId,
-            method: 'Target.closeTarget',
-            params: { targetId: warmupTid },
-            __portIndex: pidx,
-            __clientId: `pool_${sess.port}`
-          }));
-        }
         return true;
       }
       const match = msg.id.match(/^pool(\d+)_(.+)$/);

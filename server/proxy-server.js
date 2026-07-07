@@ -158,7 +158,19 @@ function updateExtensionState(connected) {
 clearLog();
 
 const wss = new WebSocket.Server({ noServer: true });
-const server = http.createServer((req, res) => handleHttpRequest(req, res));
+const server = http.createServer(async (req, res) => {
+    try {
+        await handleHttpRequest(req, res);
+    } catch (err) {
+        logCDP('error', 'Unhandled error in handleHttpRequest', { url: req.url, message: err.message });
+        if (!res.headersSent) {
+            try {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Internal proxy error' }));
+            } catch (_) {}
+        }
+    }
+});
 
 const pluginConnections = new Set();
 const clientConnections = new Set();
@@ -236,8 +248,6 @@ async function requestVersionFromPlugin(pluginWs) {
 
     return new Promise((resolve) => {
         const requestId = `version_${Date.now()}`;
-        const timeout = setTimeout(() => resolve(null), 2000);
-
         const handler = (data) => {
             try {
                 const msg = JSON.parse(data.toString());
@@ -251,9 +261,13 @@ async function requestVersionFromPlugin(pluginWs) {
                 }
             } catch (e) {}
         };
+        const timeout = setTimeout(() => {
+            pluginWs.off('message', handler);
+            resolve(null);
+        }, 2000);
 
         pluginWs.on('message', handler);
-        pluginWs.send(JSON.stringify({ id: requestId, method: 'Browser.getVersion' }));
+        safeSend(pluginWs, JSON.stringify({ id: requestId, method: 'Browser.getVersion' }), 'plugin');
     });
 }
 
@@ -275,10 +289,6 @@ async function requestTargetsFromPlugin(pluginWs) {
 
     return new Promise((resolve) => {
         const requestId = `targets_${Date.now()}`;
-        const timeout = setTimeout(() => {
-            resolve(ns.cachedTargets);
-        }, CONFIG.TARGETS_REQUEST_TIMEOUT);
-
         const handler = (data) => {
             try {
                 const msg = JSON.parse(data.toString());
@@ -291,9 +301,13 @@ async function requestTargetsFromPlugin(pluginWs) {
                 }
             } catch (e) {}
         };
+        const timeout = setTimeout(() => {
+            pluginWs.off('message', handler);
+            resolve(ns.cachedTargets);
+        }, CONFIG.TARGETS_REQUEST_TIMEOUT);
 
         pluginWs.on('message', handler);
-        pluginWs.send(JSON.stringify({ id: requestId, method: 'Target.getTargets' }));
+        safeSend(pluginWs, JSON.stringify({ id: requestId, method: 'Target.getTargets' }), 'plugin');
     });
 }
 
@@ -439,9 +453,7 @@ async function execCdpViaPlugin(pluginId, params) {
             }
         }
         // 发 client-disconnected 让扩展关分组 + 关 tab
-        try {
-            pluginWs.send(JSON.stringify({ type: 'client-disconnected', clientId }));
-        } catch (e) {}
+        safeSend(pluginWs, JSON.stringify({ type: 'client-disconnected', clientId }), 'plugin');
         // 清理 key session（让下次连接重新分配）
         if (pluginWs.apiKey && portPool) {
             portPool.keySessions.delete(pluginWs.apiKey);
@@ -952,12 +964,10 @@ function cleanupPlugin(ws, id, reason) {
             }
             clientWs.pairedPlugin = null;
             affectedClients.push(clientWs.id);
-            if (clientWs.readyState === WebSocket.OPEN) {
-                clientWs.send(JSON.stringify({
-                    type: 'plugin-disconnected',
-                    message: 'Plugin connection lost'
-                }));
-            }
+            safeSend(clientWs, JSON.stringify({
+                type: 'plugin-disconnected',
+                message: 'Plugin connection lost'
+            }), 'client');
         }
     });
 
@@ -1196,7 +1206,7 @@ function handlePluginConnection(ws, clientInfo, request) {
                 if (eventClientId) {
                     const clientWs = clientById.get(eventClientId);
                     if (clientWs && clientWs.readyState === WebSocket.OPEN) {
-                        clientWs.send(cdpData);
+                        safeSend(clientWs, cdpData, 'client');
                         console.log(`[TARGET EVENT ROUTED] ${parsed.method} targetId=${targetId?.substring(0,8)} -> clientId=${eventClientId}`);
                     }
                 } else if (targetId && (parsed.method === 'Target.targetCreated' || parsed.method === 'Target.attachedToTarget')) {
@@ -1329,7 +1339,7 @@ function handlePluginConnection(ws, clientInfo, request) {
 
                         const cachedCreated = ns.pendingTargetCreatedEvents.get(targetId);
                         if (cachedCreated) {
-                            clientWs.send(cachedCreated.cdpData);
+                            safeSend(clientWs, cachedCreated.cdpData, 'client');
                             console.log(`[TARGET CREATED EVENT] Sent cached Target.targetCreated to client: ${mapping.clientId}`);
                             ns.pendingTargetCreatedEvents.delete(targetId);
                         }
@@ -1348,7 +1358,7 @@ function handlePluginConnection(ws, clientInfo, request) {
                             };
                             const msgStr = JSON.stringify(cdpMsg);
                             console.log(`[ATTACHED EVENT] Full message: ${msgStr}`);
-                            clientWs.send(msgStr);
+                            safeSend(clientWs, msgStr, 'client');
                             console.log(`[ATTACHED EVENT] Sent cached event to client: ${mapping.clientId}`);
                         }
                         const newTargetInfo = cachedCreated?.parsed?.params?.targetInfo
@@ -1391,7 +1401,7 @@ function handlePluginConnection(ws, clientInfo, request) {
                         }
                         const responseStr = JSON.stringify(parsed);
                         console.log(`[SEND TO CLIENT] ${responseStr.substring(0, 300)}`);
-                        clientWs.send(responseStr);
+                        safeSend(clientWs, responseStr, 'client');
                         console.log(`[ROUTE] Response global=${globalId} -> original=${originalId} -> client=${mapping.clientId} sessionId=${parsed.sessionId?.substring(0,8) || 'none'}`);
                     }
                 }
@@ -1410,7 +1420,7 @@ function handlePluginConnection(ws, clientInfo, request) {
             if (targetClientId) {
                 const clientWs = clientById.get(targetClientId);
                 if (clientWs && clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.send(data);
+                    safeSend(clientWs, data, 'client');
                     logCDP('DEBUG', `FORWARDED to client: ${targetClientId} (sessionId route)`, parsed?.sessionId);
                 }
             } else {
@@ -1562,10 +1572,10 @@ function handleClientConnection(ws, clientInfo, customClientId = null, targetPlu
             
             logConnectionEvent('CLIENT_PAIRED', { clientId: id, pluginId: pluginWs.id });
             
-            pluginWs.send(JSON.stringify({
+            safeSend(pluginWs, JSON.stringify({
                 type: 'client-connected',
                 clientId: id
-            }));
+            }), 'plugin');
             
             broadcastClientList();
         }
@@ -2086,7 +2096,7 @@ function safeSend(ws, data, label = '') {
     }
 }
 
-setInterval(() => {
+const flushInterval = setInterval(() => {
     messageQueues.forEach((queue, wsId) => {
         let ws = null;
         for (const conn of pluginConnections) {
@@ -2186,7 +2196,7 @@ const heartbeatInterval = setInterval(() => {
     });
 }, CONFIG.HEARTBEAT_INTERVAL);
 
-setInterval(() => {
+const zombieCleanupInterval = setInterval(() => {
     const toRemove = [];
     pluginConnections.forEach(ws => {
         if (ws.readyState !== WebSocket.OPEN) {
@@ -2219,10 +2229,10 @@ wss.on('close', () => {
 /**
  * 定期打印状态
  */
-setInterval(() => {
+const statusPrintInterval = setInterval(() => {
     const now = new Date().toISOString();
     const nowMs = Date.now();
-    
+
     const validPlugins = Array.from(pluginConnections).filter(ws => ws.readyState === WebSocket.OPEN);
     const zombiePlugins = Array.from(pluginConnections).filter(ws => ws.readyState !== WebSocket.OPEN);
     const validClients = Array.from(clientConnections).filter(ws => ws.readyState === WebSocket.OPEN);
@@ -2284,7 +2294,10 @@ setInterval(() => {
 process.on('SIGINT', () => {
     console.log('\n[SERVER] Shutting down (SIGINT)...');
     logCDP('SERVER', 'Shutting down (SIGINT)');
+    clearInterval(flushInterval);
     clearInterval(heartbeatInterval);
+    clearInterval(zombieCleanupInterval);
+    clearInterval(statusPrintInterval);
 
     pluginConnections.forEach(ws => ws.close(1001, 'Server shutting down'));
     clientConnections.forEach(ws => ws.close(1001, 'Server shutting down'));
@@ -2299,6 +2312,10 @@ process.on('SIGINT', () => {
 process.on('SIGTERM', () => {
     console.log('[SERVER] Shutting down (SIGTERM)...');
     logCDP('SERVER', 'Shutting down (SIGTERM)');
+    clearInterval(flushInterval);
+    clearInterval(heartbeatInterval);
+    clearInterval(zombieCleanupInterval);
+    clearInterval(statusPrintInterval);
     flushAllLogs();
     process.exit(0);
 });

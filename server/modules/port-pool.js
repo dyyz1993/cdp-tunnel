@@ -334,7 +334,15 @@ class PortPoolManager {
 
     ws.on('close', () => {
       session.clients.delete(ws);
-      console.log(`[PORT ${session.port}] Client disconnected (remaining: ${session.clients.size})`);
+      // 内存泄漏修复：清理该 client 的 pendingRequests 和 sessionToClient 引用，
+      // 避免 plugin 永不响应时 entry 一直挂着 ws 对象
+      if (ws._origIds) ws._origIds.clear();
+      for (const [reqId, pending] of session.pendingRequests.entries()) {
+        if (pending.clientWs === ws) session.pendingRequests.delete(reqId);
+      }
+      for (const [sid, cws] of session.sessionToClient.entries()) {
+        if (cws === ws) session.sessionToClient.delete(sid);
+      }
       // 对齐原生 Chrome：断开不清理 tab
     });
 
@@ -478,6 +486,34 @@ class PortPoolManager {
           }
           this.sessionToPort.set(msg.params.sessionId, portIdx);
           sess.sessionToClient.delete(msg.params.sessionId);  // auto-attach：广播
+        }
+      }
+
+      // 内存泄漏修复：target 销毁/detach 时清理 sessionToPort、targetToPort、sessionToClient
+      // 之前只在 closeTarget 响应路径清理，事件路径漏了 → sessionToPort 无界增长
+      if (msg.method === 'Target.targetDestroyed' && targetId) {
+        const portIdx = this.targetToPort.get(targetId);
+        this.targetToPort.delete(targetId);
+        if (portIdx !== undefined) {
+          const sess = this.portSessions[portIdx];
+          if (sess) {
+            sess.targetIds.delete(targetId);
+            sess.targetUrls.delete(targetId);
+          }
+        }
+      }
+      if (msg.method === 'Target.detachedFromTarget') {
+        const sid = msg.params.sessionId;
+        if (sid) {
+          this.sessionToPort.delete(sid);
+          const portIdx = this.sessionToPort.get(sid);
+          if (portIdx !== undefined && this.portSessions[portIdx]) {
+            this.portSessions[portIdx].sessionToClient.delete(sid);
+          }
+        }
+        if (targetId) {
+          // detach 也意味着 target 不再活跃，清理 targetToPort（保留 targetIds 历史用于 list）
+          this.targetToPort.delete(targetId);
         }
       }
 

@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.6.2] - 2026-07-07
+### Fixed
+- **内存泄漏**：`Target.targetDestroyed` / `Target.detachedFromTarget` 事件路径清理 `sessionToPort`、`targetToPort`、`sessionToClient`，避免长跑后无界增长
+- **客户端断开时清理**：port-pool 的 `ws.on('close')` 现在清掉对应 client 的 `pendingRequests` 和 `sessionToClient` 引用，避免 plugin 永不响应时 ws 对象常驻
+- **健壮性**：`handleHttpRequest` 加顶层 try/catch，plugin 通信异常不再 crash 整个 proxy
+- **WebSocket 安全发送**：proxy-server.js 中 8 处直接 `ws.send()` 全部改为 `safeSend()`，客户端/插件意外断开时不再触发二次 cleanup race
+- **message listener 泄漏**：`requestVersionFromPlugin` / `requestTargetsFromPlugin` 的超时分支现在会 `off` listener，避免长连接累积
+- **进程退出干净**：SIGINT/SIGTERM 现在清理全部 4 个 `setInterval`（之前只清了 heartbeat）
+
+### Changed
+- **依赖瘦身**：移除未使用的 devDependencies（`sharp`、`lz-string`、`pako`、`playwright-core`、`puppeteer-core`）
+- **scripts 清理**：删除指向不存在目录的 npm scripts（client / record / benchmark / demo 等 7 条）
+- **.gitignore 增强**：加入 `.vscode/`、`.idea/`、`*.cpuprofile`、`*.heapprofile`
+- **bin 字段规范化**：从 `"./cli/index.js"` 改为 `{ "cdp-tunnel": "./cli/index.js" }`（npm publish 会自动修正，现在显式正确）
+
+### Removed
+- 清理 13 个开发期临时脚本（`tests/e2e/_*.cjs`，含硬编码绝对路径）
+
+## [3.6.1] - 2026-07-07
+### Fixed
+- **issue #1**：cdp-tunnel 模式下 `Target.getTargetInfo` 返回空 title — 用 `tab.title` 覆盖过期 title
+- **issue #2**：带 clip 的 `Page.captureScreenshot` 缺 elementScreenshot — 自动 `ensureVisible` 前置
+
+### Changed
+- 大量死代码清理（autoCreateDefaultPageAndForward、forwardToPlugin、pageCreateIsolatedWorld 等）
+- pre-commit hook 加 `NO_PROXY=localhost,127.0.0.1,::1`，避免 Playwright HTTP 请求走系统代理导致测试假阳性
+
 ## [3.6.0] - 2026-06-23
 ### Added
 - **云管理控制台**：proxy 内置管理网页 `/admin`，查看在线浏览器、管理 key、CDP 快捷操作

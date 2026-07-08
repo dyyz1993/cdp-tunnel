@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.6.4] - 2026-07-08
+### Added
+- **SDK 入口**：新增 `index.js`，`require('cdp-tunnel')` 直接返回编程式 API（`startServer` / `createApiKey` / `listApiKeys` / `revokeApiKey` / `PortPoolManager` 等），无需深路径 require
+- **多浏览器实例服务示例**：新增 `examples/multi-browser-service.js`，演示"一服务管多浏览器"的完整流程（起 proxy → 创建 key → 启 Chrome → 发现 → 接管 → 操作 → 验证隔离）
+- **多浏览器并发测试**：新增 `tests/e2e/test-multi-browser.js`，覆盖 11 个检查点（服务端发现、key 路由、双向隔离、并发操作、断连容错），已纳入 `run-all.js` core tier
+- **示例文档**：新增 `examples/README.md`，含架构图、快速开始、7 步流程说明、验证点表格、发版前必跑命令
+
+### Changed
+- `package.json` 的 `main` 从 `server/proxy-server.js` 改为 `index.js`（SDK 入口）
+- `package.json` 的 `files` 加入 `index.js`
+
 ## [3.6.3] - 2026-07-07
 ### Fixed
 - **不再产生隐式 about:blank 页面**：删除端口池 warmup 逻辑（每个 session 第一个 client 连接时用 `Target.createTarget` 创建临时 about:blank tab 再关闭），时间窗口内 Playwright 的 `setAutoAttach` 会看到这个 tab，导致用户看到多余空白页或自动测试断言 `pages().length` 不稳定

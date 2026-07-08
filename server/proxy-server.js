@@ -2194,6 +2194,33 @@ const heartbeatInterval = setInterval(() => {
         ws.ping();
         logConnectionEvent('HEARTBEAT_PING', { type: 'client', id: ws.id, bufferedAmount: ws.bufferedAmount });
     });
+
+    // 端口池 client 心跳检测：与 plugin 一样允许 3 次 miss
+    if (portPool) {
+        for (const session of portPool.portSessions) {
+            if (!session) continue;
+            for (const ws of session.clients) {
+                if (!ws.isAlive) {
+                    ws.missedPings = (ws.missedPings || 0) + 1;
+                    if (ws.missedPings >= CONFIG.PLUGIN_MAX_MISSED_PINGS) {
+                        const cid = ws.poolClientId || 'unknown';
+                        if (shouldLog('warn')) {
+                            console.log(`[${now}] Pool client ${cid} missed ${ws.missedPings} pings, terminating...`);
+                        }
+                        logConnectionEvent('HEARTBEAT_TIMEOUT', { type: 'pool_client', id: cid, missedPings: ws.missedPings });
+                        // 不调用 cleanupClient（不发 client-disconnected），
+                        // session.clients 的清理由 ws.on('close') 处理
+                        ws.terminate();
+                        continue;
+                    }
+                } else {
+                    ws.missedPings = 0;
+                }
+                ws.isAlive = false;
+                try { ws.ping(); } catch {}
+            }
+        }
+    }
 }, CONFIG.HEARTBEAT_INTERVAL);
 
 const zombieCleanupInterval = setInterval(() => {

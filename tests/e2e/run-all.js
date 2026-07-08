@@ -43,6 +43,7 @@ const TESTS = [
   { file: 'test-api-key-auth.js', name: 'API Key Auth (REQUIRE_AUTH)', timeout: 120000, tier: 'core' },
   { file: 'test-version-check.js', name: 'Version Check (STRICT_VERSION)', timeout: 60000, tier: 'core' },
   { file: 'test-key-isolation.js', name: 'Key Isolation (按 key 隔离)', timeout: 120000, tier: 'core' },
+  { file: 'test-heartbeat-keepalive.js', name: 'Heartbeat Keepalive (70s 心跳保活)', timeout: 120000, tier: 'core' },
   { file: 'test-multi-browser.js', name: 'Multi-Browser (多 Chrome + 多 key 并发)', timeout: 120000, tier: 'core' },
   { file: 'test-prod-deploy.js', name: 'Prod Deploy Verify (需 PROD_WSS/PROD_KEY)', timeout: 60000, tier: 'extended' },
   { file: 'test-admin-console.js', name: 'Admin Console', timeout: 60000, tier: 'extended' },

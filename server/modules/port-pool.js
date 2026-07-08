@@ -280,6 +280,11 @@ class PortPoolManager {
     }));
 
     // 合成输入命令需要 ensureVisible（和 forward.js 的逻辑一致）
+    // 心跳检测：ping/pong 保持连接活跃，网络闪断不丢连接
+    ws.isAlive = true;
+    ws.poolClientId = poolClientId;
+    ws.on('pong', () => { ws.isAlive = true; });
+
     const SYNTHETIC_INPUT = ['Input.dispatchKeyEvent', 'Input.dispatchMouseEvent'];
 
     // 消息处理：client → plugin（带 portIndex 标记）
